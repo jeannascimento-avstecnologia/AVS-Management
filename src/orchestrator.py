@@ -430,11 +430,14 @@ async def execute_delete(
                 message="TiFlux não selecionado para exclusão.",
             )
         try:
-            await tiflux.delete_client(int(tiflux_client_id))
+            client_id = int(tiflux_client_id)
+            if search_mode == "cnpj":
+                client_id = await tiflux.resolve_client_id(client_id, cnpj_digits=term)
+            await tiflux.delete_client(client_id)
             return SystemResult(
                 success=True,
-                message="Cliente excluído no TiFlux.",
-                data={"id": tiflux_client_id},
+                message="Cliente inativado no TiFlux.",
+                data={"id": client_id},
             )
         except TifluxApiError as exc:
             return SystemResult(success=False, error=str(exc), message="Falha no TiFlux.")

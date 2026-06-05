@@ -93,7 +93,7 @@ O TiFlux exige **`desk_ids`** e **`technical_group_ids`** no `POST /clients`. Se
 | Criar cliente | `POST /clients` |
 | Buscar | `GET /clients?social_revenue=` + paginação `offset/limit` |
 | Buscar por nome | `GET /clients?name=` |
-| Excluir | `DELETE /clients/{id}` (retorno típico 204) |
+| Inativar (fluxo “excluir”) | `PUT /clients/{id}` com body `{"status": false}` — a API v2 **não** tem `DELETE /clients/{id}` |
 
 Documentação: [API v2 TiFlux](https://guia-de-uso.tiflux.com/integracoes/api-tiflux/api-v2), [Relacionamentos](https://guia-de-uso.tiflux.com/sistema/clientes/relacionamentos.md).
 

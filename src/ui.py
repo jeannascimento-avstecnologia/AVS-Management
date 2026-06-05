@@ -1700,7 +1700,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
       if (tf.skipped) badges.push('<span class="sys-badge skip">TiFlux: ignorado</span>');
 
-      else if (tf.success) badges.push('<span class="sys-badge ok">TiFlux: excluído</span>');
+      else if (tf.success) badges.push('<span class="sys-badge ok">TiFlux: inativado</span>');
 
       else badges.push('<span class="sys-badge err">TiFlux: falhou</span>');
 

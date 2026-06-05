@@ -65,6 +65,7 @@ async def test_execute_delete_tiflux_only(env):
     from src.config import Settings
 
     with patch("src.orchestrator.TifluxClient") as tf_cls, patch("src.orchestrator.VhsysClient") as vh_cls:
+        tf_cls.return_value.resolve_client_id = AsyncMock(return_value=10)
         tf_cls.return_value.delete_client = AsyncMock(return_value=None)
         vh_cls.return_value.delete_client = AsyncMock()
 
@@ -77,6 +78,7 @@ async def test_execute_delete_tiflux_only(env):
 
     assert result.success is True
     assert result.tiflux.success is True
+    assert "inativado" in result.tiflux.message
     assert result.vhsys.skipped is True
     vh_cls.return_value.delete_client.assert_not_called()
 
@@ -87,6 +89,7 @@ async def test_execute_delete_partial_failure(env):
     from src.integrations.tiflux_client import TifluxApiError
 
     with patch("src.orchestrator.TifluxClient") as tf_cls, patch("src.orchestrator.VhsysClient") as vh_cls:
+        tf_cls.return_value.resolve_client_id = AsyncMock(return_value=10)
         tf_cls.return_value.delete_client = AsyncMock(side_effect=TifluxApiError("negado", 403))
         vh_cls.return_value.delete_client = AsyncMock(return_value={"code": 200})
 

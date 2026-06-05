@@ -86,13 +86,13 @@ flowchart LR
   P --> TF[GET TiFlux clients]
   P --> VH[GET VHSYS clientes]
   UI --> D[POST /excluir]
-  D --> TF2[DELETE TiFlux /clients/id]
+  D --> TF2[PUT TiFlux /clients/id status false]
   D --> VH2[DELETE VHSYS /clientes/id_cliente]
 ```
 
 - Busca: CNPJ → `social_revenue` (TiFlux) + `cnpj_cliente` (VHSYS); nome → `name` / `razao_cliente` + `fantasia_cliente`
 - Exclusão usa **ID interno**, nunca CNPJ no path DELETE
-- TiFlux: remoção permanente; VHSYS: lixeira (`lixeira=Sim` na listagem)
+- TiFlux: **inativação** (`PUT` `status: false`); exclusão definitiva só no painel (2FA). VHSYS: lixeira (`lixeira=Sim` na listagem)
 
 ## Modelo canônico (`CompanyPayload`)
 
