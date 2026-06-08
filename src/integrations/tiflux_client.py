@@ -1,5 +1,7 @@
 import asyncio
 import json
+from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 
 import httpx
 
@@ -475,7 +477,64 @@ class TifluxClient:
             "technical_groups": groups,
         }
 
+    async def iter_active_clients(self, *, max_clients: int = 1500) -> AsyncIterator[dict]:
+        count = 0
+        offset = 1
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            while count < max_clients:
+                response = await self._get_with_retry(
+                    client,
+                    f"{self._base}/clients",
+                    headers=self._auth_headers(),
+                    params={"offset": offset, "limit": self.PAGE_LIMIT, "active": True},
+                    action="listar clientes TiFlux",
+                )
+                items = _extract_client_list(response.json())
+                if not items:
+                    break
+                for item in items:
+                    yield item
+                    count += 1
+                    if count >= max_clients:
+                        return
+                if len(items) < self.PAGE_LIMIT:
+                    break
+                offset += 1
 
+    async def get_last_ticket_datetime(self, client_id: int) -> datetime | None:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await self._get_with_retry(
+                client,
+                f"{self._base}/tickets",
+                headers=self._auth_headers(),
+                params={"client_id": client_id, "offset": 1, "limit": 100},
+                action="listar tickets TiFlux",
+                allow_statuses=frozenset({404, 405}),
+            )
+            if response.status_code in (404, 405):
+                return None
+            return _latest_datetime_from_items(
+                _extract_client_list(response.json()),
+                ("updated_at", "created_at", "opened_at", "last_update", "date"),
+            )
+
+    async def get_last_billing_datetime(self, client_id: int) -> datetime | None:
+        """Última cobrança via histórico de faturamentos (GET /reports/billings/history)."""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await self._get_with_retry(
+                client,
+                f"{self._base}/reports/billings/history",
+                headers=self._auth_headers(),
+                params={"client_id": client_id, "offset": 1, "limit": 100},
+                action="listar histórico de faturamentos TiFlux",
+                allow_statuses=frozenset({404, 405}),
+            )
+            if response.status_code in (404, 405):
+                return None
+            items = _extract_client_list(response.json())
+            if not items:
+                return None
+            return _latest_datetime_from_items(items, ("billing_date",))
 
     async def create_client(
 
@@ -660,11 +719,44 @@ class TifluxClient:
 
 
 
+    async def _get_with_retry(
+        self,
+        client: httpx.AsyncClient,
+        url: str,
+        *,
+        headers: dict[str, str],
+        params: dict[str, object] | None,
+        action: str,
+        max_retries: int = 5,
+        allow_statuses: frozenset[int] = frozenset(),
+    ) -> httpx.Response:
+        delay = 1.0
+        for attempt in range(max_retries):
+            response = await client.get(url, headers=headers, params=params)
+            if response.status_code in allow_statuses:
+                return response
+            if response.status_code != 429:
+                self._ensure_ok(response, action)
+                return response
+            if attempt == max_retries - 1:
+                self._ensure_ok(response, action)
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 10.0)
+        return response
+
     def _ensure_ok(self, response: httpx.Response, action: str) -> None:
 
         if response.status_code == 401:
 
             raise TifluxApiError("Token TiFlux inválido ou sem permissão.", 401)
+
+        if response.status_code == 429:
+
+            raise TifluxApiError(
+                f"Limite de requisições TiFlux atingido ao {action}. Aguarde alguns segundos e tente novamente.",
+                429,
+                response.text,
+            )
 
         if response.status_code >= 400:
 
@@ -736,6 +828,28 @@ def _first_match(data: object, cnpj_digits: str) -> dict | None:
 
 
 
+def _parse_datetime_value(value: object) -> datetime | None:
+    if not value:
+        return None
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text[:19], fmt).replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+def _latest_datetime_from_items(items: list[dict], keys: tuple[str, ...]) -> datetime | None:
+    latest: datetime | None = None
+    for item in items:
+        for key in keys:
+            dt = _parse_datetime_value(item.get(key))
+            if dt and (latest is None or dt > latest):
+                latest = dt
+    return latest
+
+
 def _extract_client_list(data: object) -> list[dict]:
 
     if isinstance(data, list):
@@ -744,7 +858,7 @@ def _extract_client_list(data: object) -> list[dict]:
 
     if isinstance(data, dict):
 
-        for key in ("clients", "data", "items", "results"):
+        for key in ("clients", "data", "items", "results", "billings", "appointments"):
 
             chunk = data.get(key)
 

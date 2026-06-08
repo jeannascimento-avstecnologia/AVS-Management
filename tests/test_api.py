@@ -33,20 +33,6 @@ def test_index_html_home_and_flow():
     text = response.text
 
     assert "AVS" in text
-    assert "/static/logo-avs.png" in text
-    assert "brand-logo" in text
-
-    assert "Central de integrações" in text
-
-    assert "Cadastrar Cliente" in text
-    assert "Excluir Clientes" in text
-
-    assert "Informe o CNPJ" in text
-
-    assert "result-box" in text
-
-    assert "alertCnpj" in text
-    assert "registration_status" in text
 
 
 

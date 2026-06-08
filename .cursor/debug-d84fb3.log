@@ -1,0 +1,9 @@
+{"sessionId":"d84fb3","location":"DormantPage.tsx:load:start","message":"dormant load clicked","data":{"startedAt":1780928984833},"timestamp":1780928984833,"hypothesisId":"B"}
+{"sessionId":"d84fb3","location":"client.ts:request:error","message":"relatorio http error","data":{"url":"/relatorio/empresas-inativas?months=24&limit=500","status":500,"error":"Erro ao listar clientes TiFlux: 429."},"timestamp":1780928985698,"hypothesisId":"A"}
+{"sessionId":"d84fb3","location":"DormantPage.tsx:load:error","message":"dormant api failed","data":{"elapsedMs":865,"error":"Erro ao listar clientes TiFlux: 429."},"timestamp":1780928985698,"hypothesisId":"A"}
+{"sessionId":"d84fb3","location":"DormantPage.tsx:load:start","message":"dormant load clicked","data":{"startedAt":1780928992302},"timestamp":1780928992302,"hypothesisId":"B"}
+{"sessionId":"d84fb3","location":"client.ts:request:error","message":"relatorio http error","data":{"url":"/relatorio/empresas-inativas?months=24&limit=500","status":500,"error":"Erro ao listar tickets TiFlux: 429."},"timestamp":1780929282719,"hypothesisId":"A"}
+{"sessionId":"d84fb3","location":"DormantPage.tsx:load:error","message":"dormant api failed","data":{"elapsedMs":290418,"error":"Erro ao listar tickets TiFlux: 429."},"timestamp":1780929282720,"hypothesisId":"A"}
+{"sessionId":"d84fb3","location":"DormantPage.tsx:load:start","message":"dormant load clicked","data":{"startedAt":1780936234291},"timestamp":1780936234291,"hypothesisId":"B","runId":"post-fix"}
+{"sessionId":"d84fb3","location":"DormantPage.tsx:load:success","message":"dormant api success","data":{"elapsedMs":207273,"total":100,"scanned":100,"clientsLen":100,"truncated":true},"timestamp":1780936441564,"hypothesisId":"C","runId":"post-fix"}
+{"sessionId":"d84fb3","location":"DormantPage.tsx:load:start","message":"dormant load clicked","data":{"startedAt":1780936969994},"timestamp":1780936969994,"hypothesisId":"B","runId":"post-fix"}

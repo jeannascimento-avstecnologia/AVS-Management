@@ -1,5 +1,7 @@
 import asyncio
+import unicodedata
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.cnpj.brasilapi_client import BrasilApiError, fetch_cnpj
@@ -51,7 +53,6 @@ class IntegrationResult:
 
 
 @dataclass
-@dataclass
 class DeleteSystemPreview:
     found: bool
     matches: list[dict[str, Any]] = field(default_factory=list)
@@ -61,11 +62,10 @@ class DeleteSystemPreview:
 
 
 @dataclass
-class DeletePreviewResult:
+class InactivatePreviewResult:
     query: str
     search_mode: str
     tiflux: DeleteSystemPreview
-    vhsys: DeleteSystemPreview
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -73,8 +73,11 @@ class DeletePreviewResult:
             "query": self.query,
             "search_mode": self.search_mode,
             "tiflux": self.tiflux.to_dict(),
-            "vhsys": self.vhsys.to_dict(),
         }
+
+
+# Alias legado
+DeletePreviewResult = InactivatePreviewResult
 
 
 @dataclass
@@ -125,20 +128,60 @@ class ConsultDetailResult:
 
 
 @dataclass
-class DeleteResult:
+class InactivateResult:
     query: str
     tiflux: SystemResult = field(default_factory=lambda: SystemResult(success=False))
-    vhsys: SystemResult = field(default_factory=lambda: SystemResult(success=False))
-    partial: bool = False
     success: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "query": self.query,
             "success": self.success,
-            "partial": self.partial,
             "tiflux": _system_dict(self.tiflux),
-            "vhsys": _system_dict(self.vhsys),
+        }
+
+
+DeleteResult = InactivateResult
+
+
+@dataclass
+class DormantClientEntry:
+    id: int
+    name: str
+    social: str
+    social_revenue: str
+    last_ticket_at: str | None
+    last_billing_at: str | None
+    reasons: list[str]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "id": self.id,
+            "name": self.name,
+            "social": self.social,
+            "social_revenue": self.social_revenue,
+            "last_ticket_at": self.last_ticket_at,
+            "last_billing_at": self.last_billing_at,
+            "reasons": self.reasons,
+        }
+
+
+@dataclass
+class DormantScanResult:
+    months: int
+    scanned: int
+    total: int
+    clients: list[DormantClientEntry]
+    truncated: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "success": True,
+            "months": self.months,
+            "scanned": self.scanned,
+            "total": self.total,
+            "truncated": self.truncated,
+            "clients": [c.to_dict() for c in self.clients],
         }
 
 
@@ -251,7 +294,7 @@ async def preview_cnpj(raw_cnpj: str, settings: Settings) -> PreviewResult:
     except (TifluxApiError, VhsysApiError) as exc:
         raise OrchestratorError(str(exc), getattr(exc, "status_code", None) or 502) from exc
 
-    default_desks = [d["id"] for d in desks if d.get("active", True)]
+    default_desks = resolve_default_desk_ids(desks, settings.default_desk_name_list)
     default_groups = [g["id"] for g in groups]
 
     warnings, requires_override = _build_preview_warnings(company, settings)
@@ -542,136 +585,174 @@ async def fetch_consult_detail(
     return result
 
 
-async def preview_delete_client(query: str, settings: Settings) -> DeletePreviewResult:
+def _normalize_label(value: str) -> str:
+    text = unicodedata.normalize("NFD", value or "")
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    return text.lower().strip()
+
+
+def _desk_matches_name(desk: dict, target: str) -> bool:
+    norm_target = _normalize_label(target)
+    for field in ("display_name", "name"):
+        norm = _normalize_label(str(desk.get(field) or ""))
+        if not norm:
+            continue
+        if norm == norm_target or norm.startswith(norm_target) or norm_target in norm:
+            return True
+    return False
+
+
+def resolve_default_desk_ids(desks: list[dict], names: list[str]) -> list[int]:
+    ids: list[int] = []
+    for target in names:
+        for desk in desks:
+            if not desk.get("active", True):
+                continue
+            desk_id = desk.get("id")
+            if desk_id is None:
+                continue
+            if _desk_matches_name(desk, target) and int(desk_id) not in ids:
+                ids.append(int(desk_id))
+                break
+    return ids
+
+
+async def preview_inactivate_client(query: str, settings: Settings) -> InactivatePreviewResult:
     _ensure_credentials(settings)
     search_mode, term = _resolve_client_search(query)
-
     tiflux = TifluxClient(settings)
-    vhsys = VhsysClient(settings)
-
-    async def _search_tiflux() -> list[dict]:
-        if search_mode == "cnpj":
-            return await tiflux.find_matches_by_cnpj(term, limit=10)
-        return await tiflux.find_by_name(term, limit=10)
-
-    async def _search_vhsys() -> list[dict]:
-        if search_mode == "cnpj":
-            return await vhsys.find_matches_by_cnpj(format_cnpj(term), limit=10)
-        return await vhsys.find_by_name(term, limit=10)
 
     try:
-        tf_items, vh_items = await asyncio.gather(_search_tiflux(), _search_vhsys())
-    except (TifluxApiError, VhsysApiError) as exc:
+        if search_mode == "cnpj":
+            tf_items = await tiflux.find_matches_by_cnpj(term, limit=10)
+        else:
+            tf_items = await tiflux.find_by_name(term, limit=10)
+    except TifluxApiError as exc:
         raise OrchestratorError(str(exc), getattr(exc, "status_code", None) or 502) from exc
 
     tf_matches = [_tiflux_match_summary(x) for x in tf_items if x.get("id") is not None]
-    vh_matches = [_vhsys_match_summary(x) for x in vh_items if x.get("id_cliente") is not None]
-
     display_query = format_cnpj(term) if search_mode == "cnpj" else term
 
-    return DeletePreviewResult(
+    return InactivatePreviewResult(
         query=display_query,
         search_mode=search_mode,
         tiflux=DeleteSystemPreview(found=bool(tf_matches), matches=tf_matches),
-        vhsys=DeleteSystemPreview(found=bool(vh_matches), matches=vh_matches),
     )
 
 
-async def execute_delete(
+preview_delete_client = preview_inactivate_client
+
+
+async def execute_inactivate(
     query: str,
     settings: Settings,
     *,
     tiflux_client_id: int | None = None,
-    vhsys_client_id: int | None = None,
-) -> DeleteResult:
+) -> InactivateResult:
     _ensure_credentials(settings)
     search_mode, term = _resolve_delete_search(query)
     display_query = format_cnpj(term) if search_mode == "cnpj" else term
 
-    if tiflux_client_id is None and vhsys_client_id is None:
-        raise OrchestratorError(
-            "Selecione ao menos um cliente para excluir (TiFlux ou VHSYS).",
-            400,
-        )
+    if tiflux_client_id is None:
+        raise OrchestratorError("Selecione um cliente TiFlux para inativar.", 400)
 
     tiflux = TifluxClient(settings)
-    vhsys = VhsysClient(settings)
-    result = DeleteResult(query=display_query)
+    result = InactivateResult(query=display_query)
 
-    async def _tiflux_delete() -> SystemResult:
-        if tiflux_client_id is None:
-            return SystemResult(
-                success=True,
-                skipped=True,
-                message="TiFlux não selecionado para exclusão.",
-            )
-        try:
-            client_id = int(tiflux_client_id)
-            # #region agent log
-            dbg(
-                "H2",
-                "orchestrator._tiflux_delete:entry",
-                "Início exclusão TiFlux",
-                {
-                    "tiflux_client_id": client_id,
-                    "search_mode": search_mode,
-                    "term_len": len(term),
-                },
-            )
-            # #endregion
-            if search_mode == "cnpj":
-                client_id = await tiflux.resolve_client_id(client_id, cnpj_digits=term)
-            await tiflux.delete_client(client_id)
-            return SystemResult(
-                success=True,
-                message="Cliente inativado no TiFlux.",
-                data={"id": client_id},
-            )
-        except TifluxApiError as exc:
-            # #region agent log
-            dbg(
-                "H1,H4",
-                "orchestrator._tiflux_delete:error",
-                "TifluxApiError na exclusão",
-                {
-                    "error": str(exc),
-                    "status_code": getattr(exc, "status_code", None),
-                    "body_snippet": (getattr(exc, "body", "") or "")[:600],
-                },
-            )
-            # #endregion
-            return SystemResult(success=False, error=str(exc), message="Falha no TiFlux.")
-
-    async def _vhsys_delete() -> SystemResult:
-        if vhsys_client_id is None:
-            return SystemResult(
-                success=True,
-                skipped=True,
-                message="VHSYS não selecionado para exclusão.",
-            )
-        try:
-            data = await vhsys.delete_client(vhsys_client_id)
-            return SystemResult(
-                success=True,
-                message="Cliente enviado à lixeira no VHSYS.",
-                data=data,
-            )
-        except VhsysApiError as exc:
-            return SystemResult(success=False, error=str(exc), message="Falha no VHSYS.")
-
-    tf_res, vh_res = await asyncio.gather(_tiflux_delete(), _vhsys_delete())
-    result.tiflux = tf_res
-    result.vhsys = vh_res
-
-    attempted = [
-        r for r, selected in ((tf_res, tiflux_client_id is not None), (vh_res, vhsys_client_id is not None))
-        if selected
-    ]
-    ok_count = sum(1 for r in attempted if r.success)
-    result.success = bool(attempted) and ok_count == len(attempted)
-    result.partial = bool(attempted) and 0 < ok_count < len(attempted)
+    try:
+        client_id = int(tiflux_client_id)
+        if search_mode == "cnpj":
+            client_id = await tiflux.resolve_client_id(client_id, cnpj_digits=term)
+        await tiflux.delete_client(client_id)
+        result.tiflux = SystemResult(
+            success=True,
+            message="Cliente inativado no TiFlux.",
+            data={"id": client_id},
+        )
+        result.success = True
+    except TifluxApiError as exc:
+        result.tiflux = SystemResult(success=False, error=str(exc), message="Falha no TiFlux.")
 
     return result
+
+
+execute_delete = execute_inactivate
+
+
+def _parse_iso_datetime(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    text = str(value).strip()
+    for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            dt = datetime.strptime(text[:19], fmt)
+            return dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            continue
+    return None
+
+
+async def scan_dormant_clients(
+    settings: Settings,
+    *,
+    months: int = 24,
+    limit: int = 100,
+) -> DormantScanResult:
+    import asyncio
+
+    _ensure_credentials(settings)
+    tiflux = TifluxClient(settings)
+    cutoff = datetime.now(timezone.utc) - timedelta(days=months * 30)
+    dormant: list[DormantClientEntry] = []
+    scanned = 0
+    scan_cap = min(max(limit * 4, limit), 400)
+
+    async for client in tiflux.iter_active_clients(max_clients=scan_cap):
+        scanned += 1
+        client_id = int(client["id"])
+        last_ticket = await tiflux.get_last_ticket_datetime(client_id)
+        await asyncio.sleep(0.15)
+        last_billing = await tiflux.get_last_billing_datetime(client_id)
+        await asyncio.sleep(0.15)
+
+        no_ticket = last_ticket is None or last_ticket < cutoff
+        no_billing = last_billing is None or last_billing < cutoff
+        if not (no_ticket or no_billing):
+            continue
+
+        reasons: list[str] = []
+        if no_ticket:
+            reasons.append("sem_ticket_24m")
+        if no_billing:
+            reasons.append("sem_cobranca_24m")
+
+        dormant.append(
+            DormantClientEntry(
+                id=client_id,
+                name=str(client.get("name") or ""),
+                social=str(client.get("social") or ""),
+                social_revenue=str(client.get("social_revenue") or ""),
+                last_ticket_at=last_ticket.isoformat() if last_ticket else None,
+                last_billing_at=last_billing.isoformat() if last_billing else None,
+                reasons=reasons,
+            )
+        )
+        if len(dormant) >= limit:
+            return DormantScanResult(
+                months=months,
+                scanned=scanned,
+                total=len(dormant),
+                clients=dormant,
+                truncated=True,
+            )
+
+    return DormantScanResult(
+        months=months,
+        scanned=scanned,
+        total=len(dormant),
+        clients=dormant,
+        truncated=False,
+    )
 
 
 async def integrate_cnpj(raw_cnpj: str, settings: Settings) -> IntegrationResult:

@@ -31,17 +31,35 @@ class Settings(BaseSettings):
     tiflux_technical_group_ids: str = ""
     vhsys_base_url: str = "https://api.vhsys.com/v2"
     require_active_cnpj: bool = True
-    user_agent: str = "IntegracaoTifluxVHSYS/1.0"
+    user_agent: str = "AVS-Management/1.4"
+    tiflux_default_desk_names: str = "Comercial,Serviços Avulsos,Vendas"
+    auth_enabled: bool = False
+    session_secret: str = "change-me-in-production"
+    azure_tenant_id: str = ""
+    azure_client_id: str = ""
+    azure_client_secret: str = ""
+    azure_redirect_uri: str = "http://127.0.0.1:8000/auth/callback"
+    allowed_user_emails: str = ""
 
     @field_validator(
         "tiflux_api_token",
         "vhsys_access_token",
         "vhsys_secret_access_token",
+        "azure_client_secret",
+        "session_secret",
         mode="before",
     )
     @classmethod
     def normalize_tokens(cls, value: object) -> object:
         return _strip_env_wrappers(value)
+
+    @property
+    def allowed_user_email_list(self) -> list[str]:
+        return [e.strip().lower() for e in self.allowed_user_emails.split(",") if e.strip()]
+
+    @property
+    def default_desk_name_list(self) -> list[str]:
+        return [n.strip() for n in self.tiflux_default_desk_names.split(",") if n.strip()]
 
 
 @lru_cache
