@@ -40,12 +40,16 @@ class IntegrationResult:
     vhsys: SystemResult = field(default_factory=lambda: SystemResult(success=False))
     partial: bool = False
     success: bool = False
+    all_duplicates: bool = False
+    duplicates: dict[str, bool] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "cnpj": self.cnpj,
             "success": self.success,
             "partial": self.partial,
+            "all_duplicates": self.all_duplicates,
+            "duplicates": self.duplicates,
             "company": company_to_dict(self.company) if self.company else None,
             "tiflux": _system_dict(self.tiflux),
             "vhsys": _system_dict(self.vhsys),
@@ -318,6 +322,56 @@ async def preview_cnpj(raw_cnpj: str, settings: Settings) -> PreviewResult:
     )
 
 
+def _resolve_integration_targets(targets: list[str] | None) -> frozenset[str]:
+    if not targets:
+        return frozenset({"tiflux", "vhsys"})
+    normalized = {str(t).strip().lower() for t in targets if str(t).strip()}
+    allowed = normalized & {"tiflux", "vhsys"}
+    if not allowed:
+        raise OrchestratorError("Informe ao menos um sistema para integrar (tiflux ou vhsys).", 400)
+    return frozenset(allowed)
+
+
+def _finalize_integration_result(
+    result: IntegrationResult,
+    tf_res: SystemResult,
+    vh_res: SystemResult,
+    targets: frozenset[str],
+) -> IntegrationResult:
+    in_tf = "tiflux" in targets
+    in_vh = "vhsys" in targets
+
+    dup_tf = in_tf and tf_res.skipped and tf_res.success
+    dup_vh = in_vh and vh_res.skipped and vh_res.success
+    created_tf = in_tf and tf_res.success and not tf_res.skipped
+    created_vh = in_vh and vh_res.success and not vh_res.skipped
+
+    result.duplicates = {"tiflux": dup_tf, "vhsys": dup_vh}
+
+    targeted: list[SystemResult] = []
+    if in_tf:
+        targeted.append(tf_res)
+    if in_vh:
+        targeted.append(vh_res)
+
+    if targeted and all(r.skipped and r.success for r in targeted):
+        result.all_duplicates = True
+        result.success = False
+        result.partial = False
+        return result
+
+    if created_tf or created_vh:
+        result.success = True
+        result.partial = dup_tf or dup_vh or (created_tf != created_vh and in_tf and in_vh)
+        result.all_duplicates = False
+        return result
+
+    result.success = False
+    result.partial = False
+    result.all_duplicates = False
+    return result
+
+
 async def integrate_company(
     company_data: dict[str, Any],
     desk_ids: list[int],
@@ -325,6 +379,7 @@ async def integrate_company(
     settings: Settings,
     *,
     override_inactive_registration: bool = False,
+    targets: list[str] | None = None,
 ) -> IntegrationResult:
     _ensure_credentials(settings)
     company = company_from_dict(company_data)
@@ -359,10 +414,28 @@ async def integrate_company(
 
     existing_tf = await tiflux.find_by_cnpj(digits)
     existing_vh = await vhsys.find_by_cnpj(company.cnpj_formatted)
+    # #region agent log
+    dbg(
+        "H1",
+        "orchestrator.py:integrate_company",
+        "duplicate_lookup",
+        {
+            "exists_tiflux": existing_tf is not None,
+            "exists_vhsys": existing_vh is not None,
+        },
+    )
+    # #endregion
 
+    target_set = _resolve_integration_targets(targets)
     result = IntegrationResult(cnpj=company.cnpj_formatted, company=company)
 
     async def _tiflux_task() -> SystemResult:
+        if "tiflux" not in target_set:
+            return SystemResult(
+                success=True,
+                skipped=True,
+                message="TiFlux não incluído nesta integração.",
+            )
         if existing_tf:
             return SystemResult(
                 success=True,
@@ -398,6 +471,12 @@ async def integrate_company(
             return SystemResult(success=False, error=str(exc), message="Falha no TiFlux.")
 
     async def _vhsys_task() -> SystemResult:
+        if "vhsys" not in target_set:
+            return SystemResult(
+                success=True,
+                skipped=True,
+                message="VHSYS não incluído nesta integração.",
+            )
         if existing_vh:
             return SystemResult(
                 success=True,
@@ -414,10 +493,24 @@ async def integrate_company(
     tf_res, vh_res = await asyncio.gather(_tiflux_task(), _vhsys_task())
     result.tiflux = tf_res
     result.vhsys = vh_res
-
-    ok_count = int(tf_res.success) + int(vh_res.success)
-    result.partial = ok_count == 1
-    result.success = ok_count == 2
+    _finalize_integration_result(result, tf_res, vh_res, target_set)
+    # #region agent log
+    dbg(
+        "H5",
+        "orchestrator.py:integrate_company",
+        "integration_result_flags",
+        {
+            "targets": sorted(target_set),
+            "partial": result.partial,
+            "success": result.success,
+            "all_duplicates": result.all_duplicates,
+            "tf_success": tf_res.success,
+            "tf_skipped": tf_res.skipped,
+            "vh_success": vh_res.success,
+            "vh_skipped": vh_res.skipped,
+        },
+    )
+    # #endregion
 
     return result
 
@@ -692,14 +785,24 @@ def _parse_iso_datetime(value: str | None) -> datetime | None:
     return None
 
 
+async def _emit_dormant_progress(
+    on_progress: Any | None,
+    payload: dict[str, Any],
+) -> None:
+    if on_progress is None:
+        return
+    result = on_progress(payload)
+    if asyncio.iscoroutine(result):
+        await result
+
+
 async def scan_dormant_clients(
     settings: Settings,
     *,
     months: int = 24,
     limit: int = 100,
+    on_progress: Any | None = None,
 ) -> DormantScanResult:
-    import asyncio
-
     _ensure_credentials(settings)
     tiflux = TifluxClient(settings)
     cutoff = datetime.now(timezone.utc) - timedelta(days=months * 30)
@@ -707,11 +810,50 @@ async def scan_dormant_clients(
     scanned = 0
     scan_cap = min(max(limit * 4, limit), 400)
 
+    await _emit_dormant_progress(
+        on_progress,
+        {
+            "phase": "start",
+            "scanned": 0,
+            "found": 0,
+            "limit": limit,
+            "scan_cap": scan_cap,
+            "percent": 0,
+        },
+    )
+
     async for client in tiflux.iter_active_clients(max_clients=scan_cap):
         scanned += 1
         client_id = int(client["id"])
+        display_name = str(client.get("social") or client.get("name") or "")
+
+        await _emit_dormant_progress(
+            on_progress,
+            {
+                "phase": "tickets",
+                "scanned": scanned,
+                "found": len(dormant),
+                "limit": limit,
+                "scan_cap": scan_cap,
+                "percent": min(99, int((scanned / scan_cap) * 100)),
+                "current_client": display_name,
+            },
+        )
         last_ticket = await tiflux.get_last_ticket_datetime(client_id)
         await asyncio.sleep(0.15)
+
+        await _emit_dormant_progress(
+            on_progress,
+            {
+                "phase": "billing",
+                "scanned": scanned,
+                "found": len(dormant),
+                "limit": limit,
+                "scan_cap": scan_cap,
+                "percent": min(99, int((scanned / scan_cap) * 100)),
+                "current_client": display_name,
+            },
+        )
         last_billing = await tiflux.get_last_billing_datetime(client_id)
         await asyncio.sleep(0.15)
 
@@ -736,6 +878,18 @@ async def scan_dormant_clients(
                 last_billing_at=last_billing.isoformat() if last_billing else None,
                 reasons=reasons,
             )
+        )
+        await _emit_dormant_progress(
+            on_progress,
+            {
+                "phase": "scanning",
+                "scanned": scanned,
+                "found": len(dormant),
+                "limit": limit,
+                "scan_cap": scan_cap,
+                "percent": min(99, int((scanned / scan_cap) * 100)),
+                "current_client": display_name,
+            },
         )
         if len(dormant) >= limit:
             return DormantScanResult(

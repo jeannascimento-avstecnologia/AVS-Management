@@ -13,6 +13,9 @@ export type DormantClientRow = {
   social_revenue: string
   last_ticket_at: string | null
   last_billing_at: string | null
+  reasonCodes: string[]
+  reasonLabels: string[]
+  /** @deprecated use reasonLabels */
   reasons: string[]
 }
 
@@ -25,15 +28,21 @@ export type ParsedDormantReport = {
 }
 
 export function parseDormantReport(data: Record<string, unknown>): ParsedDormantReport {
-  const clients = ((data.clients as Array<Record<string, unknown>>) || []).map((c) => ({
-    id: Number(c.id),
-    name: String(c.name || ''),
-    social: String(c.social || ''),
-    social_revenue: String(c.social_revenue || ''),
-    last_ticket_at: c.last_ticket_at ? String(c.last_ticket_at) : null,
-    last_billing_at: c.last_billing_at ? String(c.last_billing_at) : null,
-    reasons: ((c.reasons as string[]) || []).map((r) => REASON_LABELS[r] || r.replace(/_/g, ' ')),
-  }))
+  const clients = ((data.clients as Array<Record<string, unknown>>) || []).map((c) => {
+    const reasonCodes = ((c.reasons as string[]) || [])
+    const reasonLabels = reasonCodes.map((r) => REASON_LABELS[r] || r.replace(/_/g, ' '))
+    return {
+      id: Number(c.id),
+      name: String(c.name || ''),
+      social: String(c.social || ''),
+      social_revenue: String(c.social_revenue || ''),
+      last_ticket_at: c.last_ticket_at ? String(c.last_ticket_at) : null,
+      last_billing_at: c.last_billing_at ? String(c.last_billing_at) : null,
+      reasonCodes,
+      reasonLabels,
+      reasons: reasonLabels,
+    }
+  })
   return {
     months: Number(data.months) || 24,
     scanned: Number(data.scanned) || 0,
@@ -50,7 +59,7 @@ export function buildDormantReportHtml(parsed: ParsedDormantReport, raw: Record<
       <td>${formatCnpj(c.social_revenue)}</td>
       <td>${formatDate(c.last_ticket_at)}</td>
       <td>${formatDate(c.last_billing_at)}</td>
-      <td>${c.reasons.join(', ')}</td>
+      <td>${c.reasonLabels.join(', ')}</td>
     </tr>`).join('')
 
   return `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="utf-8">

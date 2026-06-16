@@ -1,13 +1,27 @@
 import { useState } from 'react'
+import { useAutoAnimate } from '@formkit/auto-animate/react'
 import { toast } from 'sonner'
-import { api } from '../api/client'
-import { Button } from '../components/ui/Button'
-import { Card } from '../components/ui/Card'
-import { Input } from '../components/ui/Input'
-import { Modal } from '../components/ui/Modal'
-import { Spinner } from '../components/ui/Spinner'
-import { Stepper } from '../components/ui/Stepper'
-import { formatCnpj } from '../lib/format'
+import { CheckCircle2 } from 'lucide-react'
+import { api } from '@/api/client'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { CnpjInput } from '@/components/ui/CnpjInput'
+import { Label } from '@/components/ui/label'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import { WizardStepper } from '@/components/ui/wizard-stepper'
+import { EmptyState } from '@/components/feedback/EmptyState'
+import { formatCnpj } from '@/lib/format'
+import { Search } from 'lucide-react'
 
 export function InactivatePage() {
   const [step, setStep] = useState(1)
@@ -17,6 +31,7 @@ export function InactivatePage() {
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [result, setResult] = useState<Record<string, unknown> | null>(null)
+  const [listRef] = useAutoAnimate<HTMLDivElement>()
 
   const matches = ((preview?.tiflux as Record<string, unknown>)?.matches as Array<Record<string, unknown>>) || []
 
@@ -54,51 +69,89 @@ export function InactivatePage() {
 
   return (
     <div className="mx-auto max-w-3xl">
-      <h1 className="font-display mb-6 text-2xl font-bold">Inativar cliente</h1>
-      <Stepper steps={['Busca', 'Conferência', 'Resultado']} current={step} />
+      <h1 className="mb-2 text-2xl font-semibold tracking-tight">Inativar cliente</h1>
+      <p className="mb-6 text-sm text-muted-foreground">Busque por CNPJ ou nome e inative no TiFlux.</p>
+      <WizardStepper steps={['Busca', 'Conferência', 'Resultado']} current={step} />
 
       {step === 1 && (
         <Card>
-          <form onSubmit={handleSearch} className="space-y-4">
-            <label className="text-sm font-medium">CNPJ ou nome</label>
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} required />
-            <Button type="submit" disabled={loading}>{loading ? <Spinner /> : 'Buscar'}</Button>
-          </form>
+          <CardContent className="pt-6">
+            <form onSubmit={handleSearch} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="query">CNPJ ou nome</Label>
+                <CnpjInput id="query" mode="query" value={query} onValueChange={setQuery} placeholder="CNPJ ou nome" required />
+              </div>
+              <Button type="submit" loading={loading}>Buscar</Button>
+            </form>
+          </CardContent>
         </Card>
       )}
 
       {step === 2 && (
-        <Card className="space-y-4">
-          {!matches.length ? <p className="text-slate-500">Nenhum cliente ativo encontrado no TiFlux.</p> : (
-            <div className="space-y-2">
-              {matches.map((m) => (
-                <label key={String(m.id)} className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-200 p-3 hover:bg-slate-50">
-                  <input type="radio" name="pick" checked={selectedId === Number(m.id)} onChange={() => setSelectedId(Number(m.id))} />
-                  <div>
-                    <p className="font-medium">{String(m.name || m.social)}</p>
-                    <p className="text-xs text-slate-500">CNPJ: {formatCnpj(String(m.social_revenue || ''))}</p>
-                  </div>
-                </label>
-              ))}
+        <Card>
+          <CardContent className="space-y-4 pt-6">
+            {!matches.length ? (
+              <EmptyState icon={Search} title="Nenhum cliente ativo" description="Nenhum cliente ativo encontrado no TiFlux." />
+            ) : (
+              <RadioGroup value={String(selectedId ?? '')} onValueChange={(v) => setSelectedId(Number(v))}>
+                <div ref={listRef} className="space-y-2">
+                  {matches.map((m) => (
+                    <label
+                      key={String(m.id)}
+                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4 transition-colors hover:bg-accent"
+                    >
+                      <RadioGroupItem value={String(m.id)} className="mt-0.5" />
+                      <div>
+                        <p className="font-medium">{String(m.name || m.social)}</p>
+                        <p className="font-mono text-xs text-muted-foreground">
+                          CNPJ: {formatCnpj(String(m.social_revenue || ''))}
+                        </p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </RadioGroup>
+            )}
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={() => setStep(1)}>Voltar</Button>
+              <Button variant="destructive" disabled={!selectedId} onClick={() => setConfirmOpen(true)}>
+                Inativar no TiFlux
+              </Button>
             </div>
-          )}
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => setStep(1)}>Voltar</Button>
-            <Button disabled={!selectedId} onClick={() => setConfirmOpen(true)}>Inativar no TiFlux</Button>
-          </div>
+          </CardContent>
         </Card>
       )}
 
       {step === 3 && result && (
         <Card>
-          <p className="text-green-700">{(result.tiflux as Record<string, unknown>)?.message as string || 'Operação concluída.'}</p>
-          <Button className="mt-4" variant="secondary" onClick={() => { setStep(1); setPreview(null); setResult(null) }}>Nova inativação</Button>
+          <CardContent className="flex flex-col items-center gap-4 py-10 text-center">
+            <CheckCircle2 className="h-12 w-12 text-emerald-600" />
+            <p className="font-medium">
+              {(result.tiflux as Record<string, unknown>)?.message as string || 'Operação concluída.'}
+            </p>
+            <Button variant="outline" onClick={() => { setStep(1); setPreview(null); setResult(null); setQuery('') }}>
+              Nova inativação
+            </Button>
+          </CardContent>
         </Card>
       )}
 
-      <Modal open={confirmOpen} title="Confirmar inativação" onClose={() => setConfirmOpen(false)} onConfirm={handleInactivate} confirmLabel={loading ? 'Processando...' : 'Confirmar'}>
-        O cliente será inativado no TiFlux (status inativo). Esta ação não remove dados do VHSYS.
-      </Modal>
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar inativação</AlertDialogTitle>
+            <AlertDialogDescription>
+              O cliente será inativado no TiFlux (status inativo). Esta ação não remove dados do VHSYS.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction onClick={handleInactivate} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
+              {loading ? 'Processando…' : 'Confirmar'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

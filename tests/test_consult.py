@@ -124,8 +124,9 @@ def test_consulta_detalhe_route_ok(env):
     assert res.json()["success"] is True
 
 
-def test_index_has_consulta_menu(env):
+def test_index_serves_spa_shell(env):
     res = client.get("/")
     assert res.status_code == 200
-    assert "Consulta status do cliente" in res.text
-    assert "menuConsulta" in res.text
+    assert "AVS Management" in res.text
+    assert 'id="root"' in res.text
+    assert "/assets/index-" in res.text

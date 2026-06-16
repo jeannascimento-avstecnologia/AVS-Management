@@ -11,7 +11,15 @@ def get_current_user(request: Request) -> dict[str, Any] | None:
     settings = get_settings()
     if not settings.auth_enabled:
         return {"email": "dev@local", "name": "Desenvolvimento", "dev_mode": True}
-    return request.session.get("user")
+    user = request.session.get("user")
+    if user:
+        return user
+    if settings.auth_provider == "local":
+        from src.auth.local import try_remember_login
+
+        if try_remember_login(request):
+            return request.session.get("user")
+    return None
 
 
 def require_user(request: Request) -> dict[str, Any]:

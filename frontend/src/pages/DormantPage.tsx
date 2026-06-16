@@ -1,62 +1,123 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { api } from '../api/client'
-import { DormantReportView } from '../components/dormant/DormantReportView'
-import { Button } from '../components/ui/Button'
-import { Card } from '../components/ui/Card'
-import { Spinner } from '../components/ui/Spinner'
+import { api, type DormantProgress } from '@/api/client'
+import { DormantReportView } from '@/components/dormant/DormantReportView'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+import { Progress } from '@/components/ui/progress'
+import { Badge } from '@/components/ui/badge'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+const PHASE_LABELS: Record<DormantProgress['phase'], string> = {
+  start: 'Iniciando varredura…',
+  tickets: 'Consultando tickets',
+  billing: 'Consultando cobranças',
+  scanning: 'Analisando clientes',
+}
 
 export function DormantPage() {
   const [loading, setLoading] = useState(false)
+  const [months, setMonths] = useState('24')
   const [data, setData] = useState<Record<string, unknown> | null>(null)
+  const [progress, setProgress] = useState<DormantProgress | null>(null)
+  const cancelRef = useRef<(() => void) | null>(null)
 
   async function load() {
     setLoading(true)
-    const startedAt = Date.now()
-    // #region agent log
-    fetch('http://127.0.0.1:7478/ingest/8cfaa81f-b56e-4ac1-8010-5fd779a0abab',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d84fb3'},body:JSON.stringify({sessionId:'d84fb3',location:'DormantPage.tsx:load:start',message:'dormant load clicked',data:{startedAt},timestamp:Date.now(),hypothesisId:'B',runId:'post-fix'})}).catch(()=>{});
-    // #endregion
+    setProgress(null)
+    setData(null)
+    const m = Number(months)
+    const stream = api.dormantReportStream((p) => setProgress(p), m, 100)
+    cancelRef.current = stream.cancel
     try {
-      const res = await api.dormantReport()
-      // #region agent log
-      fetch('http://127.0.0.1:7478/ingest/8cfaa81f-b56e-4ac1-8010-5fd779a0abab',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d84fb3'},body:JSON.stringify({sessionId:'d84fb3',location:'DormantPage.tsx:load:success',message:'dormant api success',data:{elapsedMs:Date.now()-startedAt,total:res.total,scanned:res.scanned,clientsLen:Array.isArray(res.clients)?res.clients.length:null,truncated:res.truncated},timestamp:Date.now(),hypothesisId:'C',runId:'post-fix'})}).catch(()=>{});
-      // #endregion
+      const res = await stream.promise
+      setProgress({
+        phase: 'scanning',
+        scanned: Number(res.scanned),
+        found: Number(res.total),
+        limit: 100,
+        scan_cap: Number(res.scanned) || 100,
+        percent: 100,
+      })
       setData(res)
       toast.success(`Relatório gerado: ${res.total} empresa(s)`)
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7478/ingest/8cfaa81f-b56e-4ac1-8010-5fd779a0abab',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d84fb3'},body:JSON.stringify({sessionId:'d84fb3',location:'DormantPage.tsx:load:error',message:'dormant api failed',data:{elapsedMs:Date.now()-startedAt,error:err instanceof Error?err.message:String(err)},timestamp:Date.now(),hypothesisId:'A',runId:'post-fix'})}).catch(()=>{});
-      // #endregion
-      toast.error(err instanceof Error ? err.message : 'Erro ao gerar relatório')
+      if (err instanceof Error && err.message !== 'CANCELLED') {
+        toast.error(err.message)
+      }
     } finally {
       setLoading(false)
+      cancelRef.current = null
     }
   }
 
+  function cancel() {
+    cancelRef.current?.()
+    cancelRef.current = null
+    setLoading(false)
+    setProgress(null)
+    toast.info('Geração do relatório cancelada')
+  }
+
+  const progressLabel = progress
+    ? `${PHASE_LABELS[progress.phase]} · ${progress.scanned}/${progress.scan_cap} · ${progress.found} inativa(s)`
+    : 'Preparando…'
+
   return (
     <div className="mx-auto max-w-6xl">
-      <h1 className="font-display mb-2 text-2xl font-bold text-avs-navy">Empresas sem atividade (24 meses)</h1>
-      <p className="mb-6 text-sm text-slate-600">
-        Empresas sem ticket/chamado ou sem cobrança no TiFlux nos últimos 24 meses.
+      <h1 className="mb-2 text-2xl font-semibold tracking-tight">Empresas sem atividade</h1>
+      <p className="mb-6 text-sm text-muted-foreground">
+        Sem ticket ou cobrança no TiFlux no período selecionado.
       </p>
 
       {!data && (
         <Card className="mb-6">
-          <Button onClick={load} disabled={loading}>
-            {loading ? <><Spinner /> Gerando relatório...</> : 'Gerar relatório'}
-          </Button>
-          {loading && (
-            <p className="mt-3 text-sm text-slate-500">
-              Consultando TiFlux… isso pode levar alguns minutos dependendo da quantidade de clientes.
-            </p>
-          )}
+          <CardContent className="space-y-4 pt-6">
+            <div className="flex flex-wrap items-end gap-4">
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Período</p>
+                <Select value={months} onValueChange={setMonths} disabled={loading}>
+                  <SelectTrigger className="w-[140px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="12">12 meses</SelectItem>
+                    <SelectItem value="24">24 meses</SelectItem>
+                    <SelectItem value="36">36 meses</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button onClick={load} loading={loading}>Gerar relatório</Button>
+              {loading && (
+                <Button variant="outline" onClick={cancel}>Cancelar</Button>
+              )}
+            </div>
+            {loading && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground">{progressLabel}</span>
+                  <span className="font-mono text-xs">{progress?.percent ?? 0}%</span>
+                </div>
+                <Progress value={progress?.percent ?? 2} />
+                {progress?.current_client && (
+                  <Badge variant="secondary" className="font-normal">
+                    {progress.current_client}
+                  </Badge>
+                )}
+              </div>
+            )}
+          </CardContent>
         </Card>
       )}
 
       {data && (
-        <Card className="!border-0 !bg-transparent !p-0 !shadow-none">
-          <DormantReportView raw={data} onNewReport={() => setData(null)} />
-        </Card>
+        <DormantReportView raw={data} onNewReport={() => { setData(null); setProgress(null) }} />
       )}
     </div>
   )

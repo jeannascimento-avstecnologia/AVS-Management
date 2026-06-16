@@ -21,6 +21,27 @@ copy .env.example .env
 
 Edite `.env` com seus tokens.
 
+### Autenticação local (e-mail + senha)
+
+1. Configure `AUTH_ENABLED=true`, `AUTH_PROVIDER=local` e as variáveis SMTP no `.env`.
+2. Crie os usuários iniciais:
+
+```bash
+python -m src.auth.cli seed
+```
+
+3. Distribua as senhas temporárias exibidas no terminal.
+4. Política de senha: mínimo **5 caracteres**, com letras maiúsculas, minúsculas e números. **Sem expiração** periódica.
+5. Recuperação de senha: tela **Esqueci minha senha** envia link por e-mail (SMTP M365).
+
+Comandos úteis:
+
+```bash
+python -m src.auth.cli list-users
+python -m src.auth.cli create-user email@avs.com.br "Nome Completo"
+python -m src.auth.cli reset-password email@avs.com.br
+```
+
 ## Executar
 
 ```bash

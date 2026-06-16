@@ -1,5 +1,3 @@
-from functools import lru_cache
-
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,7 +32,21 @@ class Settings(BaseSettings):
     user_agent: str = "AVS-Management/1.4"
     tiflux_default_desk_names: str = "Comercial,Serviços Avulsos,Vendas"
     auth_enabled: bool = False
+    auth_provider: str = "local"
     session_secret: str = "change-me-in-production"
+    app_base_url: str = "http://127.0.0.1:8000"
+    auth_db_path: str = "data/auth.db"
+    session_idle_hours: int = 8
+    remember_me_days: int = 30
+    password_reset_token_hours: int = 1
+    login_max_attempts: int = 5
+    login_lockout_minutes: int = 15
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from: str = ""
+    smtp_use_tls: bool = True
     azure_tenant_id: str = ""
     azure_client_id: str = ""
     azure_client_secret: str = ""
@@ -47,6 +59,7 @@ class Settings(BaseSettings):
         "vhsys_secret_access_token",
         "azure_client_secret",
         "session_secret",
+        "smtp_password",
         mode="before",
     )
     @classmethod
@@ -62,10 +75,9 @@ class Settings(BaseSettings):
         return [n.strip() for n in self.tiflux_default_desk_names.split(",") if n.strip()]
 
 
-@lru_cache
 def get_settings() -> Settings:
     return Settings()
 
 
 def clear_settings_cache() -> None:
-    get_settings.cache_clear()
+    """Mantido para compatibilidade com testes; settings não são mais cacheadas."""
