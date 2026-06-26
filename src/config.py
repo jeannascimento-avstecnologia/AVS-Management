@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     auth_provider: str = "local"
     session_secret: str = "change-me-in-production"
     app_base_url: str = "http://127.0.0.1:8000"
+    # vazio = inferir pelo APP_BASE_URL | development | production
+    app_env: str = ""
     auth_db_path: str = "data/auth.db"
     session_idle_hours: int = 8
     remember_me_days: int = 30
