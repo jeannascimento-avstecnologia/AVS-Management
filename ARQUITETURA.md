@@ -1,4 +1,4 @@
-# Arquitetura — Integração CNPJ → TiFlux + VHSYS
+# Arquitetura — AVS Management
 
 ## Objetivo
 

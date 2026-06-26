@@ -52,8 +52,9 @@ class Settings(BaseSettings):
     azure_client_secret: str = ""
     azure_redirect_uri: str = "http://127.0.0.1:8000/auth/callback"
     allowed_user_emails: str = ""
+    trusted_proxy_ips: str = "127.0.0.1"
     tiflux_min_request_interval_ms: int = 400
-    tiflux_dormant_scan_max: int = 2000
+    tiflux_dormant_scan_max: int = 0
     tiflux_dormant_batch_pause_every: int = 20
     tiflux_dormant_batch_pause_ms: int = 2000
 
@@ -73,6 +74,10 @@ class Settings(BaseSettings):
     @property
     def allowed_user_email_list(self) -> list[str]:
         return [e.strip().lower() for e in self.allowed_user_emails.split(",") if e.strip()]
+
+    @property
+    def trusted_proxy_ip_list(self) -> list[str]:
+        return [ip.strip() for ip in self.trusted_proxy_ips.split(",") if ip.strip()]
 
     @property
     def default_desk_name_list(self) -> list[str]:

@@ -1,10 +1,10 @@
-import { Menu, Search } from 'lucide-react'
+import { Menu } from 'lucide-react'
 import { Logo } from '@/components/brand/Logo'
 import { Breadcrumbs } from '@/components/layout/Breadcrumbs'
 import { UserMenu } from '@/components/layout/UserMenu'
+import { ExpandableSearchTrigger } from '@/components/layout/ExpandableSearchTrigger'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { Button } from '@/components/ui/button'
-import { useCommandPalette } from '@/hooks/useCommandPalette'
 import { topbarActionBtnClass } from '@/lib/ui-classes'
 import { cn } from '@/lib/cn'
 
@@ -14,8 +14,6 @@ type Props = {
 }
 
 export function Topbar({ onMenuClick, showMenuButton }: Props) {
-  const { setOpen } = useCommandPalette()
-
   return (
     <header className="sticky top-0 z-30 h-14 border-b border-white/10 bg-aurora-topbar-bg text-white">
       <div className="relative flex h-full items-center gap-3 px-4">
@@ -38,24 +36,7 @@ export function Topbar({ onMenuClick, showMenuButton }: Props) {
         </div>
 
         <div className="ml-auto flex items-center gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className={cn(topbarActionBtnClass, 'hidden h-9 w-auto gap-2 px-3 sm:flex')}
-            onClick={() => setOpen(true)}
-          >
-            <Search className="h-3.5 w-3.5" />
-            <span className="text-xs font-medium">Buscar…</span>
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            className={cn(topbarActionBtnClass, 'sm:hidden')}
-            onClick={() => setOpen(true)}
-            aria-label="Buscar"
-          >
-            <Search className="h-4 w-4" />
-          </Button>
+          <ExpandableSearchTrigger />
           <ThemeToggle />
           <UserMenu variant="onTopbar" />
         </div>

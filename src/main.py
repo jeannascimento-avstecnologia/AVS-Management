@@ -7,7 +7,15 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 
-from src.auth.deps import require_user
+from src.auth.deps import require_permission, require_user
+from src.auth.audit import log_action
+from src.auth.permissions import (
+    PERMISSION_CADASTRAR,
+    PERMISSION_CONSULTAR,
+    PERMISSION_EMPRESAS_INATIVAS,
+    PERMISSION_INATIVAR,
+)
+from src.security import CsrfMiddleware, SecurityHeadersMiddleware, safe_error_message, validate_security_settings
 from src.auth.local import RememberMeMiddleware
 from src.auth.router import build_auth_router
 from src.config import get_settings
@@ -29,13 +37,16 @@ from src.stats import compute_stats
 load_dotenv()
 
 settings = get_settings()
+validate_security_settings(settings)
 
 app = FastAPI(
     title="AVS Management",
     version="1.4.0",
 )
 
+app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(RememberMeMiddleware)
+app.add_middleware(CsrfMiddleware)
 app.add_middleware(
     SessionMiddleware,
     secret_key=settings.session_secret,
@@ -96,7 +107,7 @@ async def index():
 async def preview(
     request: Request,
     cnpj: str = Form(default=""),
-    _user: dict = Depends(require_user),
+    _user: dict = Depends(require_permission(PERMISSION_CADASTRAR)),
 ):
     raw = cnpj.strip()
     if not raw and "application/json" in request.headers.get("content-type", ""):
@@ -115,17 +126,17 @@ async def preview(
     except OrchestratorError as exc:
         return JSONResponse(
             status_code=exc.status_code,
-            content={"success": False, "error": str(exc), "cnpj": raw},
+            content={"success": False, "error": safe_error_message(exc), "cnpj": raw},
         )
     except Exception as exc:
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": str(exc), "cnpj": raw},
+            content={"success": False, "error": safe_error_message(exc), "cnpj": raw},
         )
 
 
 @app.post("/integrar")
-async def integrar(request: Request, _user: dict = Depends(require_user)):
+async def integrar(request: Request, user: dict = Depends(require_permission(PERMISSION_CADASTRAR))):
     content_type = request.headers.get("content-type", "")
 
     if "application/json" in content_type:
@@ -185,7 +196,7 @@ async def integrar(request: Request, _user: dict = Depends(require_user)):
     except Exception as exc:
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": str(exc)},
+            content={"success": False, "error": safe_error_message(exc)},
         )
 
     payload = result.to_dict()
@@ -194,8 +205,22 @@ async def integrar(request: Request, _user: dict = Depends(require_user)):
         status = 409
     elif result.success:
         status = 200
+        log_action(
+            request,
+            action="integrar",
+            resource=str(raw_cnpj or company_data.get("cnpj_digits") or ""),
+            detail={"success": True, "targets": targets},
+            user=user,
+        )
     elif result.partial:
         status = 207
+        log_action(
+            request,
+            action="integrar.partial",
+            resource=str(raw_cnpj or company_data.get("cnpj_digits") or ""),
+            detail={"partial": True},
+            user=user,
+        )
     else:
         status = 502
 
@@ -228,21 +253,27 @@ async def _inativar_preview_handler(request: Request):
     except Exception as exc:
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": str(exc), "query": raw},
+            content={"success": False, "error": safe_error_message(exc), "query": raw},
         )
 
 
 @app.post("/inativar/preview")
-async def inativar_preview(request: Request, _user: dict = Depends(require_user)):
+async def inativar_preview(
+    request: Request,
+    _user: dict = Depends(require_permission(PERMISSION_INATIVAR)),
+):
     return await _inativar_preview_handler(request)
 
 
 @app.post("/excluir/preview")
-async def excluir_preview(request: Request, _user: dict = Depends(require_user)):
+async def excluir_preview(
+    request: Request,
+    _user: dict = Depends(require_permission(PERMISSION_INATIVAR)),
+):
     return await _inativar_preview_handler(request)
 
 
-async def _inativar_execute_handler(request: Request):
+async def _inativar_execute_handler(request: Request, user: dict | None = None):
     if "application/json" not in request.headers.get("content-type", ""):
         return JSONResponse(
             status_code=400,
@@ -269,26 +300,43 @@ async def _inativar_execute_handler(request: Request):
     except Exception as exc:
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": str(exc)},
+            content={"success": False, "error": safe_error_message(exc)},
         )
 
     payload = result.to_dict()
     status = 200 if result.success else 502
+    if result.success and user:
+        log_action(
+            request,
+            action="inativar",
+            resource=raw_query,
+            detail={"tiflux_client_id": tiflux_id},
+            user=user,
+        )
     return JSONResponse(status_code=status, content=payload)
 
 
 @app.post("/inativar")
-async def inativar_cliente(request: Request, _user: dict = Depends(require_user)):
-    return await _inativar_execute_handler(request)
+async def inativar_cliente(
+    request: Request,
+    user: dict = Depends(require_permission(PERMISSION_INATIVAR)),
+):
+    return await _inativar_execute_handler(request, user)
 
 
 @app.post("/excluir")
-async def excluir_cliente(request: Request, _user: dict = Depends(require_user)):
-    return await _inativar_execute_handler(request)
+async def excluir_cliente(
+    request: Request,
+    user: dict = Depends(require_permission(PERMISSION_INATIVAR)),
+):
+    return await _inativar_execute_handler(request, user)
 
 
 @app.post("/consulta/preview")
-async def consulta_preview(request: Request, _user: dict = Depends(require_user)):
+async def consulta_preview(
+    request: Request,
+    _user: dict = Depends(require_permission(PERMISSION_CONSULTAR)),
+):
     raw = ""
     if "application/json" in request.headers.get("content-type", ""):
         body = await request.json()
@@ -314,12 +362,15 @@ async def consulta_preview(request: Request, _user: dict = Depends(require_user)
     except Exception as exc:
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": str(exc), "query": raw},
+            content={"success": False, "error": safe_error_message(exc), "query": raw},
         )
 
 
 @app.post("/consulta/detalhe")
-async def consulta_detalhe(request: Request, _user: dict = Depends(require_user)):
+async def consulta_detalhe(
+    request: Request,
+    user: dict = Depends(require_permission(PERMISSION_CONSULTAR)),
+):
     if "application/json" not in request.headers.get("content-type", ""):
         return JSONResponse(
             status_code=400,
@@ -352,16 +403,24 @@ async def consulta_detalhe(request: Request, _user: dict = Depends(require_user)
     except Exception as exc:
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": str(exc)},
+            content={"success": False, "error": safe_error_message(exc)},
         )
 
     payload = result.to_dict()
     status = 200 if result.success else 502
+    if result.success:
+        log_action(
+            request,
+            action="consulta.detalhe",
+            resource=raw_query,
+            detail={"tiflux_client_id": tiflux_id, "vhsys_client_id": vhsys_id},
+            user=user,
+        )
     return JSONResponse(status_code=status, content=payload)
 
 
 @app.get("/consulta/tiflux/opcoes")
-async def consulta_tiflux_opcoes(_user: dict = Depends(require_user)):
+async def consulta_tiflux_opcoes(_user: dict = Depends(require_permission(PERMISSION_CONSULTAR))):
     try:
         catalog = await fetch_tiflux_catalog(get_settings())
         return JSONResponse(content={"success": True, **catalog})
@@ -373,12 +432,15 @@ async def consulta_tiflux_opcoes(_user: dict = Depends(require_user)):
     except Exception as exc:
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": str(exc)},
+            content={"success": False, "error": safe_error_message(exc)},
         )
 
 
 @app.post("/consulta/tiflux/vinculos")
-async def consulta_tiflux_vinculos(request: Request, _user: dict = Depends(require_user)):
+async def consulta_tiflux_vinculos(
+    request: Request,
+    _user: dict = Depends(require_permission(PERMISSION_CONSULTAR)),
+):
     if "application/json" not in request.headers.get("content-type", ""):
         return JSONResponse(
             status_code=400,
@@ -417,7 +479,7 @@ async def consulta_tiflux_vinculos(request: Request, _user: dict = Depends(requi
     except Exception as exc:
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": str(exc)},
+            content={"success": False, "error": safe_error_message(exc)},
         )
 
 
@@ -426,17 +488,25 @@ def _dormant_error_response(exc: Exception) -> tuple[int, dict[str, Any]]:
         return exc.status_code, {"success": False, "error": str(exc)}
     if isinstance(exc, TifluxApiError):
         return exc.status_code or 502, {"success": False, "error": str(exc)}
-    return 500, {"success": False, "error": str(exc)}
+    return 500, {"success": False, "error": safe_error_message(exc)}
 
 
 @app.get("/relatorio/empresas-inativas")
 async def relatorio_empresas_inativas(
+    request: Request,
     months: int = 24,
-    limit: int = 100,
-    _user: dict = Depends(require_user),
+    limit: int = 0,
+    user: dict = Depends(require_permission(PERMISSION_EMPRESAS_INATIVAS)),
 ):
     try:
         result = await scan_dormant_clients(get_settings(), months=months, limit=limit)
+        log_action(
+            request,
+            action="relatorio.empresas_inativas",
+            resource="dormant",
+            detail={"months": months, "limit": limit, "count": len(result.clients)},
+            user=user,
+        )
         return JSONResponse(content=result.to_dict())
     except (OrchestratorError, TifluxApiError, Exception) as exc:
         status, payload = _dormant_error_response(exc)
@@ -445,9 +515,10 @@ async def relatorio_empresas_inativas(
 
 @app.get("/relatorio/empresas-inativas/stream")
 async def relatorio_empresas_inativas_stream(
+    request: Request,
     months: int = 24,
-    limit: int = 100,
-    _user: dict = Depends(require_user),
+    limit: int = 0,
+    user: dict = Depends(require_permission(PERMISSION_EMPRESAS_INATIVAS)),
 ):
     import asyncio
     import contextlib
@@ -467,6 +538,13 @@ async def relatorio_empresas_inativas_stream(
                 on_progress=on_progress,
             )
             await queue.put(("done", result.to_dict()))
+            log_action(
+                request,
+                action="relatorio.empresas_inativas.stream",
+                resource="dormant",
+                detail={"months": months, "limit": limit, "count": len(result.clients)},
+                user=user,
+            )
         except Exception as exc:
             status, payload = _dormant_error_response(exc)
             await queue.put(("error", {**payload, "status": status}))
@@ -505,7 +583,7 @@ async def stats(_user: dict = Depends(require_user)):
     except Exception as exc:
         return JSONResponse(
             status_code=500,
-            content={"success": False, "error": str(exc)},
+            content={"success": False, "error": safe_error_message(exc)},
         )
 
 

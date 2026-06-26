@@ -7,7 +7,9 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterator
+from typing import Any, Iterator
+
+from src.auth.permissions import ALL_PERMISSIONS, empty_permissions
 
 
 def _utcnow() -> datetime:
@@ -28,6 +30,30 @@ def hash_token(raw_token: str) -> str:
 
 def generate_token() -> str:
     return secrets.token_urlsafe(32)
+
+
+@dataclass
+class AuditLogEntry:
+    id: int
+    user_id: int | None
+    user_email: str
+    action: str
+    resource: str
+    detail: str
+    ip_address: str
+    created_at: str
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "user_email": self.user_email,
+            "action": self.action,
+            "resource": self.resource,
+            "detail": self.detail,
+            "ip_address": self.ip_address,
+            "created_at": self.created_at,
+        }
 
 
 @dataclass
@@ -116,9 +142,61 @@ class AuthDatabase:
 
                 CREATE INDEX IF NOT EXISTS idx_login_attempts_lookup
                     ON login_attempts (email, ip_address, attempted_at);
+
+                CREATE TABLE IF NOT EXISTS user_permissions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    permission TEXT NOT NULL,
+                    enabled INTEGER NOT NULL DEFAULT 0,
+                    UNIQUE(user_id, permission),
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS audit_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    user_email TEXT NOT NULL DEFAULT '',
+                    action TEXT NOT NULL,
+                    resource TEXT NOT NULL,
+                    detail TEXT NOT NULL DEFAULT '{}',
+                    ip_address TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_audit_logs_created
+                    ON audit_logs (created_at DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_audit_logs_user
+                    ON audit_logs (user_id, created_at DESC);
                 """
             )
             self._migrate_user_profile_columns(conn)
+            self._seed_initial_admin_permissions(conn)
+
+    def _seed_initial_admin_permissions(self, conn: sqlite3.Connection) -> None:
+        from src.auth.cli import SEED_USERS
+
+        seed_emails = {email.strip().lower() for email, _ in SEED_USERS}
+        if not seed_emails:
+            return
+        placeholders = ",".join("?" * len(seed_emails))
+        rows = conn.execute(
+            f"SELECT id, email FROM users WHERE email IN ({placeholders})",
+            tuple(seed_emails),
+        ).fetchall()
+        for row in rows:
+            self._grant_all_permissions_conn(conn, int(row["id"]))
+
+    def _grant_all_permissions_conn(self, conn: sqlite3.Connection, user_id: int) -> None:
+        for permission in ALL_PERMISSIONS:
+            conn.execute(
+                """
+                INSERT INTO user_permissions (user_id, permission, enabled)
+                VALUES (?, ?, 1)
+                ON CONFLICT(user_id, permission) DO UPDATE SET enabled = 1
+                """,
+                (user_id, permission),
+            )
 
     def _migrate_user_profile_columns(self, conn: sqlite3.Connection) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()}
@@ -305,6 +383,123 @@ class AuthDatabase:
                 (token_hash, _iso(now)),
             ).fetchone()
         return self._row_to_user(row) if row else None
+
+    def deactivate_user(self, user_id: int) -> bool:
+        now = _iso(_utcnow())
+        with self._connect() as conn:
+            cur = conn.execute(
+                "UPDATE users SET is_active = 0, updated_at = ? WHERE id = ? AND is_active = 1",
+                (now, user_id),
+            )
+        return cur.rowcount > 0
+
+    def get_permissions_map(self, user_id: int) -> dict[str, bool]:
+        base = empty_permissions()
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT permission, enabled FROM user_permissions WHERE user_id = ?",
+                (user_id,),
+            ).fetchall()
+        for row in rows:
+            if row["permission"] in base:
+                base[row["permission"]] = bool(row["enabled"])
+        return base
+
+    def is_permission_enabled(self, user_id: int, permission: str) -> bool:
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT enabled FROM user_permissions
+                WHERE user_id = ? AND permission = ?
+                """,
+                (user_id, permission),
+            ).fetchone()
+        return bool(row and row["enabled"])
+
+    def set_permissions(self, user_id: int, permissions: dict[str, bool]) -> dict[str, bool]:
+        with self._connect() as conn:
+            for key in ALL_PERMISSIONS:
+                enabled = 1 if permissions.get(key) else 0
+                conn.execute(
+                    """
+                    INSERT INTO user_permissions (user_id, permission, enabled)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(user_id, permission) DO UPDATE SET enabled = excluded.enabled
+                    """,
+                    (user_id, key, enabled),
+                )
+        return self.get_permissions_map(user_id)
+
+    def grant_all_permissions(self, user_id: int) -> dict[str, bool]:
+        with self._connect() as conn:
+            self._grant_all_permissions_conn(conn, user_id)
+        return self.get_permissions_map(user_id)
+
+    def count_active_users_with_permission(self, permission: str, *, exclude_user_id: int | None = None) -> int:
+        query = """
+            SELECT COUNT(*) AS cnt
+            FROM users u
+            JOIN user_permissions p ON p.user_id = u.id
+            WHERE u.is_active = 1 AND p.permission = ? AND p.enabled = 1
+        """
+        params: list[Any] = [permission]
+        if exclude_user_id is not None:
+            query += " AND u.id != ?"
+            params.append(exclude_user_id)
+        with self._connect() as conn:
+            row = conn.execute(query, params).fetchone()
+        return int(row["cnt"]) if row else 0
+
+    def insert_audit_log(
+        self,
+        *,
+        user_id: int | None,
+        user_email: str,
+        action: str,
+        resource: str,
+        detail: str,
+        ip_address: str,
+    ) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO audit_logs (user_id, user_email, action, resource, detail, ip_address, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (user_id, user_email, action, resource, detail, ip_address, _iso(_utcnow())),
+            )
+
+    def list_audit_logs(
+        self,
+        *,
+        user_id: int | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[AuditLogEntry]:
+        limit = max(1, min(limit, 200))
+        offset = max(0, offset)
+        query = "SELECT * FROM audit_logs"
+        params: list[Any] = []
+        if user_id is not None:
+            query += " WHERE user_id = ?"
+            params.append(user_id)
+        query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+        params.extend([limit, offset])
+        with self._connect() as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [self._row_to_audit(row) for row in rows]
+
+    def _row_to_audit(self, row: sqlite3.Row) -> AuditLogEntry:
+        return AuditLogEntry(
+            id=row["id"],
+            user_id=row["user_id"],
+            user_email=row["user_email"],
+            action=row["action"],
+            resource=row["resource"],
+            detail=row["detail"],
+            ip_address=row["ip_address"],
+            created_at=row["created_at"],
+        )
 
     def revoke_remember_tokens(self, user_id: int) -> None:
         with self._connect() as conn:

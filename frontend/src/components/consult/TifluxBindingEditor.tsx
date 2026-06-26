@@ -4,6 +4,7 @@ import { toast } from 'sonner'
 import { api } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { SpotlightSelectable } from '@/components/ui/SpotlightSelectable'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -141,16 +142,24 @@ export function TifluxBindingEditor({ tifluxClientId, profile, onUpdated }: Prop
               <div className="grid gap-2 sm:grid-cols-2">
                 {catalogDesks.map((d) => {
                   const id = Number(d.id)
+                  const checked = deskIds.includes(id)
                   return (
-                    <label key={id} className="flex items-center gap-2 rounded-lg border border-border p-2 text-sm">
+                    <SpotlightSelectable
+                      key={id}
+                      as="label"
+                      accent="accent"
+                      selected={checked}
+                      className="cursor-pointer p-2 text-sm"
+                      innerClassName="flex items-center gap-2"
+                    >
                       <Checkbox
-                        checked={deskIds.includes(id)}
-                        onCheckedChange={(checked) =>
-                          setDeskIds((prev) => (checked ? [...prev, id] : prev.filter((x) => x !== id)))
+                        checked={checked}
+                        onCheckedChange={(c) =>
+                          setDeskIds((prev) => (c ? [...prev, id] : prev.filter((x) => x !== id)))
                         }
                       />
                       {String(d.display_name || d.name)}
-                    </label>
+                    </SpotlightSelectable>
                   )
                 })}
               </div>
@@ -162,16 +171,24 @@ export function TifluxBindingEditor({ tifluxClientId, profile, onUpdated }: Prop
               <div className="grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">
                 {catalogGroups.map((g) => {
                   const id = Number(g.id)
+                  const checked = groupIds.includes(id)
                   return (
-                    <label key={id} className="flex items-center gap-2 rounded-lg border border-border p-2 text-sm">
+                    <SpotlightSelectable
+                      key={id}
+                      as="label"
+                      accent="accent"
+                      selected={checked}
+                      className="cursor-pointer p-2 text-sm"
+                      innerClassName="flex items-center gap-2"
+                    >
                       <Checkbox
-                        checked={groupIds.includes(id)}
-                        onCheckedChange={(checked) =>
-                          setGroupIds((prev) => (checked ? [...prev, id] : prev.filter((x) => x !== id)))
+                        checked={checked}
+                        onCheckedChange={(c) =>
+                          setGroupIds((prev) => (c ? [...prev, id] : prev.filter((x) => x !== id)))
                         }
                       />
                       {String(g.name)}
-                    </label>
+                    </SpotlightSelectable>
                   )
                 })}
               </div>

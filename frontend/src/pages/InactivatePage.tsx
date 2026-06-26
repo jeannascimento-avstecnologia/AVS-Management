@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { WizardStepper } from '@/components/ui/wizard-stepper'
+import { SpotlightSelectable } from '@/components/ui/SpotlightSelectable'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { formatCnpj } from '@/lib/format'
 import { Search } from 'lucide-react'
@@ -95,20 +96,27 @@ export function InactivatePage() {
             ) : (
               <RadioGroup value={String(selectedId ?? '')} onValueChange={(v) => setSelectedId(Number(v))}>
                 <div ref={listRef} className="space-y-2">
-                  {matches.map((m) => (
-                    <label
-                      key={String(m.id)}
-                      className="flex cursor-pointer items-start gap-3 rounded-lg border border-border p-4 transition-colors hover:bg-accent"
-                    >
-                      <RadioGroupItem value={String(m.id)} className="mt-0.5" />
-                      <div>
-                        <p className="font-medium">{String(m.name || m.social)}</p>
-                        <p className="font-mono text-xs text-muted-foreground">
-                          CNPJ: {formatCnpj(String(m.social_revenue || ''))}
-                        </p>
-                      </div>
-                    </label>
-                  ))}
+                  {matches.map((m) => {
+                    const id = Number(m.id)
+                    return (
+                      <SpotlightSelectable
+                        key={String(m.id)}
+                        as="label"
+                        accent="red"
+                        selected={selectedId === id}
+                        className="cursor-pointer p-4"
+                        innerClassName="flex items-start gap-3"
+                      >
+                        <RadioGroupItem value={String(m.id)} className="mt-0.5" />
+                        <div>
+                          <p className="font-medium">{String(m.name || m.social)}</p>
+                          <p className="font-mono text-xs text-muted-foreground">
+                            CNPJ: {formatCnpj(String(m.social_revenue || ''))}
+                          </p>
+                        </div>
+                      </SpotlightSelectable>
+                    )
+                  })}
                 </div>
               </RadioGroup>
             )}

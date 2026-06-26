@@ -24,8 +24,8 @@ const variantConfig: Record<
     blend: true,
   },
   auth: {
-    img: 'h-10 w-auto max-w-[180px]',
-    wrapper: 'logo-box-navy',
+    img: 'h-16 w-auto max-w-[240px] sm:h-[4.5rem] sm:max-w-[280px] md:h-20 md:max-w-[300px]',
+    blend: true,
   },
   onLight: {
     img: 'h-9 w-auto max-w-[160px]',
@@ -42,11 +42,11 @@ export function Logo({
   const config = variantConfig[variant]
   const imgSize =
     variant === 'sidebar' && collapsed
-      ? 'h-6 w-auto max-w-[40px]'
+      ? 'h-7 w-auto max-w-[3rem]'
       : config.img
 
   return (
-    <div className={cn('inline-flex shrink-0', config.wrapper, className)}>
+    <div className={cn('inline-flex shrink-0 items-center justify-center', config.wrapper, className)}>
       <img
         src={LOGO_SRC}
         alt="AVS Management"

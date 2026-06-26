@@ -1,6 +1,6 @@
-# Manual de operação e manutenção — Integração AVS
+# Manual de operação e manutenção — AVS Management
 
-Documento de referência para operação, manutenção e pontos de atenção do sistema de cadastro CNPJ → TiFlux + VHSYS.
+Documento de referência para operação, manutenção e pontos de atenção do **AVS Management** (cadastro CNPJ → TiFlux + VHSYS).
 
 ## Visão geral
 
@@ -176,7 +176,7 @@ tests/
 ## Operação diária
 
 ```powershell
-cd c:\Projetos\Integracao_Tiflux_VHSYS
+cd c:\Projetos\AVS-Management
 .\.venv\Scripts\Activate.ps1
 uvicorn src.main:app --reload --host 127.0.0.1 --port 8000
 ```

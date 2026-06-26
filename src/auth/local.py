@@ -8,7 +8,10 @@ from pydantic import BaseModel, EmailStr, Field
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.auth.email import send_password_reset_email
-from src.auth.models import AuthDatabase
+from src.auth.admin import build_admin_router
+from src.auth.audit import log_action
+from src.auth.models import AuthDatabase, User
+from src.auth.permissions import all_permissions_enabled
 from src.auth.passwords import (
     hash_password,
     password_needs_rehash,
@@ -16,27 +19,18 @@ from src.auth.passwords import (
     verify_password,
 )
 from src.config import Settings, get_settings
+from src.security import client_ip, ensure_csrf_token
 
 REMEMBER_COOKIE = "avs_remember"
 GENERIC_LOGIN_ERROR = "E-mail ou senha inválidos."
 FORGOT_PASSWORD_MESSAGE = (
     "Se o e-mail estiver cadastrado, enviaremos instruções para redefinir a senha."
 )
+FORGOT_RATE_KEY = "__forgot__"
+RESET_RATE_KEY = "__reset__"
+AUTH_RATE_MAX = 5
 
-_db: AuthDatabase | None = None
-
-
-def get_auth_db(settings: Settings | None = None) -> AuthDatabase:
-    global _db
-    cfg = settings or get_settings()
-    if _db is None:
-        _db = AuthDatabase(cfg.auth_db_path)
-    return _db
-
-
-def reset_auth_db_cache() -> None:
-    global _db
-    _db = None
+from src.auth.store import get_auth_db, reset_auth_db_cache
 
 
 class LoginBody(BaseModel):
@@ -80,18 +74,33 @@ def _require_session_user(request: Request) -> dict[str, Any]:
     return user
 
 
-def _client_ip(request: Request) -> str:
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    if request.client:
-        return request.client.host
-    return "unknown"
+def _check_auth_rate_limit(db: AuthDatabase, *, key: str, ip: str, settings: Settings) -> None:
+    attempts = db.count_recent_login_attempts(
+        key,
+        ip,
+        window_minutes=settings.login_lockout_minutes,
+    )
+    if attempts >= AUTH_RATE_MAX:
+        raise HTTPException(
+            status_code=429,
+            detail="Muitas tentativas. Aguarde alguns minutos e tente novamente.",
+        )
+
+
+def _record_auth_rate_limit(db: AuthDatabase, *, key: str, ip: str) -> None:
+    db.record_login_attempt(key, ip)
+
+
+def _session_user(db: AuthDatabase, user: User) -> dict[str, Any]:
+    data = user.to_session_dict()
+    data["permissions"] = db.get_permissions_map(user.id)
+    return data
 
 
 def _regenerate_session(request: Request, user: dict[str, Any]) -> None:
     request.session.clear()
     request.session["user"] = user
+    ensure_csrf_token(request)
 
 
 def _set_remember_cookie(response: JSONResponse | RedirectResponse, token: str, settings: Settings) -> None:
@@ -123,7 +132,8 @@ def try_remember_login(request: Request) -> bool:
     user = db.get_user_by_remember_token(raw)
     if not user:
         return False
-    request.session["user"] = user.to_session_dict()
+    request.session["user"] = _session_user(db, user)
+    ensure_csrf_token(request)
     return True
 
 
@@ -148,12 +158,13 @@ def build_local_auth_router() -> APIRouter:
                 "email": "dev@local",
                 "name": "Desenvolvimento",
                 "dev_mode": True,
+                "permissions": all_permissions_enabled(),
             }
             return {"ok": True, "redirect": "/"}
 
         db = get_auth_db(settings)
         email = body.email.strip().lower()
-        ip = _client_ip(request)
+        ip = client_ip(request)
 
         allowed = set(settings.allowed_user_email_list)
         if allowed and email not in allowed:
@@ -178,13 +189,21 @@ def build_local_auth_router() -> APIRouter:
             raise HTTPException(status_code=401, detail=GENERIC_LOGIN_ERROR)
 
         db.clear_login_attempts(email, ip)
-        session_user = user.to_session_dict()
+        session_user = _session_user(db, user)
         if password_needs_rehash(user.password_hash):
             db.update_password(user.id, hash_password(body.password))
 
         _regenerate_session(request, session_user)
+        csrf_token = ensure_csrf_token(request)
+        log_action(
+            request,
+            action="auth.login",
+            resource="session",
+            detail={"email": user.email},
+            user=session_user,
+        )
 
-        response = JSONResponse({"ok": True, "redirect": "/"})
+        response = JSONResponse({"ok": True, "redirect": "/", "csrf_token": csrf_token})
         if body.remember_me:
             token = db.create_remember_token(user.id, days=settings.remember_me_days)
             _set_remember_cookie(response, token, settings)
@@ -193,11 +212,19 @@ def build_local_auth_router() -> APIRouter:
             _clear_remember_cookie(response)
         return response
 
+    @router.get("/csrf")
+    async def csrf_token(request: Request):
+        settings = get_settings()
+        if not settings.auth_enabled:
+            return {"csrf_token": None}
+        return {"csrf_token": ensure_csrf_token(request)}
+
     @router.get("/logout")
     async def logout(request: Request):
         settings = get_settings()
         user = request.session.get("user") or {}
         if settings.auth_enabled and user.get("id"):
+            log_action(request, action="auth.logout", resource="session", detail={"email": user.get("email")})
             get_auth_db(settings).revoke_remember_tokens(int(user["id"]))
         request.session.clear()
         response = RedirectResponse(url="/login", status_code=302)
@@ -215,7 +242,20 @@ def build_local_auth_router() -> APIRouter:
         if not user:
             if settings.auth_enabled:
                 raise HTTPException(status_code=401, detail="Não autenticado.")
-            user = {"email": "dev@local", "name": "Desenvolvimento", "dev_mode": True}
+            user = {
+                "email": "dev@local",
+                "name": "Desenvolvimento",
+                "dev_mode": True,
+                "permissions": all_permissions_enabled(),
+            }
+        elif settings.auth_enabled and user.get("id") and not user.get("dev_mode"):
+            db = get_auth_db(settings)
+            db_user = db.get_user_by_id(int(user["id"]))
+            if not db_user or not db_user.is_active:
+                request.session.clear()
+                raise HTTPException(status_code=401, detail="Não autenticado.")
+            user = _session_user(db, db_user)
+            request.session["user"] = user
         return {"authenticated": True, "user": user}
 
     @router.get("/profile")
@@ -290,6 +330,10 @@ def build_local_auth_router() -> APIRouter:
             return {"message": FORGOT_PASSWORD_MESSAGE}
 
         db = get_auth_db(settings)
+        ip = client_ip(request)
+        _check_auth_rate_limit(db, key=FORGOT_RATE_KEY, ip=ip, settings=settings)
+        _record_auth_rate_limit(db, key=FORGOT_RATE_KEY, ip=ip)
+
         email = body.email.strip().lower()
         user = db.get_user_by_email(email)
         if user and user.is_active:
@@ -297,7 +341,7 @@ def build_local_auth_router() -> APIRouter:
                 user.id,
                 hours=settings.password_reset_token_hours,
             )
-            reset_url = f"{settings.app_base_url.rstrip('/')}/login/reset?token={raw_token}"
+            reset_url = f"{settings.app_base_url.rstrip('/')}/login/reset#token={raw_token}"
             try:
                 send_password_reset_email(
                     settings,
@@ -311,22 +355,29 @@ def build_local_auth_router() -> APIRouter:
         return {"message": FORGOT_PASSWORD_MESSAGE}
 
     @router.post("/reset-password")
-    async def reset_password(body: ResetPasswordBody):
+    async def reset_password(request: Request, body: ResetPasswordBody):
         settings = get_settings()
         if not settings.auth_enabled:
             raise HTTPException(status_code=400, detail="Autenticação desabilitada.")
+
+        db = get_auth_db(settings)
+        ip = client_ip(request)
+        _check_auth_rate_limit(db, key=RESET_RATE_KEY, ip=ip, settings=settings)
 
         policy_errors = validate_password_policy(body.password)
         if policy_errors:
             raise HTTPException(status_code=400, detail=policy_errors[0])
 
-        db = get_auth_db(settings)
         user = db.consume_password_reset_token(body.token.strip())
         if not user:
+            _record_auth_rate_limit(db, key=RESET_RATE_KEY, ip=ip)
             raise HTTPException(status_code=400, detail="Link inválido ou expirado.")
+
+        db.clear_login_attempts(RESET_RATE_KEY, ip)
 
         db.update_password(user.id, hash_password(body.password))
         db.revoke_remember_tokens(user.id)
         return {"ok": True, "message": "Senha alterada. Faça login com a nova senha."}
 
+    router.include_router(build_admin_router())
     return router

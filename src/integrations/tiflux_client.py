@@ -435,7 +435,8 @@ class TifluxClient:
 
         async def _iterate(client: httpx.AsyncClient) -> AsyncIterator[dict]:
             nonlocal count, offset
-            while count < max_clients:
+            unlimited = max_clients <= 0
+            while unlimited or count < max_clients:
                 response = await self._get_with_retry(
                     client,
                     f"{self._base}/clients",
@@ -449,7 +450,7 @@ class TifluxClient:
                 for item in items:
                     yield item
                     count += 1
-                    if count >= max_clients:
+                    if not unlimited and count >= max_clients:
                         return
                 if len(items) < self.PAGE_LIMIT:
                     break

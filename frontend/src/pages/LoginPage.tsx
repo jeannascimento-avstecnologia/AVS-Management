@@ -42,7 +42,12 @@ export function LoginPage() {
   }
 
   return (
-    <AuthLayout title="Entrar" subtitle="Use seu e-mail e senha corporativos" showBackLink={false}>
+    <AuthLayout
+      title="Entrar"
+      subtitle="Use seu e-mail e senha corporativos"
+      tagline="Plataforma interna de gestão de recursos da AVS"
+      showBackLink={false}
+    >
       <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="email">E-mail</Label>

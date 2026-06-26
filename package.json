@@ -1,5 +1,5 @@
 {
-  "name": "integracao-tiflux-vhsys",
+  "name": "avs-management",
   "private": true,
   "scripts": {
     "dev:local": "npm run dev:local --prefix frontend"

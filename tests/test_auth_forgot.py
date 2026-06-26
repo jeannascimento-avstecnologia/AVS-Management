@@ -28,7 +28,8 @@ def test_reset_password_flow(mock_send, auth_client):
     auth_client.post("/auth/forgot-password", json={"email": "user@avs.com.br"})
     assert mock_send.called
     reset_url = mock_send.call_args.kwargs["reset_url"]
-    token = reset_url.split("token=")[-1]
+    assert "#token=" in reset_url
+    token = reset_url.split("#token=")[-1]
 
     new_password = "Nova2Pass"
     reset = auth_client.post(

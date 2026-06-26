@@ -4,6 +4,7 @@ import { Toaster } from 'sonner'
 import { ThemeProvider } from './contexts/ThemeProvider'
 import { CommandPaletteProvider } from './hooks/useCommandPalette'
 import { ProtectedRoute } from './components/auth/ProtectedRoute'
+import { PermissionRoute } from './components/auth/PermissionRoute'
 import { AppShell } from './components/layout/AppShell'
 import { ErrorBoundary } from './components/feedback/ErrorBoundary'
 import { KeyboardShortcuts } from './components/feedback/KeyboardShortcuts'
@@ -17,6 +18,7 @@ import { ProfilePage } from './pages/ProfilePage'
 import { LoginPage } from './pages/LoginPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
+import { UsersManagePage } from './pages/UsersManagePage'
 
 const queryClient = new QueryClient()
 
@@ -35,10 +37,46 @@ export default function App() {
                   <Route element={<ProtectedRoute />}>
                     <Route element={<AppShell />}>
                       <Route index element={<Dashboard />} />
-                      <Route path="cadastrar" element={<RegisterPage />} />
-                      <Route path="inativar" element={<InactivatePage />} />
-                      <Route path="consultar" element={<ConsultPage />} />
-                      <Route path="empresas-inativas" element={<DormantPage />} />
+                      <Route
+                        path="cadastrar"
+                        element={
+                          <PermissionRoute permission="cadastrar">
+                            <RegisterPage />
+                          </PermissionRoute>
+                        }
+                      />
+                      <Route
+                        path="inativar"
+                        element={
+                          <PermissionRoute permission="inativar">
+                            <InactivatePage />
+                          </PermissionRoute>
+                        }
+                      />
+                      <Route
+                        path="consultar"
+                        element={
+                          <PermissionRoute permission="consultar">
+                            <ConsultPage />
+                          </PermissionRoute>
+                        }
+                      />
+                      <Route
+                        path="empresas-inativas"
+                        element={
+                          <PermissionRoute permission="empresas_inativas">
+                            <DormantPage />
+                          </PermissionRoute>
+                        }
+                      />
+                      <Route
+                        path="usuarios"
+                        element={
+                          <PermissionRoute permission="manage_users">
+                            <UsersManagePage />
+                          </PermissionRoute>
+                        }
+                      />
                       <Route path="perfil" element={<ProfilePage />} />
                     </Route>
                   </Route>

@@ -24,6 +24,8 @@
   --aurora-sidebar-accent: #3b82f6;
   --aurora-sidebar-border: rgba(255, 255, 255, 0.08);
   --aurora-brand-red: #dc2626;
+  --aurora-purple: #7c3aed;
+  --aurora-purple-muted: #ede9fe;
   --aurora-topbar-bg: #b91c1c;
   --aurora-overlay: rgba(6, 10, 46, 0.55);
 
@@ -77,6 +79,8 @@
   --aurora-sidebar-accent: #60a5fa;
   --aurora-sidebar-border: rgba(255, 255, 255, 0.06);
   --aurora-brand-red: #dc2626;
+  --aurora-purple: #8b5cf6;
+  --aurora-purple-muted: #2e1065;
   --aurora-topbar-bg: #991b1b;
   --aurora-overlay: rgba(0, 0, 0, 0.6);
 
@@ -123,6 +127,8 @@
   --color-aurora-sidebar-accent: var(--aurora-sidebar-accent);
   --color-aurora-sidebar-border: var(--aurora-sidebar-border);
   --color-aurora-brand-red: var(--aurora-brand-red);
+  --color-aurora-purple: var(--aurora-purple);
+  --color-aurora-purple-muted: var(--aurora-purple-muted);
   --color-aurora-topbar-bg: var(--aurora-topbar-bg);
   --color-aurora-overlay: var(--aurora-overlay);
 

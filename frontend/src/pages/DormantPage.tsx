@@ -33,7 +33,7 @@ export function DormantPage() {
     setProgress(null)
     setData(null)
     const m = Number(months)
-    const stream = api.dormantReportStream((p) => setProgress(p), m, 100)
+    const stream = api.dormantReportStream((p) => setProgress(p), m, 0)
     cancelRef.current = stream.cancel
     try {
       const res = await stream.promise
@@ -41,8 +41,8 @@ export function DormantPage() {
         phase: 'scanning',
         scanned: Number(res.scanned),
         found: Number(res.total),
-        limit: 100,
-        scan_cap: Number(res.scanned) || 100,
+        limit: 0,
+        scan_cap: Number(res.scan_cap) || 0,
         percent: 100,
       })
       setData(res)
@@ -66,17 +66,20 @@ export function DormantPage() {
   }
 
   const progressLabel = progress
-    ? `${PHASE_LABELS[progress.phase]} · ${progress.scanned}/${progress.scan_cap} · ${progress.found} inativa(s)`
+    ? progress.scan_cap > 0
+      ? `${PHASE_LABELS[progress.phase]} · ${progress.scanned}/${progress.scan_cap} · ${progress.found} inativa(s)`
+      : `${PHASE_LABELS[progress.phase]} · ${progress.scanned} analisadas · ${progress.found} inativa(s)`
     : 'Preparando…'
 
   return (
     <div className="mx-auto max-w-6xl">
       <h1 className="mb-2 text-2xl font-semibold tracking-tight">Empresas sem atividade</h1>
       <p className="mb-6 text-sm text-muted-foreground">
-        Sem ticket ou cobrança no TiFlux no período selecionado.
+        Sem ticket ou cobrança no TiFlux no período selecionado. A varredura analisa{' '}
+        <strong>todos os clientes ativos</strong> (com pausas automáticas para respeitar o limite da API).
         {Number(months) >= 36 && (
           <span className="mt-1 block text-xs">
-            Varreduras de 36 meses podem levar alguns minutos para respeitar o limite da API TiFlux.
+            Períodos longos podem levar vários minutos conforme a quantidade de clientes.
           </span>
         )}
       </p>

@@ -44,3 +44,56 @@ async def test_scan_dormant_flags_no_ticket(env):
     assert result.total == 1
     assert result.clients[0].id == 1
     assert "sem_ticket_24m" in result.clients[0].reasons
+
+
+@pytest.mark.asyncio
+async def test_scan_dormant_unlimited_collects_all_inactive(env):
+    from src.config import Settings
+
+    async def fake_iter(*, max_clients=1500, http=None):
+        for i in range(1, 6):
+            yield {
+                "id": i,
+                "name": f"C{i}",
+                "social": f"C{i}",
+                "social_revenue": f"{i:014d}",
+            }
+
+    with patch("src.orchestrator.TifluxClient") as tf_cls:
+        client = tf_cls.return_value
+        client.iter_active_clients = fake_iter
+        client.get_last_ticket_datetime = AsyncMock(return_value=None)
+        client.get_last_billing_datetime = AsyncMock(return_value=None)
+
+        result = await scan_dormant_clients(Settings(), months=24, limit=0)
+
+    assert result.total == 5
+    assert result.truncated is False
+    assert result.result_limit == 0
+    assert result.scanned == 5
+
+
+@pytest.mark.asyncio
+async def test_scan_dormant_respects_result_limit(env):
+    from src.config import Settings
+
+    async def fake_iter(*, max_clients=1500, http=None):
+        for i in range(1, 4):
+            yield {
+                "id": i,
+                "name": f"C{i}",
+                "social": f"C{i}",
+                "social_revenue": f"{i:014d}",
+            }
+
+    with patch("src.orchestrator.TifluxClient") as tf_cls:
+        client = tf_cls.return_value
+        client.iter_active_clients = fake_iter
+        client.get_last_ticket_datetime = AsyncMock(return_value=None)
+        client.get_last_billing_datetime = AsyncMock(return_value=None)
+
+        result = await scan_dormant_clients(Settings(), months=24, limit=2)
+
+    assert result.total == 2
+    assert result.truncated is True
+    assert result.result_limit == 2

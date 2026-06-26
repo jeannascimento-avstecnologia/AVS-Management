@@ -178,6 +178,8 @@ class DormantScanResult:
     total: int
     clients: list[DormantClientEntry]
     truncated: bool = False
+    result_limit: int = 0
+    scan_cap: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -186,6 +188,8 @@ class DormantScanResult:
             "scanned": self.scanned,
             "total": self.total,
             "truncated": self.truncated,
+            "result_limit": self.result_limit,
+            "scan_cap": self.scan_cap,
             "clients": [c.to_dict() for c in self.clients],
         }
 
@@ -798,17 +802,26 @@ async def _emit_dormant_progress(
 
 
 def _dormant_scan_cap(settings: Settings, limit: int) -> int:
+    """Máximo de clientes ativos a analisar. 0 = sem limite (todas as páginas)."""
     configured = settings.tiflux_dormant_scan_max
-    if configured <= 0:
-        return max(limit * 4, limit)
-    return configured
+    if limit <= 0:
+        return max(0, configured)
+    if configured > 0:
+        return configured
+    return max(limit * 4, limit)
+
+
+def _dormant_progress_percent(scanned: int, scan_cap: int) -> int:
+    if scan_cap > 0:
+        return min(99, int((scanned / scan_cap) * 100))
+    return min(99, max(1, scanned // 3))
 
 
 async def scan_dormant_clients(
     settings: Settings,
     *,
     months: int = 24,
-    limit: int = 100,
+    limit: int = 0,
     on_progress: Any | None = None,
 ) -> DormantScanResult:
     _ensure_credentials(settings)
@@ -844,7 +857,7 @@ async def scan_dormant_clients(
                 "found": len(dormant),
                 "limit": limit,
                 "scan_cap": scan_cap,
-                "percent": min(99, int((scanned / scan_cap) * 100)) if scan_cap else 0,
+                "percent": _dormant_progress_percent(scanned, scan_cap),
                 "current_client": display_name,
             }
 
@@ -888,24 +901,29 @@ async def scan_dormant_clients(
                 on_progress,
                 {"phase": "scanning", **progress_base, "found": len(dormant)},
             )
-            if len(dormant) >= limit:
+            if limit > 0 and len(dormant) >= limit:
                 return DormantScanResult(
                     months=months,
                     scanned=scanned,
                     total=len(dormant),
                     clients=dormant,
                     truncated=True,
+                    result_limit=limit,
+                    scan_cap=scan_cap,
                 )
 
             if batch_every > 0 and scanned % batch_every == 0 and batch_pause_s > 0:
                 await asyncio.sleep(batch_pause_s)
 
+    scan_truncated = scan_cap > 0 and scanned >= scan_cap
     return DormantScanResult(
         months=months,
         scanned=scanned,
         total=len(dormant),
         clients=dormant,
-        truncated=False,
+        truncated=scan_truncated,
+        result_limit=limit,
+        scan_cap=scan_cap,
     )
 
 

@@ -30,6 +30,7 @@ import {
   buildDormantReportHtml,
   downloadBlob,
   parseDormantReport,
+  dormantTruncatedNote,
   type DormantClientRow,
   type ParsedDormantReport,
 } from '@/lib/dormantReport'
@@ -200,7 +201,7 @@ export function DormantReportView({ raw, onNewReport }: Props) {
           <p className="text-sm text-muted-foreground">
             {parsed.months} meses · Analisados: <strong>{parsed.scanned}</strong> · Encontrados:{' '}
             <strong>{parsed.total}</strong>
-            {parsed.truncated ? ' (truncado)' : ''} · Exibindo: <strong>{filteredRows.length}</strong>
+            {parsed.truncated ? dormantTruncatedNote(parsed) : ''} · Exibindo: <strong>{filteredRows.length}</strong>
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.auth.local import reset_auth_db_cache
+from src.auth.store import reset_auth_db_cache
 from src.config import clear_settings_cache
 
 
@@ -24,7 +24,7 @@ def auth_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("AUTH_DB_PATH", str(db_path))
     monkeypatch.setenv("SESSION_SECRET", "test-secret-key-for-pytest-only")
     monkeypatch.setenv("APP_BASE_URL", "http://testserver")
-    monkeypatch.setenv("ALLOWED_USER_EMAILS", "user@avs.com.br,autorizado@avstecnologia.cloud")
+    monkeypatch.setenv("ALLOWED_USER_EMAILS", "user@avs.com.br,limited@avs.com.br,admin@avs.com.br,target@avs.com.br,autorizado@avstecnologia.cloud")
     monkeypatch.setenv("SMTP_HOST", "")
     clear_settings_cache()
     reset_auth_db_cache()

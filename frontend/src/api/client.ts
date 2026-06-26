@@ -1,8 +1,66 @@
+import { getCsrfToken, isCsrfExempt, refreshCsrfToken, setCsrfToken } from './csrf'
+
+export { refreshCsrfToken, setCsrfToken }
+
+export type PermissionKey =
+  | 'cadastrar'
+  | 'inativar'
+  | 'consultar'
+  | 'empresas_inativas'
+  | 'manage_users'
+
+export type UserPermissions = Record<PermissionKey, boolean>
+
+export type AuthUser = {
+  email: string
+  name: string
+  id?: number
+  dev_mode?: boolean
+  permissions?: Partial<UserPermissions>
+}
+
+export type AdminUser = {
+  id: number
+  email: string
+  name: string
+  is_active: boolean
+  permissions: UserPermissions
+  created_at: string
+  updated_at: string
+  temporary_password?: string
+}
+
+export type AuditEntry = {
+  id: number
+  user_id: number | null
+  user_email: string
+  action: string
+  resource: string
+  detail: Record<string, unknown>
+  ip_address: string
+  created_at: string
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method || 'GET').toUpperCase()
+  const needsCsrf = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method) && !isCsrfExempt(url)
+  if (needsCsrf && !getCsrfToken()) {
+    await refreshCsrfToken()
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(init?.headers as Record<string, string> | undefined),
+  }
+  const csrf = getCsrfToken()
+  if (needsCsrf && csrf) {
+    headers['X-CSRF-Token'] = csrf
+  }
+
   const res = await fetch(url, {
     credentials: 'include',
-    headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
     ...init,
+    headers,
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {
@@ -12,9 +70,9 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  me: () => request<{ authenticated: boolean; user: { email: string; name: string } }>('/auth/me'),
+  me: () => request<{ authenticated: boolean; user: AuthUser }>('/auth/me'),
   login: (body: { email: string; password: string; remember_me?: boolean }) =>
-    request<{ ok: boolean; redirect: string }>('/auth/login', {
+    request<{ ok: boolean; redirect: string; csrf_token?: string }>('/auth/login', {
       method: 'POST',
       body: JSON.stringify(body),
     }),
@@ -61,7 +119,7 @@ export const api = {
       success: boolean
       tiflux?: { success: boolean; data: Record<string, unknown> }
     }>('/consulta/tiflux/vinculos', { method: 'POST', body: JSON.stringify(body) }),
-  dormantReport: (months = 24, limit = 100) =>
+  dormantReport: (months = 24, limit = 0) =>
     request<Record<string, unknown>>(`/relatorio/empresas-inativas?months=${months}&limit=${limit}`),
 
   stats: () =>
@@ -80,7 +138,7 @@ export const api = {
   dormantReportStream: (
     onProgress: (data: DormantProgress) => void,
     months = 24,
-    limit = 100,
+    limit = 0,
   ): { promise: Promise<Record<string, unknown>>; cancel: () => void } => {
     const url = `/relatorio/empresas-inativas/stream?months=${months}&limit=${limit}`
     const es = new EventSource(url, { withCredentials: true })
@@ -140,6 +198,49 @@ export const api = {
         }
       },
     }
+  },
+
+  adminListUsers: () =>
+    request<{ users: AdminUser[]; permission_labels: Record<string, string> }>('/auth/admin/users'),
+
+  adminCreateUser: (body: { email: string; name: string; password?: string }) =>
+    request<AdminUser>('/auth/admin/users', { method: 'POST', body: JSON.stringify(body) }),
+
+  adminDeactivateUser: (userId: number) =>
+    request<{ ok: boolean }>(`/auth/admin/users/${userId}`, { method: 'DELETE' }),
+
+  adminUpdatePermissions: (userId: number, permissions: Partial<UserPermissions>) =>
+    request<{ permissions: UserPermissions }>(`/auth/admin/users/${userId}/permissions`, {
+      method: 'PATCH',
+      body: JSON.stringify({ permissions }),
+    }),
+
+  adminSetPassword: (userId: number, password: string) =>
+    request<{ ok: boolean; message: string }>(`/auth/admin/users/${userId}/password`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    }),
+
+  adminSendResetEmail: (userId: number) =>
+    request<{ ok: boolean; message: string }>(`/auth/admin/users/${userId}/reset-email`, {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+
+  adminAuditLog: (params?: { limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.limit != null) qs.set('limit', String(params.limit))
+    if (params?.offset != null) qs.set('offset', String(params.offset))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ entries: AuditEntry[] }>(`/auth/admin/audit${suffix}`)
+  },
+
+  adminUserAuditLog: (userId: number, params?: { limit?: number; offset?: number }) => {
+    const qs = new URLSearchParams()
+    if (params?.limit != null) qs.set('limit', String(params.limit))
+    if (params?.offset != null) qs.set('offset', String(params.offset))
+    const suffix = qs.toString() ? `?${qs}` : ''
+    return request<{ entries: AuditEntry[] }>(`/auth/admin/audit/users/${userId}${suffix}`)
   },
 }
 

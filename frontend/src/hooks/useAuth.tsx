@@ -1,8 +1,23 @@
 import { createContext, useContext, useEffect, useState } from 'react'
 import { useLocation } from 'react-router-dom'
-import { api } from '../api/client'
+import { api, refreshCsrfToken } from '../api/client'
 
-type User = { email: string; name: string; dev_mode?: boolean; id?: number }
+export type PermissionKey =
+  | 'cadastrar'
+  | 'inativar'
+  | 'consultar'
+  | 'empresas_inativas'
+  | 'manage_users'
+
+export type UserPermissions = Record<PermissionKey, boolean>
+
+export type User = {
+  email: string
+  name: string
+  dev_mode?: boolean
+  id?: number
+  permissions?: Partial<UserPermissions>
+}
 
 type AuthCtx = {
   user: User | null
@@ -31,6 +46,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const r = await api.me()
       setUser(r.user)
+      await refreshCsrfToken()
       return r.user
     } catch {
       setUser(null)
@@ -45,7 +61,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     setLoading(true)
     api.me()
-      .then((r) => setUser(r.user))
+      .then(async (r) => {
+        setUser(r.user)
+        await refreshCsrfToken()
+      })
       .catch(() => setUser(null))
       .finally(() => setLoading(false))
   }, [isPublic, location.pathname])
@@ -61,4 +80,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
 export function useAuth() {
   return useContext(Ctx)
+}
+
+export function usePermission(key: PermissionKey): boolean {
+  const { user } = useAuth()
+  if (!user) return false
+  if (user.dev_mode) return true
+  return Boolean(user.permissions?.[key])
 }

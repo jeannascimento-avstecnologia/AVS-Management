@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
@@ -9,10 +10,27 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
+function readResetToken(): string {
+  const hash = window.location.hash
+  if (hash.startsWith('#token=')) {
+    return decodeURIComponent(hash.slice('#token='.length))
+  }
+  const params = new URLSearchParams(window.location.search)
+  return params.get('token') || ''
+}
+
 export function ResetPasswordPage() {
   const [params] = useSearchParams()
-  const token = params.get('token') || ''
+  const [token, setToken] = useState('')
   const navigate = useNavigate()
+
+  useEffect(() => {
+    const value = readResetToken()
+    if (value) {
+      setToken(value)
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+  }, [params])
 
   const {
     register,

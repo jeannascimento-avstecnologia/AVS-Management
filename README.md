@@ -1,6 +1,15 @@
-# Integração CNPJ → TiFlux + VHSYS
+# AVS Management
 
-Consulta dados públicos por CNPJ (BrasilAPI) e cadastra o cliente em **TiFlux** e **VHSYS** em paralelo.
+Painel web para integração CNPJ → **TiFlux** + **VHSYS**: consulta BrasilAPI, cadastro, inativação, consulta de status e relatório de empresas sem atividade.
+
+Repositório: [github.com/JeanLuengo/AVS-Management](https://github.com/JeanLuengo/AVS-Management)
+
+```bash
+git clone https://github.com/JeanLuengo/AVS-Management.git
+cd AVS-Management
+```
+
+Pasta local sugerida: `c:\Projetos\AVS-Management` (Windows) ou `/opt/AVS-Management` (servidor Linux).
 
 ## Pré-requisitos
 
@@ -12,7 +21,7 @@ Consulta dados públicos por CNPJ (BrasilAPI) e cadastra o cliente em **TiFlux**
 ## Instalação
 
 ```bash
-cd c:\Projetos\Integracao_Tiflux_VHSYS
+cd c:\Projetos\AVS-Management
 python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt

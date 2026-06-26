@@ -8,7 +8,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
   <meta name="viewport" content="width=device-width, initial-scale=1">
 
-  <title>AVS Integrações</title>
+  <title>AVS Management</title>
 
   <link rel="icon" href="/static/logo-avs.png" type="image/png">
 
@@ -618,7 +618,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
       </div>
 
-      <p class="footer-note">AVS Tecnologia · Integração interna</p>
+      <p class="footer-note">AVS Tecnologia · AVS Management</p>
 
     </section>
 

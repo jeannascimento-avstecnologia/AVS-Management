@@ -2,13 +2,7 @@ from src.auth.models import AuthDatabase
 from src.auth.passwords import hash_password, verify_password
 from src.config import get_settings
 
-
-def _login(client, email: str, password: str) -> None:
-    res = client.post(
-        "/auth/login",
-        json={"email": email, "password": password, "remember_me": False},
-    )
-    assert res.status_code == 200
+from tests.auth_helpers import login_and_csrf
 
 
 def test_get_and_update_profile(auth_client):
@@ -16,7 +10,7 @@ def test_get_and_update_profile(auth_client):
     db = AuthDatabase(settings.auth_db_path)
     password = "Test1Pass"
     db.create_user("user@avs.com.br", "Usuário Teste", hash_password(password))
-    _login(auth_client, "user@avs.com.br", password)
+    headers = login_and_csrf(auth_client, "user@avs.com.br", password)
 
     profile = auth_client.get("/auth/profile")
     assert profile.status_code == 200
@@ -30,6 +24,7 @@ def test_get_and_update_profile(auth_client):
             "backup_email": "backup@avs.com.br",
             "phone": "(11) 99999-0000",
         },
+        headers=headers,
     )
     assert updated.status_code == 200
     data = updated.json()
@@ -47,7 +42,7 @@ def test_change_password_success(auth_client):
     old_password = "Test1Pass"
     new_password = "Nova2Pass"
     db.create_user("user@avs.com.br", "Usuário", hash_password(old_password))
-    _login(auth_client, "user@avs.com.br", old_password)
+    headers = login_and_csrf(auth_client, "user@avs.com.br", old_password)
 
     res = auth_client.post(
         "/auth/change-password",
@@ -56,6 +51,7 @@ def test_change_password_success(auth_client):
             "new_password": new_password,
             "confirm_password": new_password,
         },
+        headers=headers,
     )
     assert res.status_code == 200
     assert res.json()["ok"] is True
@@ -70,7 +66,7 @@ def test_change_password_wrong_current(auth_client):
     db = AuthDatabase(settings.auth_db_path)
     password = "Test1Pass"
     db.create_user("user@avs.com.br", "Usuário", hash_password(password))
-    _login(auth_client, "user@avs.com.br", password)
+    headers = login_and_csrf(auth_client, "user@avs.com.br", password)
 
     res = auth_client.post(
         "/auth/change-password",
@@ -79,6 +75,7 @@ def test_change_password_wrong_current(auth_client):
             "new_password": "Nova2Pass",
             "confirm_password": "Nova2Pass",
         },
+        headers=headers,
     )
     assert res.status_code == 400
     assert "atual" in res.json()["detail"].lower()
@@ -89,7 +86,7 @@ def test_change_password_mismatch(auth_client):
     db = AuthDatabase(settings.auth_db_path)
     password = "Test1Pass"
     db.create_user("user@avs.com.br", "Usuário", hash_password(password))
-    _login(auth_client, "user@avs.com.br", password)
+    headers = login_and_csrf(auth_client, "user@avs.com.br", password)
 
     res = auth_client.post(
         "/auth/change-password",
@@ -98,6 +95,7 @@ def test_change_password_mismatch(auth_client):
             "new_password": "Nova2Pass",
             "confirm_password": "Outra2Pass",
         },
+        headers=headers,
     )
     assert res.status_code == 400
     assert "coincidem" in res.json()["detail"].lower()

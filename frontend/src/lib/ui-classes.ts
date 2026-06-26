@@ -19,7 +19,10 @@ export const tileInteractiveClass =
   'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface shadow-sm hover:-translate-y-0.5 hover:border-aurora-accent hover:shadow-md'
 
 export const tileInteractiveRedClass =
-  'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface shadow-sm hover:-translate-y-0.5 hover:border-aurora-brand-red/50 hover:bg-aurora-brand-red/5 hover:shadow-md hover:shadow-aurora-brand-red/10'
+  'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface shadow-sm hover:-translate-y-0.5 hover:border-aurora-brand-red/50 hover:shadow-md'
+
+export const tileInteractivePurpleClass =
+  'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface shadow-sm hover:-translate-y-0.5 hover:border-aurora-purple/50 hover:shadow-md'
 
 export const linkClass = 'font-medium text-aurora-brand-red hover:underline'
 

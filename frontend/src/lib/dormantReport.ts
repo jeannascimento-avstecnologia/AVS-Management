@@ -46,7 +46,20 @@ export type ParsedDormantReport = {
   scanned: number
   total: number
   truncated: boolean
+  resultLimit: number
+  scanCap: number
   clients: DormantClientRow[]
+}
+
+export function dormantTruncatedNote(parsed: Pick<ParsedDormantReport, 'truncated' | 'resultLimit' | 'scanCap'>): string {
+  if (!parsed.truncated) return ''
+  if (parsed.resultLimit > 0) {
+    return ` (limitado a ${parsed.resultLimit} inativas)`
+  }
+  if (parsed.scanCap > 0) {
+    return ` (varredura parcial — apenas ${parsed.scanCap} clientes analisados)`
+  }
+  return ' (truncado)'
 }
 
 export function parseDormantReport(data: Record<string, unknown>): ParsedDormantReport {
@@ -71,6 +84,8 @@ export function parseDormantReport(data: Record<string, unknown>): ParsedDormant
     scanned: Number(data.scanned) || 0,
     total: Number(data.total) || clients.length,
     truncated: Boolean(data.truncated),
+    resultLimit: Number(data.result_limit) || 0,
+    scanCap: Number(data.scan_cap) || 0,
     clients,
   }
 }
@@ -99,7 +114,7 @@ th{background:#1a4f8c;color:#fff}
 </style></head><body>
 ${REPORT_LOGO_HTML}
 <h1 style="font-size:1.25rem;margin:0 0 1rem">Empresas sem atividade</h1>
-<p class="meta">Período: últimos <strong>${parsed.months}</strong> meses · Analisados: <strong>${parsed.scanned}</strong> · Encontrados: <strong>${parsed.total}</strong>${parsed.truncated ? ' (lista truncada)' : ''}</p>
+<p class="meta">Período: últimos <strong>${parsed.months}</strong> meses · Analisados: <strong>${parsed.scanned}</strong> · Encontrados: <strong>${parsed.total}</strong>${dormantTruncatedNote(parsed)}</p>
 <div class="actions"><button onclick="window.print()">Imprimir</button></div>
 <table>
 <thead><tr><th>Razão social</th><th>CNPJ</th><th>Último ticket</th><th>Última cobrança</th><th>Motivo</th></tr></thead>

@@ -7,3 +7,5 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 frontend/node_modules/
+docs/security_audit_log.md
+.cursor/debug*.log

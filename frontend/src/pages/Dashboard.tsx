@@ -5,36 +5,56 @@ import { StatTile } from '@/components/data/StatTile'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { api } from '@/api/client'
 import { formatDate } from '@/lib/format'
-import { UserPlus, UserX, Search, Clock, Users, Database, BarChart3, AlertCircle } from 'lucide-react'
+import { UserPlus, UserX, Search, Clock, Users, Database, BarChart3, AlertCircle, Shield } from 'lucide-react'
+import type { PermissionKey } from '@/hooks/useAuth'
 
-const cards = [
+const cards: {
+  to: string
+  title: string
+  desc: string
+  icon: typeof UserPlus
+  accent: 'accent' | 'red' | 'purple'
+  permission: PermissionKey
+}[] = [
   {
     to: '/cadastrar',
     title: 'Cadastrar cliente',
     desc: 'CNPJ, revisão e integração TiFlux + VHSYS',
     icon: UserPlus,
-    accent: 'accent' as const,
+    accent: 'accent',
+    permission: 'cadastrar',
   },
   {
     to: '/inativar',
     title: 'Inativar cliente',
     desc: 'Inativação no TiFlux por CNPJ ou nome',
     icon: UserX,
-    accent: 'red' as const,
+    accent: 'red',
+    permission: 'inativar',
   },
   {
     to: '/consultar',
     title: 'Consultar status',
     desc: 'Relatório completo do cadastro nos sistemas',
     icon: Search,
-    accent: 'accent' as const,
+    accent: 'accent',
+    permission: 'consultar',
   },
   {
     to: '/empresas-inativas',
     title: 'Empresas sem atividade',
     desc: 'Sem ticket ou cobrança nos últimos 24 meses',
     icon: Clock,
-    accent: 'red' as const,
+    accent: 'red',
+    permission: 'empresas_inativas',
+  },
+  {
+    to: '/usuarios',
+    title: 'Gerenciar usuários',
+    desc: 'Permissões, contas e auditoria de acessos',
+    icon: Shield,
+    accent: 'purple',
+    permission: 'manage_users',
   },
 ]
 
@@ -47,6 +67,11 @@ function isStatsStale(computedAt: string | undefined, staleAfterSeconds: number 
 export function Dashboard() {
   const { user } = useAuth()
   const firstName = user?.name?.split(/\s+/)[0] || 'usuário'
+
+  const visibleCards = cards.filter((c) => {
+    if (user?.dev_mode) return true
+    return Boolean(user?.permissions?.[c.permission])
+  })
 
   const {
     data: stats,
@@ -77,11 +102,15 @@ export function Dashboard() {
           <Users className="h-4 w-4 text-muted-foreground" />
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Operações</h2>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {cards.map((c) => (
-            <ActionCard key={c.to} {...c} />
-          ))}
-        </div>
+        {visibleCards.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Nenhuma operação disponível para seu perfil.</p>
+        ) : (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {visibleCards.map((c) => (
+              <ActionCard key={c.to} {...c} />
+            ))}
+          </div>
+        )}
       </div>
 
       <div>
@@ -122,6 +151,10 @@ export function Dashboard() {
           </p>
         )}
       </div>
+
+      {!user?.dev_mode && visibleCards.length === 0 && (
+        <p className="text-sm text-muted-foreground">Entre em contato com um administrador para solicitar acesso.</p>
+      )}
     </div>
   )
 }
