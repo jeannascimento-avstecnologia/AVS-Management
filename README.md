@@ -2,10 +2,10 @@
 
 Painel web para integração CNPJ → **TiFlux** + **VHSYS**: consulta BrasilAPI, cadastro, inativação, consulta de status e relatório de empresas sem atividade.
 
-Repositório: [github.com/JeanLuengo/AVS-Management](https://github.com/JeanLuengo/AVS-Management)
+Repositório: [github.com/jeannascimento-avstecnologia/AVS-Management](https://github.com/jeannascimento-avstecnologia/AVS-Management)
 
 ```bash
-git clone https://github.com/JeanLuengo/AVS-Management.git
+git clone https://github.com/jeannascimento-avstecnologia/AVS-Management.git
 cd AVS-Management
 ```
 
