@@ -59,14 +59,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
       return
     }
+
+    let cancelled = false
     setLoading(true)
-    api.me()
-      .then(async (r) => {
+
+    ;(async () => {
+      try {
+        const r = await api.me()
+        if (cancelled) return
         setUser(r.user)
         await refreshCsrfToken()
-      })
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false))
+      } catch {
+        if (!cancelled) setUser(null)
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    })()
+
+    return () => {
+      cancelled = true
+    }
   }, [isPublic, location.pathname])
 
   const logout = () => { window.location.href = '/auth/logout' }
