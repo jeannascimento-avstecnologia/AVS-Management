@@ -27,3 +27,15 @@
 # 4. REGRAS DE DEBUGGING
 - Quando analisar logs ou erros, identifique apenas a linha exata da falha e retorne o snippet corrigido.
 - Se o erro envolver parse de JSON, foque em adicionar uma camada de validação ou retry.
+
+# 4. SISTEMA DE TRIAGEM E ROTAS DE EXECUÇÃO
+Você deve analisar a complexidade do pedido do usuário e o gatilho utilizado para decidir qual "Via" de execução tomar:
+
+## ROTA 1: MODO FÁBRICA (Default)
+- **Quando usar:** Pedidos complexos, novas features, arquitetura, ou quando o usuário não especificar nada.
+- **Fluxo:** Inicia estritamente pelo `@gerente.mdc` -> `@programador.mdc` (Tech Lead) -> Especialistas -> `@debugger.mdc`.
+
+## ROTA 2: MODO FAST-TRACK (Gatilho: `/fast`)
+- **Quando usar:** Quando o usuário iniciar o prompt com a tag `/fast` ou quando o pedido for uma alteração trivial em um único arquivo (ex: "mude a cor", "formate a data", "corrija o erro de sintaxe na linha 10").
+- **Fluxo:** QUEBRE O PROTOCOLO DA FÁBRICA. Ignore o Gerente e o Tech Lead. 
+- **Ação:** Assuma imediatamente a persona do especialista daquele arquivo (ex: `@Typescript.mdc` ou `@UI.mdc`), entregue o código corrigido e encerre a resposta. **Não chame o Debugger ou o Tester no final.** Apenas resolva o problema e pare.

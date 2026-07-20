@@ -1,0 +1,32 @@
+---
+description: Guarda-mestra do NextGen Planner. Forca leitura do guia e do plano antes de qualquer alteracao ou implementacao (SDD, multi-tenancy, escopo MVP).
+alwaysApply: true
+---
+
+# GUARDA-MESTRA - Ler ANTES de qualquer alteracao ou implementacao
+
+Fonte de verdade: @docs/GUIA_MESTRE.md
+
+## Pre-flight OBRIGATORIO (antes de criar/editar/implementar qualquer coisa)
+
+1. Ler @docs/GUIA_MESTRE.md por completo.
+2. Ler o plano ativo em `.cursor/plans/` (decisoes travadas, escopo MVP vs fast-follow, riscos).
+3. SDD: confirmar que existe spec aprovada em `docs/` para a tarefa. Sem spec -> escrever/atualizar a spec ANTES do codigo.
+4. Confirmar isolamento multi-tenant (`org_id` + RLS) e que segredos ficam server-side.
+5. Declarar em 1 linha antes de editar: `Guia+Plano lidos | spec: <arquivo> | escopo: MVP|fast-follow`.
+
+Se a tarefa contrariar o guia ou o plano: **PARE** e proponha atualizar o documento (ADR/plano) antes de codar. Nao prossiga.
+
+## Inegociaveis (detalhes em @docs/GUIA_MESTRE.md)
+
+- Supabase-first; logica privilegiada SO em Edge Functions. Sem back-end separado no MVP.
+- Toda tabela de tenant: `org_id` + policy RLS + teste pgTAP. Sem teste = nao mergeia.
+- Segredo Cloudinary/API nunca no cliente; upload sempre assinado por Edge Function.
+- `dnd-kit` (nunca `react-beautiful-dnd`); TypeScript sem `any`; fractional indexing para ordem.
+- Comentarios SEMPRE no card (nunca chat). Calendario + feed iCal mantidos.
+- Nao implementar itens de fast-follow (rollup cross-board, audit log, automacao) dentro do MVP.
+
+## Estilo (caveman mode, do `.cursorrules`)
+
+- Conciso, direto a solucao. NUNCA reescrever codigo inalterado (`// ... codigo mantido ...`).
+- Senso critico: se houver rota superior, questionar antes de seguir.

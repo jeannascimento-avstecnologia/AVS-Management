@@ -18,7 +18,7 @@ async def fetch_cnpj(cnpj_digits: str, settings: Settings) -> dict:
         raise BrasilApiError("CNPJ não encontrado na BrasilAPI.", 404)
     if response.status_code >= 400:
         raise BrasilApiError(
-            f"BrasilAPI retornou erro {response.status_code}.",
+            f"Problemas com o servidor da Receita Federal. Erro: {response.status_code}.",
             response.status_code,
         )
 
