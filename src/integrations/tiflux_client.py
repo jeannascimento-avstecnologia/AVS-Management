@@ -351,6 +351,30 @@ class TifluxClient:
         data = response.json()
         return data if isinstance(data, dict) else None
 
+    async def get_client_addresses(self, client_id: int) -> list[dict]:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{self._base}/clients/{client_id}/addresses",
+                headers=self._auth_headers(),
+            )
+        self._ensure_ok(response, "listar endereços do cliente TiFlux")
+        data = response.json()
+        if isinstance(data, list):
+            return [row for row in data if isinstance(row, dict)]
+        return _extract_client_list(data)
+
+    async def get_client_contacts(self, client_id: int) -> list[dict]:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{self._base}/clients/{client_id}/contacts",
+                headers=self._auth_headers(),
+            )
+        self._ensure_ok(response, "listar contatos do cliente TiFlux")
+        data = response.json()
+        if isinstance(data, list):
+            return [row for row in data if isinstance(row, dict)]
+        return _extract_client_list(data)
+
     async def get_client_desks(self, client_id: int) -> list[dict]:
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.get(
@@ -502,17 +526,12 @@ class TifluxClient:
         """Última cobrança via histórico de faturamentos (GET /reports/billings/history)."""
 
         async def _fetch(client: httpx.AsyncClient) -> datetime | None:
-            response = await self._get_with_retry(
-                client,
-                f"{self._base}/reports/billings/history",
-                headers=self._auth_headers(),
-                params={"client_id": client_id, "offset": 1, "limit": 100},
-                action="listar histórico de faturamentos TiFlux",
-                allow_statuses=frozenset({404, 405}),
+            items = await self.list_billing_history(
+                client_id=client_id,
+                limit=100,
+                offset=1,
+                http=client,
             )
-            if response.status_code in (404, 405):
-                return None
-            items = _extract_client_list(response.json())
             if not items:
                 return None
             return _latest_datetime_from_items(items, ("billing_date",))
@@ -522,6 +541,209 @@ class TifluxClient:
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             return await _fetch(client)
+
+    async def list_billing_history(
+        self,
+        *,
+        client_id: int | None = None,
+        billing_start_date: str | None = None,
+        billing_end_date: str | None = None,
+        due_start_date: str | None = None,
+        due_end_date: str | None = None,
+        billing_type: str | None = None,
+        nfe_number: int | None = None,
+        ticket_number: int | None = None,
+        limit: int = 100,
+        offset: int = 1,
+        http: httpx.AsyncClient | None = None,
+    ) -> list[dict]:
+        """GET /reports/billings/history — OpenAPI: datas + client_id + _type."""
+        params: dict[str, int | str] = {
+            "offset": max(1, offset),
+            "limit": min(max(limit, 1), self.PAGE_LIMIT),
+        }
+        if client_id is not None:
+            params["client_id"] = int(client_id)
+        if billing_start_date:
+            params["billing_start_date"] = billing_start_date
+        if billing_end_date:
+            params["billing_end_date"] = billing_end_date
+        if due_start_date:
+            params["due_start_date"] = due_start_date
+        if due_end_date:
+            params["due_end_date"] = due_end_date
+        if billing_type:
+            params["_type"] = billing_type
+        if nfe_number is not None:
+            params["nfe_number"] = int(nfe_number)
+        if ticket_number is not None:
+            params["ticket_number"] = int(ticket_number)
+
+        async def _fetch(client: httpx.AsyncClient) -> list[dict]:
+            response = await self._get_with_retry(
+                client,
+                f"{self._base}/reports/billings/history",
+                headers=self._auth_headers(),
+                params=params,
+                action="listar histórico de faturamentos TiFlux",
+                allow_statuses=frozenset({404, 405}),
+            )
+            if response.status_code in (404, 405):
+                return []
+            return _extract_client_list(response.json())
+
+        if http is not None:
+            return await _fetch(http)
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            return await _fetch(client)
+
+    async def list_contracts(
+        self,
+        *,
+        client_id: int | None = None,
+        status: str = "actives",
+        limit: int = 100,
+        offset: int = 1,
+    ) -> list[dict]:
+        """GET /contracts — O2.0 Go. `client_ids` filtra por cliente."""
+        params: dict[str, int | str] = {
+            "offset": max(1, offset),
+            "limit": min(max(limit, 1), self.PAGE_LIMIT),
+            "status": status,
+        }
+        if client_id is not None:
+            params["client_ids"] = int(client_id)
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await self._get_with_retry(
+                client,
+                f"{self._base}/contracts",
+                headers=self._auth_headers(),
+                params=params,
+                action="listar contratos TiFlux",
+                allow_statuses=frozenset({404, 405}),
+            )
+        if response.status_code in (404, 405):
+            return []
+        return _extract_client_list(response.json())
+
+    async def create_ticket(self, payload: dict) -> dict:
+        """POST /tickets — O2.0 Go (doc). Sem create_contract (No-Go)."""
+        if not isinstance(payload, dict) or not payload:
+            raise TifluxApiError("Payload de ticket TiFlux inválido.", 422)
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{self._base}/tickets",
+                headers=self._json_headers(),
+                json=payload,
+            )
+
+        self._ensure_ok(response, "criar ticket TiFlux")
+        data = response.json()
+        if isinstance(data, dict):
+            ticket = data.get("ticket")
+            return ticket if isinstance(ticket, dict) else data
+        raise TifluxApiError("Resposta inesperada ao criar ticket TiFlux.", 502, str(data))
+
+    async def upload_ticket_files(
+        self,
+        ticket_number: int | str,
+        *,
+        files: list[tuple[str, bytes, str]] | None = None,
+        files_base64: list[dict[str, str]] | None = None,
+    ) -> dict:
+        """POST /tickets/{ticket_number}/files — anexo ≤25MB (MCP/O2.0)."""
+        number = str(ticket_number).strip()
+        if not number:
+            raise TifluxApiError("ticket_number é obrigatório.", 422)
+        if not files and not files_base64:
+            raise TifluxApiError("Informe files ou files_base64.", 422)
+
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            if files_base64:
+                response = await client.post(
+                    f"{self._base}/tickets/{number}/files",
+                    headers=self._json_headers(),
+                    json={"files_base64": files_base64},
+                )
+            else:
+                assert files is not None
+                multipart: list[tuple[str, tuple[str, bytes, str]]] = [
+                    ("files", (name, content, content_type))
+                    for name, content, content_type in files
+                ]
+                response = await client.post(
+                    f"{self._base}/tickets/{number}/files",
+                    headers=self._auth_headers(),
+                    files=multipart,
+                )
+
+        self._ensure_ok(response, "anexar arquivo ao ticket TiFlux")
+        data = response.json()
+        return data if isinstance(data, dict) else {"data": data}
+
+    async def update_ticket(
+        self,
+        ticket_id: int,
+        *,
+        stage_id: int | None = None,
+        stage_name: str | None = None,
+        extra: dict | None = None,
+    ) -> dict:
+        """PUT /tickets/{id} — stage kanban (quote.sent)."""
+        body: dict = dict(extra or {})
+        if stage_id is not None:
+            body["stage_id"] = stage_id
+        if stage_name is not None:
+            body["stage_name"] = stage_name
+        if not body:
+            raise TifluxApiError("Informe stage_id, stage_name ou extra para atualizar.", 422)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.put(
+                f"{self._base}/tickets/{ticket_id}",
+                headers=self._json_headers(),
+                json=body,
+            )
+
+        self._ensure_ok(response, "atualizar ticket TiFlux")
+        data = response.json()
+        if isinstance(data, dict):
+            ticket = data.get("ticket")
+            return ticket if isinstance(ticket, dict) else data
+        raise TifluxApiError("Resposta inesperada ao atualizar ticket TiFlux.", 502, str(data))
+
+    async def create_ticket_answer(
+        self,
+        ticket_number: int | str,
+        *,
+        answer: str,
+        files_base64: list[dict[str, str]] | None = None,
+        extra: dict | None = None,
+    ) -> dict:
+        """POST /tickets/{ticket_number}/answers — HTML/cliente (O2.0 Go)."""
+        number = str(ticket_number).strip()
+        if not number:
+            raise TifluxApiError("ticket_number é obrigatório.", 422)
+        text = (answer or "").strip()
+        if not text:
+            raise TifluxApiError("answer é obrigatório.", 422)
+
+        body: dict = {"answer": text, **(extra or {})}
+        if files_base64:
+            body["files_base64"] = files_base64
+
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{self._base}/tickets/{number}/answers",
+                headers=self._json_headers(),
+                json=body,
+            )
+
+        self._ensure_ok(response, "criar resposta no ticket TiFlux")
+        data = response.json()
+        return data if isinstance(data, dict) else {"data": data}
 
     async def create_client(
 

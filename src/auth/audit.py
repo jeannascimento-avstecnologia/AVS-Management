@@ -35,7 +35,18 @@ def log_action(
 
 
 def _sanitize_detail(detail: dict[str, Any]) -> dict[str, Any]:
-    blocked = {"password", "token", "csrf_token", "password_hash", "current_password", "new_password"}
+    blocked = {
+        "password",
+        "token",
+        "csrf_token",
+        "password_hash",
+        "current_password",
+        "new_password",
+        "signature",
+        "hmac",
+        "n8n_webhook_secret",
+        "secret",
+    }
     out: dict[str, Any] = {}
     for key, value in detail.items():
         if key.lower() in blocked:

@@ -19,7 +19,12 @@ from src.security import CsrfMiddleware, SecurityHeadersMiddleware, safe_error_m
 from src.auth.local import RememberMeMiddleware
 from src.auth.router import build_auth_router
 from src.config import get_settings
+from src.hub.store import get_hub_db
 from src.integrations.tiflux_client import TifluxApiError
+from src.billing import build_billing_router
+from src.documents import build_documents_router
+from src.quotes import build_quotes_router
+from src.hub.webhooks import build_webhooks_router
 from src.orchestrator import (
     OrchestratorError,
     execute_inactivate,
@@ -38,6 +43,8 @@ load_dotenv()
 
 settings = get_settings()
 validate_security_settings(settings)
+# Bootstrap hub.db (schema docs/hub/schema/hub_v1.sql) — P0.4
+get_hub_db(settings)
 
 app = FastAPI(
     title="AVS Management",
@@ -66,6 +73,10 @@ if (FRONTEND_DIST / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="frontend-assets")
 
 app.include_router(build_auth_router())
+app.include_router(build_quotes_router())
+app.include_router(build_billing_router())
+app.include_router(build_documents_router())
+app.include_router(build_webhooks_router())
 
 
 def _parse_id_list(value: Any) -> list[int]:
@@ -594,6 +605,8 @@ async def health() -> dict[str, str]:
 
 @app.get("/{full_path:path}", response_class=HTMLResponse, response_model=None)
 async def spa_fallback(full_path: str):
-    if full_path.startswith(("api/", "auth/", "static/", "assets/")):
+    if full_path.startswith(
+        ("api/", "auth/", "static/", "assets/", "webhooks/", "orcamentos/", "faturamento/")
+    ):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
     return _spa_index()

@@ -18,6 +18,8 @@
   --aurora-warning: #f59e0b;
   --aurora-danger: #ef4444;
   --aurora-info: #0ea5e9;
+  --aurora-yellow: #facc15;
+  --aurora-yellow-deep: #a16207;
   --aurora-sidebar-bg: #0a1145;
   --aurora-sidebar-fg: #f8fafc;
   --aurora-sidebar-muted: #94a3b8;
@@ -26,6 +28,16 @@
   --aurora-brand-red: #dc2626;
   --aurora-purple: #7c3aed;
   --aurora-purple-muted: #ede9fe;
+  /* Hub module accents: Orçamentos / Faturamento / Documentos */
+  --aurora-green: #059669;
+  --aurora-green-muted: #d1fae5;
+  --aurora-teal: #0d9488;
+  --aurora-teal-muted: #ccfbf1;
+  --aurora-amber: #d97706;
+  --aurora-amber-muted: #fef3c7;
+  --aurora-orange: #ea580c;
+  --aurora-orange-muted: #ffedd5;
+  --aurora-orange-deep: #c2410c;
   --aurora-topbar-bg: #b91c1c;
   --aurora-overlay: rgba(6, 10, 46, 0.55);
 
@@ -73,6 +85,8 @@
   --aurora-warning: #fbbf24;
   --aurora-danger: #f87171;
   --aurora-info: #38bdf8;
+  --aurora-yellow: #eab308;
+  --aurora-yellow-deep: #ca8a04;
   --aurora-sidebar-bg: #060a2e;
   --aurora-sidebar-fg: #e8edf7;
   --aurora-sidebar-muted: #7c8ba8;
@@ -81,6 +95,15 @@
   --aurora-brand-red: #dc2626;
   --aurora-purple: #8b5cf6;
   --aurora-purple-muted: #2e1065;
+  --aurora-green: #34d399;
+  --aurora-green-muted: #064e3b;
+  --aurora-teal: #2dd4bf;
+  --aurora-teal-muted: #134e4a;
+  --aurora-amber: #fbbf24;
+  --aurora-amber-muted: #78350f;
+  --aurora-orange: #fb923c;
+  --aurora-orange-muted: #7c2d12;
+  --aurora-orange-deep: #ea580c;
   --aurora-topbar-bg: #991b1b;
   --aurora-overlay: rgba(0, 0, 0, 0.6);
 
@@ -121,6 +144,8 @@
   --color-aurora-warning: var(--aurora-warning);
   --color-aurora-danger: var(--aurora-danger);
   --color-aurora-info: var(--aurora-info);
+  --color-aurora-yellow: var(--aurora-yellow);
+  --color-aurora-yellow-deep: var(--aurora-yellow-deep);
   --color-aurora-sidebar-bg: var(--aurora-sidebar-bg);
   --color-aurora-sidebar-fg: var(--aurora-sidebar-fg);
   --color-aurora-sidebar-muted: var(--aurora-sidebar-muted);
@@ -129,6 +154,15 @@
   --color-aurora-brand-red: var(--aurora-brand-red);
   --color-aurora-purple: var(--aurora-purple);
   --color-aurora-purple-muted: var(--aurora-purple-muted);
+  --color-aurora-green: var(--aurora-green);
+  --color-aurora-green-muted: var(--aurora-green-muted);
+  --color-aurora-teal: var(--aurora-teal);
+  --color-aurora-teal-muted: var(--aurora-teal-muted);
+  --color-aurora-amber: var(--aurora-amber);
+  --color-aurora-amber-muted: var(--aurora-amber-muted);
+  --color-aurora-orange: var(--aurora-orange);
+  --color-aurora-orange-muted: var(--aurora-orange-muted);
+  --color-aurora-orange-deep: var(--aurora-orange-deep);
   --color-aurora-topbar-bg: var(--aurora-topbar-bg);
   --color-aurora-overlay: var(--aurora-overlay);
 
@@ -204,6 +238,124 @@
   transition-property: transform, box-shadow, border-color, background-color, opacity;
   transition-duration: var(--motion-duration-fast);
   transition-timing-function: var(--motion-ease-out);
+}
+
+/* Contorno fino no texto dos cards de lead — contraste vs ícone grande */
+.lead-circle-ink-light {
+  -webkit-text-stroke: 0.55px rgba(0, 0, 0, 0.45);
+  paint-order: stroke fill;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+}
+
+@keyframes lead-circle-press {
+  0% {
+    transform: scale(1);
+  }
+  45% {
+    transform: scale(0.94);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes lead-circle-glow {
+  0%,
+  100% {
+    opacity: 0.75;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.lead-circle-slot {
+  position: relative;
+  display: flex;
+  height: 9rem;
+  width: 9rem;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (min-width: 640px) {
+  .lead-circle-slot {
+    height: 9.5rem;
+    width: 9.5rem;
+  }
+}
+
+.lead-circle-btn {
+  position: relative;
+  z-index: 1;
+  height: 8rem;
+  width: 8rem;
+  transition:
+    transform var(--motion-duration-fast) var(--motion-ease-out),
+    filter var(--motion-duration-fast) var(--motion-ease-out);
+}
+
+@media (min-width: 640px) {
+  .lead-circle-btn {
+    height: 9rem;
+    width: 9rem;
+  }
+}
+
+.lead-circle-halo {
+  pointer-events: none;
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 9999px;
+  opacity: 0;
+  transition: opacity var(--motion-duration-normal) var(--motion-ease-out);
+}
+
+.lead-circle-slot.is-selected .lead-circle-halo {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .lead-circle-btn:hover {
+    transform: scale(1.05);
+    filter: brightness(1.07);
+  }
+
+  .lead-circle-btn:active {
+    transform: scale(0.96);
+    filter: brightness(0.96);
+  }
+
+  .lead-circle-btn.is-pressed {
+    animation: lead-circle-press 280ms var(--motion-ease-out);
+  }
+
+  .lead-circle-slot.is-selected .lead-circle-halo {
+    animation: lead-circle-glow 2.4s ease-in-out infinite;
+  }
+}
+
+.lead-circle-glow-quente {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--aurora-orange) 55%, transparent),
+    0 0 22px color-mix(in srgb, var(--aurora-orange) 70%, transparent),
+    0 0 40px color-mix(in srgb, var(--aurora-orange) 40%, transparent);
+}
+
+.lead-circle-glow-morno {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--aurora-yellow) 55%, transparent),
+    0 0 22px color-mix(in srgb, var(--aurora-yellow-deep) 70%, transparent),
+    0 0 40px color-mix(in srgb, var(--aurora-yellow) 35%, transparent);
+}
+
+.lead-circle-glow-frio {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--aurora-info) 55%, transparent),
+    0 0 22px color-mix(in srgb, var(--aurora-info) 70%, transparent),
+    0 0 40px color-mix(in srgb, var(--aurora-accent) 40%, transparent);
 }
 
 html,

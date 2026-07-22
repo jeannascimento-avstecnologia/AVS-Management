@@ -20,6 +20,8 @@ Pasta local sugerida: `c:\Projetos\AVS-Management` (Windows) ou `/opt/AVS-Manage
 
 ## Instalação
 
+**Windows**
+
 ```bash
 cd c:\Projetos\AVS-Management
 python -m venv .venv
@@ -28,7 +30,20 @@ pip install -r requirements.txt
 copy .env.example .env
 ```
 
+**macOS** (Python 3.11+; Homebrew: `brew install python@3.12`)
+
+```bash
+cd ~/Projetos/avs-management
+python3.12 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+cd frontend && npm install && cd ..
+```
+
 Edite `.env` com seus tokens.
+
+> O `.venv` é específico do SO. Se veio de Windows para Mac (ou o inverso), apague e recrie com o Python local.
 
 ### Autenticação local (e-mail + senha)
 
@@ -63,7 +78,7 @@ npm run dev:local
 
 Abra http://127.0.0.1:5173 — o Vite faz proxy das rotas da API para a porta 8000.
 
-Requisitos: `.venv` criado, `pip install -r requirements.txt` e `.env` configurado.
+Requisitos: `.venv` criado **neste Mac** (`python3.12 -m venv .venv`), `pip install -r requirements.txt`, `frontend/node_modules` reinstalado no Mac (`cd frontend && npm install`) e `.env` configurado.
 
 ### Produção / só API
 

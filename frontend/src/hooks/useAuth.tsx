@@ -8,6 +8,11 @@ export type PermissionKey =
   | 'consultar'
   | 'empresas_inativas'
   | 'manage_users'
+  | 'orcamentos'
+  | 'aprovar_orcamento'
+  | 'gerar_contrato'
+  | 'faturar'
+  | 'aprovar_fatura'
 
 export type UserPermissions = Record<PermissionKey, boolean>
 

@@ -29,13 +29,28 @@ async def test_get_last_billing_datetime_uses_billing_history():
 
 
 @pytest.mark.asyncio
-async def test_get_last_billing_datetime_returns_none_when_empty():
+async def test_list_billing_history_passes_openapi_filters():
     client = TifluxClient(Settings(tiflux_api_token="t"))
     mock_response = MagicMock(status_code=200, text="[]")
-    mock_response.json.return_value = []
+    mock_response.json.return_value = [
+        {"billing_id": 1, "billing_date": "2026-07-17", "client_id": 10}
+    ]
 
     with patch.object(client, "_get_with_retry", new_callable=AsyncMock) as retry:
         retry.return_value = mock_response
-        result = await client.get_last_billing_datetime(99)
+        items = await client.list_billing_history(
+            client_id=10,
+            billing_start_date="2026-07-01",
+            billing_end_date="2026-07-31",
+            billing_type="billed",
+            limit=50,
+            offset=1,
+        )
 
-    assert result is None
+    assert len(items) == 1
+    params = retry.await_args.kwargs["params"]
+    assert params["client_id"] == 10
+    assert params["billing_start_date"] == "2026-07-01"
+    assert params["billing_end_date"] == "2026-07-31"
+    assert params["_type"] == "billed"
+    assert "reports/billings/history" in retry.await_args.args[1]

@@ -1,0 +1,349 @@
+{
+  "name": "avs-hub-commercial",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "avs-management-o2.3-skeleton"
+  },
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "avs-hub-commercial",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "wh-avs-hub-commercial",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 300],
+      "webhookId": "avs-hub-commercial"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Verify HMAC-SHA256 of RAW body (ADR-0003).\n// Requires Webhook option rawBody=true. Secret: env N8N_WEBHOOK_SECRET (same as Management).\nconst crypto = require('crypto');\n\nconst secret = (typeof process !== 'undefined' && process.env && process.env.N8N_WEBHOOK_SECRET) || '';\nif (!secret || !String(secret).trim()) {\n  throw new Error('N8N_WEBHOOK_SECRET ausente — fail closed');\n}\n\nconst item = $input.first();\nconst headers = item.json.headers || {};\nconst provided = String(\n  headers['x-avs-signature'] || headers['X-AVS-Signature'] || ''\n).trim();\nif (!provided) {\n  throw new Error('X-AVS-Signature ausente');\n}\n\nlet rawBuf;\nif (item.binary && item.binary.data) {\n  rawBuf = await this.helpers.getBinaryDataBuffer(0, 'data');\n} else if (typeof item.json.body === 'string') {\n  rawBuf = Buffer.from(item.json.body, 'utf8');\n} else if (item.json.body && typeof item.json.body === 'object') {\n  // Fallback frágil — preferir rawBody; só para smoke local\n  rawBuf = Buffer.from(JSON.stringify(item.json.body), 'utf8');\n} else {\n  throw new Error('Raw body indisponível — habilite rawBody no Webhook');\n}\n\nconst expected = crypto.createHmac('sha256', String(secret).trim()).update(rawBuf).digest('hex');\nif (!crypto.timingSafeEqual(Buffer.from(expected, 'utf8'), Buffer.from(provided, 'utf8'))) {\n  throw new Error('Assinatura HMAC inválida');\n}\n\nconst envelope = JSON.parse(rawBuf.toString('utf8'));\nreturn [{ json: envelope }];\n"
+      },
+      "id": "code-verify-hmac",
+      "name": "Verify HMAC",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.dry_run === true }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "if-dry-run",
+      "name": "IF dry_run",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// dry_run: sem TiFlux/VHSYS — callback ok imediato\nconst e = $input.first().json;\nreturn [{\n  json: {\n    event: e.event,\n    resource_type: e.resource_type,\n    resource_id: e.resource_id,\n    status: 'ok',\n    outbox_id: e.outbox_id,\n    external: {\n      tiflux_ticket_number: (e.payload && e.payload.quote && e.payload.quote.tiflux_ticket_number) || null,\n      vhsys_os_id: (e.payload && e.payload.quote && e.payload.quote.vhsys_os_id) || null\n    },\n    error_message: null,\n    dry_run: true,\n    _callback_url: e.callback_url\n  }\n}];\n"
+      },
+      "id": "code-dry-callback",
+      "name": "Build callback dry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [720, 160]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "output": 0,
+              "value": "quote.submit"
+            },
+            {
+              "output": 1,
+              "value": "quote.sent"
+            },
+            {
+              "output": 2,
+              "value": "quote.approved"
+            }
+          ]
+        },
+        "dataType": "string",
+        "value1": "={{ $json.event }}",
+        "fallbackOutput": 3
+      },
+      "id": "switch-event",
+      "name": "Switch event",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [720, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// PLACEHOLDER quote.submit live\n// Ops: inserir HTTP VHSYS POST /ordens-servico + TiFlux POST /tickets + files.\n// Ver docs/hub/n8n/avs-hub-commercial.md §6.\nconst e = $input.first().json;\nreturn [{\n  json: {\n    event: e.event,\n    resource_type: e.resource_type,\n    resource_id: e.resource_id,\n    status: 'error',\n    outbox_id: e.outbox_id,\n    external: null,\n    error_message: 'quote.submit live nodes not wired — configure VHSYS/TiFlux HTTP after smoke',\n    dry_run: false,\n    _callback_url: e.callback_url\n  }\n}];\n"
+      },
+      "id": "code-submit-stub",
+      "name": "Stub quote.submit live",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 280]
+    },
+    {
+      "parameters": {
+        "jsCode": "// PLACEHOLDER quote.sent live — PUT ticket stage (TIFLUX_STAGE_SENT_ID)\nconst e = $input.first().json;\nreturn [{\n  json: {\n    event: e.event,\n    resource_type: e.resource_type,\n    resource_id: e.resource_id,\n    status: 'error',\n    outbox_id: e.outbox_id,\n    external: null,\n    error_message: 'quote.sent live nodes not wired — set TIFLUX_STAGE_SENT_ID + HTTP PUT',\n    dry_run: false,\n    _callback_url: e.callback_url\n  }\n}];\n"
+      },
+      "id": "code-sent-stub",
+      "name": "Stub quote.sent live",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 420]
+    },
+    {
+      "parameters": {
+        "jsCode": "// O3 No-Go — sem create contract API (O2.0)\nconst e = $input.first().json;\nreturn [{\n  json: {\n    event: e.event,\n    resource_type: e.resource_type,\n    resource_id: e.resource_id,\n    status: 'error',\n    outbox_id: e.outbox_id,\n    external: null,\n    error_message: 'quote.approved blocked (O3 No-Go: no create contract API)',\n    dry_run: !!e.dry_run,\n    _callback_url: e.callback_url\n  }\n}];\n"
+      },
+      "id": "code-approved-nogo",
+      "name": "quote.approved No-Go",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 560]
+    },
+    {
+      "parameters": {
+        "jsCode": "const e = $input.first().json;\nreturn [{\n  json: {\n    event: e.event,\n    resource_type: e.resource_type,\n    resource_id: e.resource_id,\n    status: 'error',\n    outbox_id: e.outbox_id,\n    external: null,\n    error_message: 'unknown event: ' + String(e.event),\n    dry_run: !!e.dry_run,\n    _callback_url: e.callback_url\n  }\n}];\n"
+      },
+      "id": "code-unknown-event",
+      "name": "Unknown event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [980, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Assina CallbackPayload e POST em callback_url (ADR-0003)\nconst crypto = require('crypto');\nconst secret = (typeof process !== 'undefined' && process.env && process.env.N8N_WEBHOOK_SECRET) || '';\nif (!secret || !String(secret).trim()) {\n  throw new Error('N8N_WEBHOOK_SECRET ausente — fail closed');\n}\n\nconst src = $input.first().json;\nconst callbackUrl = src._callback_url;\nif (!callbackUrl || typeof callbackUrl !== 'string') {\n  throw new Error('callback_url ausente');\n}\n\nconst bodyObj = {\n  event: src.event,\n  resource_type: src.resource_type,\n  resource_id: src.resource_id,\n  status: src.status,\n  outbox_id: src.outbox_id,\n  external: src.external ?? null,\n  error_message: src.error_message ?? null,\n  dry_run: src.dry_run ?? null\n};\n\nconst raw = JSON.stringify(bodyObj);\nconst signature = crypto.createHmac('sha256', String(secret).trim()).update(Buffer.from(raw, 'utf8')).digest('hex');\n\nreturn [{\n  json: {\n    callback_url: callbackUrl,\n    body: bodyObj,\n    raw_body: raw,\n    signature\n  }\n}];\n"
+      },
+      "id": "code-sign-callback",
+      "name": "Sign callback",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $json.callback_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "X-AVS-Signature",
+              "value": "={{ $json.signature }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {}
+      },
+      "id": "http-callback",
+      "name": "POST Management callback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1460, 300],
+      "notes": "Body deve ser bytes idênticos ao assinados. Se Management rejeitar HMAC, usar raw_body no body (Content-Type application/json) sem re-serializar."
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: true, outbox_id: $('Sign callback').item.json.body.outbox_id, status: $('Sign callback').item.json.body.status } }}",
+        "options": {}
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1700, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Verify HMAC",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify HMAC": {
+      "main": [
+        [
+          {
+            "node": "IF dry_run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF dry_run": {
+      "main": [
+        [
+          {
+            "node": "Build callback dry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Switch event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build callback dry": {
+      "main": [
+        [
+          {
+            "node": "Sign callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch event": {
+      "main": [
+        [
+          {
+            "node": "Stub quote.submit live",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Stub quote.sent live",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "quote.approved No-Go",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unknown event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stub quote.submit live": {
+      "main": [
+        [
+          {
+            "node": "Sign callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stub quote.sent live": {
+      "main": [
+        [
+          {
+            "node": "Sign callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "quote.approved No-Go": {
+      "main": [
+        [
+          {
+            "node": "Sign callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unknown event": {
+      "main": [
+        [
+          {
+            "node": "Sign callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign callback": {
+      "main": [
+        [
+          {
+            "node": "POST Management callback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST Management callback": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "o2.3-skeleton-2026-07-20",
+  "id": "avs-hub-commercial",
+  "tags": [
+    {
+      "name": "avs-hub",
+      "id": "avs-hub"
+    },
+    {
+      "name": "o2.3",
+      "id": "o2.3"
+    }
+  ],
+  "pinData": {}
+}

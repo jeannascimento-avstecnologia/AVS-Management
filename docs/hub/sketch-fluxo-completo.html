@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sketch — Fluxo completo AVS Management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #14201c;
+    --ink-soft: #3d4f48;
+    --muted: #6b7c74;
+    --line: #c9d4ce;
+    --paper: #f3f6f4;
+    --card: #fff;
+    --mgmt: #0f3d2e;
+    --n8n: #2d6a4f;
+    --tiflux: #1a5f8a;
+    --vhsys: #5b3d8f;
+    --human: #8a6d1f;
+    --pref: #9a2f2f;
+    --accent: #1f6b4a;
+    --warn: #9a6b12;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "DM Sans", system-ui, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(1100px 520px at 0% -5%, #d7ebe0 0%, transparent 55%),
+      radial-gradient(900px 480px at 100% 0%, #dde8f2 0%, transparent 50%),
+      var(--paper);
+    line-height: 1.45;
+  }
+  .page { max-width: 1320px; margin: 0 auto; padding: 36px 24px 72px; }
+  .brand {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--accent);
+    font-weight: 500;
+    margin-bottom: 8px;
+  }
+  h1 {
+    font-size: clamp(26px, 3.6vw, 38px);
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin: 0 0 10px;
+  }
+  .lede { margin: 0; color: var(--ink-soft); max-width: 62ch; font-size: 15.5px; }
+  .hero {
+    display: grid;
+    grid-template-columns: 1.5fr 1fr;
+    gap: 24px;
+    align-items: end;
+    margin-bottom: 22px;
+  }
+  @media (max-width: 900px) { .hero { grid-template-columns: 1fr; } }
+  .meta {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px 18px;
+  }
+  .meta dl { margin: 0; display: grid; gap: 10px; }
+  .meta dt {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .meta dd { margin: 2px 0 0; font-weight: 600; font-size: 14px; }
+
+  .tabs {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    background: #e4ece7;
+    border-radius: 999px;
+    padding: 4px;
+    margin: 8px 0 20px;
+  }
+  .tabs button {
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .tabs button.active { background: var(--ink); color: #fff; }
+  .hint { color: var(--muted); font-size: 13px; margin-left: 8px; }
+
+  .panel { display: none; }
+  .panel.active { display: block; }
+
+  .board {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    overflow: hidden;
+    margin-bottom: 18px;
+  }
+  .board-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--line);
+    background: #fafcfb;
+  }
+  .board-head h2 { margin: 0; font-size: 17px; letter-spacing: -0.02em; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink-soft);
+  }
+  .chip.mgmt { background: #e8f3ed; border-color: #b7d4c4; color: var(--mgmt); }
+  .chip.n8n { background: #e7f2eb; border-color: #b5d4c2; color: var(--n8n); }
+  .chip.tiflux { background: #e8f2fb; border-color: #b7d3ea; color: var(--tiflux); }
+  .chip.vhsys { background: #f1ebf8; border-color: #d2c2e8; color: var(--vhsys); }
+  .chip.human { background: #fff6df; border-color: #ead7a0; color: var(--human); }
+  .chip.exc { background: #fceeee; border-color: #e5b6b6; color: var(--pref); }
+
+  .swim {
+    display: grid;
+    grid-template-columns: 140px 1fr;
+    border-bottom: 1px solid var(--line);
+  }
+  .swim:last-child { border-bottom: 0; }
+  .lane-label {
+    padding: 16px 12px;
+    border-right: 1px solid var(--line);
+    background: #f7faf8;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+  }
+  .lane-label strong { font-size: 12.5px; }
+  .lane-label span { font-size: 11px; color: var(--muted); }
+  .lane-label[data-sys="mgmt"] { box-shadow: inset 3px 0 0 var(--mgmt); }
+  .lane-label[data-sys="n8n"] { box-shadow: inset 3px 0 0 var(--n8n); }
+  .lane-label[data-sys="tiflux"] { box-shadow: inset 3px 0 0 var(--tiflux); }
+  .lane-label[data-sys="vhsys"] { box-shadow: inset 3px 0 0 var(--vhsys); }
+  .lane-label[data-sys="human"] { box-shadow: inset 3px 0 0 var(--human); }
+  .lane-label[data-sys="pref"] { box-shadow: inset 3px 0 0 var(--pref); }
+
+  .lane-track { padding: 16px; overflow-x: auto; }
+  .nodes { display: flex; align-items: stretch; min-width: max-content; }
+  .node-wrap { display: flex; align-items: center; }
+  .node {
+    width: 200px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 11px 12px;
+  }
+  .node .n {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+  .node h3 { margin: 0 0 5px; font-size: 13px; letter-spacing: -0.015em; line-height: 1.25; }
+  .node p { margin: 0; font-size: 11.5px; color: var(--ink-soft); }
+  .node .tag {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 3px 6px;
+    border-radius: 5px;
+    background: #eef2f0;
+    color: var(--ink-soft);
+  }
+  .node.decision { background: #fffaf0; border-color: #e4cfa0; }
+  .node.decision .tag { background: #fff1c9; color: var(--warn); }
+  .node.human { background: #fffdf5; }
+  .node.human .tag { background: #fff1d6; color: var(--human); }
+  .node.exc { background: #fff7f7; border-color: #e5b6b6; }
+  .node.exc .tag { background: #fce0e0; color: var(--pref); }
+  .node.auto .tag { background: #e8f2fb; color: var(--tiflux); }
+  .arrow {
+    width: 32px;
+    flex: 0 0 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8fa197;
+  }
+  .arrow svg { width: 26px; height: 12px; }
+
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: 4px;
+  }
+  @media (max-width: 900px) { .grid2 { grid-template-columns: 1fr; } }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 16px 18px;
+  }
+  .card h2 { margin: 0 0 10px; font-size: 15px; letter-spacing: -0.02em; }
+  .card ul { margin: 0; padding-left: 18px; color: var(--ink-soft); font-size: 13.5px; }
+  .card li { margin-bottom: 6px; }
+
+  .svg-wrap {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 18px;
+    overflow-x: auto;
+    margin-bottom: 18px;
+  }
+  .svg-wrap h2 { margin: 0 0 4px; font-size: 17px; }
+  .svg-wrap .sub { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+
+  .phases {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  @media (max-width: 900px) { .phases { grid-template-columns: 1fr 1fr; } }
+  .phase {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 14px;
+  }
+  .phase .k {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  .phase h3 { margin: 0 0 6px; font-size: 14px; }
+  .phase p { margin: 0; font-size: 12.5px; color: var(--ink-soft); }
+
+  footer { margin-top: 24px; color: var(--muted); font-size: 12px; }
+  @media print {
+    .tabs, .hint { display: none; }
+    .panel { display: block !important; break-inside: avoid; page-break-inside: avoid; margin-bottom: 28px; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div>
+        <div class="brand">AVS Tecnologia · Hub Management + n8n</div>
+        <h1>Sketch completo do projeto</h1>
+        <p class="lede">
+          Ciclo único: cadastro → orçamento → ticket/OS → contrato → faturamento mensal.
+          <strong>AVS Management</strong> é a fonte de verdade e UI;
+          <strong>n8n</strong> orquestra; TiFlux e VHSYS só recebem/enviam dados.
+        </p>
+      </div>
+      <aside class="meta">
+        <dl>
+          <div>
+            <dt>Fontes</dt>
+            <dd>Reuniões 08/06 e 14/07/2026</dd>
+          </div>
+          <div>
+            <dt>Hub</dt>
+            <dd>avs-management (FastAPI + React)</dd>
+          </div>
+          <div>
+            <dt>Orquestração</dt>
+            <dd>n8n · APIs TiFlux v2 + VHSYS</dd>
+          </div>
+        </dl>
+      </aside>
+    </header>
+
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+      <div class="tabs" role="tablist">
+        <button class="active" data-tab="mapa" type="button">Mapa geral</button>
+        <button data-tab="comercial" type="button">Orçamento → Contrato</button>
+        <button data-tab="faturamento" type="button">Faturamento mensal</button>
+        <button data-tab="arch" type="button">Arquitetura</button>
+        <button data-tab="fases" type="button">Fases</button>
+      </div>
+      <span class="hint">Abas · bom para apresentar ou imprimir</span>
+    </div>
+
+    <!-- MAPA GERAL -->
+    <section class="panel active" id="mapa">
+      <div class="svg-wrap">
+        <h2>Mapa end-to-end — ciclo de vida do cliente</h2>
+        <p class="sub">Do lead/orçamento até a cobrança recorrente · Management no centro</p>
+        <svg viewBox="0 0 1200 640" width="100%" role="img" aria-label="Mapa completo AVS">
+          <rect width="1200" height="640" fill="#fbfcfb"/>
+          <text x="32" y="32" fill="#1f6b4a" font-family="IBM Plex Mono, monospace" font-size="11" letter-spacing="1">AVS MANAGEMENT · FONTE DE VERDADE</text>
+
+          <!-- Phase bands -->
+          <rect x="24" y="52" width="280" height="28" rx="8" fill="#e8f3ed"/>
+          <text x="164" y="71" text-anchor="middle" fill="#0f3d2e" font-family="DM Sans, sans-serif" font-size="12" font-weight="700">1 · Comercial</text>
+          <rect x="320" y="52" width="280" height="28" rx="8" fill="#e8f2fb"/>
+          <text x="460" y="71" text-anchor="middle" fill="#1a5f8a" font-family="DM Sans, sans-serif" font-size="12" font-weight="700">2 · Contrato</text>
+          <rect x="616" y="52" width="280" height="28" rx="8" fill="#f1ebf8"/>
+          <text x="756" y="71" text-anchor="middle" fill="#5b3d8f" font-family="DM Sans, sans-serif" font-size="12" font-weight="700">3 · Faturamento</text>
+          <rect x="912" y="52" width="264" height="28" rx="8" fill="#fff6df"/>
+          <text x="1044" y="71" text-anchor="middle" fill="#8a6d1f" font-family="DM Sans, sans-serif" font-size="12" font-weight="700">4 · Cobrança</text>
+
+          <g font-family="DM Sans, sans-serif">
+            <!-- Row Management -->
+            <rect x="40" y="110" width="170" height="70" rx="10" fill="#fff" stroke="#0f3d2e" stroke-width="1.5"/>
+            <text x="54" y="134" fill="#6b7c74" font-size="10" font-family="IBM Plex Mono, monospace">MGMT</text>
+            <text x="54" y="154" fill="#14201c" font-size="13" font-weight="700">Busca / cadastro</text>
+            <text x="54" y="170" fill="#3d4f48" font-size="11">CNPJ · modal overlay</text>
+
+            <rect x="250" y="110" width="180" height="70" rx="10" fill="#fff" stroke="#0f3d2e" stroke-width="1.5"/>
+            <text x="264" y="134" fill="#6b7c74" font-size="10" font-family="IBM Plex Mono, monospace">MGMT</text>
+            <text x="264" y="154" fill="#14201c" font-size="13" font-weight="700">Orçamento</text>
+            <text x="264" y="170" fill="#3d4f48" font-size="11">Implantação + Mensalidade</text>
+
+            <rect x="470" y="110" width="170" height="70" rx="10" fill="#fff" stroke="#0f3d2e" stroke-width="1.5"/>
+            <text x="484" y="134" fill="#6b7c74" font-size="10" font-family="IBM Plex Mono, monospace">MGMT</text>
+            <text x="484" y="154" fill="#14201c" font-size="13" font-weight="700">Aprovar orçamento</text>
+            <text x="484" y="170" fill="#3d4f48" font-size="11">Gerar contrato</text>
+
+            <rect x="680" y="110" width="180" height="70" rx="10" fill="#fff" stroke="#0f3d2e" stroke-width="1.5"/>
+            <text x="694" y="134" fill="#6b7c74" font-size="10" font-family="IBM Plex Mono, monospace">MGMT</text>
+            <text x="694" y="154" fill="#14201c" font-size="13" font-weight="700">Fila faturamento</text>
+            <text x="694" y="170" fill="#3d4f48" font-size="11">Revisão + aprovação</text>
+
+            <rect x="900" y="110" width="180" height="70" rx="10" fill="#fff" stroke="#0f3d2e" stroke-width="1.5"/>
+            <text x="914" y="134" fill="#6b7c74" font-size="10" font-family="IBM Plex Mono, monospace">MGMT</text>
+            <text x="914" y="154" fill="#14201c" font-size="13" font-weight="700">Histórico / status</text>
+            <text x="914" y="170" fill="#3d4f48" font-size="11">Auditoria · PDFs</text>
+
+            <!-- n8n row -->
+            <rect x="250" y="240" width="180" height="64" rx="10" fill="#e7f2eb" stroke="#2d6a4f" stroke-width="1.5"/>
+            <text x="264" y="264" fill="#6b7c74" font-size="10" font-family="IBM Plex Mono, monospace">N8N</text>
+            <text x="264" y="284" fill="#14201c" font-size="13" font-weight="700">OS + Ticket + PDF</text>
+
+            <rect x="470" y="240" width="170" height="64" rx="10" fill="#e7f2eb" stroke="#2d6a4f" stroke-width="1.5"/>
+            <text x="484" y="264" fill="#6b7c74" font-size="10" font-family="IBM Plex Mono, monospace">N8N</text>
+            <text x="484" y="284" fill="#14201c" font-size="13" font-weight="700">Criar contrato</text>
+
+            <rect x="680" y="240" width="180" height="64" rx="10" fill="#e7f2eb" stroke="#2d6a4f" stroke-width="1.5"/>
+            <text x="694" y="264" fill="#6b7c74" font-size="10" font-family="IBM Plex Mono, monospace">N8N</text>
+            <text x="694" y="284" fill="#14201c" font-size="13" font-weight="700">NF + boleto + ticket</text>
+
+            <!-- systems -->
+            <rect x="180" y="360" width="150" height="56" rx="10" fill="#fff" stroke="#5b3d8f" stroke-width="1.5"/>
+            <text x="198" y="384" fill="#5b3d8f" font-size="12" font-weight="700">VHSYS · OS</text>
+            <text x="198" y="402" fill="#3d4f48" font-size="11">Ordem de serviço</text>
+
+            <rect x="360" y="360" width="160" height="56" rx="10" fill="#fff" stroke="#1a5f8a" stroke-width="1.5"/>
+            <text x="378" y="384" fill="#1a5f8a" font-size="12" font-weight="700">TiFlux · Ticket</text>
+            <text x="378" y="402" fill="#3d4f48" font-size="11">Mesa Comercial</text>
+
+            <rect x="550" y="360" width="160" height="56" rx="10" fill="#fff" stroke="#1a5f8a" stroke-width="1.5"/>
+            <text x="568" y="384" fill="#1a5f8a" font-size="12" font-weight="700">TiFlux · Contrato</text>
+            <text x="568" y="402" fill="#3d4f48" font-size="11">Itens mensalidade</text>
+
+            <rect x="740" y="360" width="150" height="56" rx="10" fill="#fff" stroke="#5b3d8f" stroke-width="1.5"/>
+            <text x="758" y="384" fill="#5b3d8f" font-size="12" font-weight="700">VHSYS · NF/CR</text>
+            <text x="758" y="402" fill="#3d4f48" font-size="11">Boleto · retenção</text>
+
+            <rect x="920" y="360" width="160" height="56" rx="10" fill="#fff" stroke="#1a5f8a" stroke-width="1.5"/>
+            <text x="938" y="384" fill="#1a5f8a" font-size="12" font-weight="700">TiFlux · Cobrança</text>
+            <text x="938" y="402" fill="#3d4f48" font-size="11">3 anexos + e-mail</text>
+
+            <!-- callout -->
+            <rect x="40" y="460" width="1120" height="140" rx="14" fill="#eef6f1" stroke="#b7d0c2"/>
+            <text x="64" y="496" fill="#1f6b4a" font-size="12" font-family="IBM Plex Mono, monospace" letter-spacing="1">PRINCÍPIO</text>
+            <text x="64" y="524" fill="#14201c" font-size="15" font-weight="600">Cadastro e visualização no Management. APIs só empurram/recebem dados.</text>
+            <text x="64" y="550" fill="#3d4f48" font-size="14">n8n reage a webhooks (quote.submit, quote.approved, billing.approved) e devolve IDs/status.</text>
+            <text x="64" y="576" fill="#3d4f48" font-size="14">Gap conhecido: TiFlux API v2 não expõe “faturamentos pendentes” — fila vive no Management.</text>
+          </g>
+
+          <g fill="none" stroke="#6b7c74" stroke-width="1.5" marker-end="url(#arr2)">
+            <defs>
+              <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 z" fill="#6b7c74"/>
+              </marker>
+            </defs>
+            <path d="M210 145 H250"/>
+            <path d="M430 145 H470"/>
+            <path d="M640 145 H680"/>
+            <path d="M860 145 H900"/>
+            <path d="M340 180 V240"/>
+            <path d="M555 180 V240"/>
+            <path d="M770 180 V240"/>
+            <path d="M300 304 V360"/>
+            <path d="M400 304 V360"/>
+            <path d="M555 304 V360"/>
+            <path d="M770 304 V388 H890"/>
+            <path d="M815 304 V360"/>
+          </g>
+        </svg>
+      </div>
+
+      <div class="phases">
+        <div class="phase">
+          <div class="k">Módulo A</div>
+          <h3>Orçamento</h3>
+          <p>Implantação + mensalidade, templates, desconto, faturado por, leads.</p>
+        </div>
+        <div class="phase">
+          <div class="k">Módulo B</div>
+          <h3>Contrato</h3>
+          <p>Aprovado → prefill TiFlux com itens customizáveis.</p>
+        </div>
+        <div class="phase">
+          <div class="k">Módulo C</div>
+          <h3>Faturamento</h3>
+          <p>Fila do dia, aprovação, VHSYS NF/boleto, ticket cobrança.</p>
+        </div>
+        <div class="phase">
+          <div class="k">Base</div>
+          <h3>Cadastro</h3>
+          <p>Já existe: CNPJ → TiFlux + VHSYS (avs-management).</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMERCIAL -->
+    <section class="panel" id="comercial">
+      <div class="board">
+        <div class="board-head">
+          <h2>Orçamento → OS → Ticket → Contrato</h2>
+          <div class="legend">
+            <span class="chip mgmt">Management</span>
+            <span class="chip n8n">n8n</span>
+            <span class="chip tiflux">TiFlux</span>
+            <span class="chip vhsys">VHSYS</span>
+            <span class="chip human">Humano</span>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="mgmt"><strong>Management</strong><span>UI + dados</span></div>
+          <div class="lane-track"><div class="nodes">
+            <div class="node-wrap"><article class="node"><div class="n">01</div><h3>Gerar orçamento</h3><p>Botão no cadastro · busca CNPJ/nome</p><span class="tag">UI</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node human"><div class="n">02</div><h3>Modal cliente</h3><p>Se não existe · overlay sem perder dados</p><span class="tag">Humano</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node"><div class="n">03</div><h3>Implantação + Mensalidade</h3><p>Templates · desconto · 3x · faturado por</p><span class="tag">UI</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node"><div class="n">04</div><h3>Salvar orçamento</h3><p>Fonte de verdade local + temperatura lead</p><span class="tag">DB</span></article></div>
+          </div></div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="n8n"><strong>n8n</strong><span>quote.submit</span></div>
+          <div class="lane-track"><div class="nodes">
+            <div class="node-wrap"><article class="node auto"><div class="n">05</div><h3>Webhook aprovado</h3><p>Salvar e criar ticket / OS</p><span class="tag">Auto</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node auto"><div class="n">06a</div><h3>Criar OS VHSYS</h3><p>Cliente · técnico auto · N itens</p><span class="tag">Auto</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node auto"><div class="n">06b</div><h3>Ticket TiFlux</h3><p>Mesa Comercial · prioridade baixa · pendente</p><span class="tag">Auto</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node auto"><div class="n">07</div><h3>PDF / HTML</h3><p>Anexa ou posta como resposta</p><span class="tag">Auto</span></article></div>
+          </div></div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="tiflux"><strong>TiFlux</strong><span>Comercial</span></div>
+          <div class="lane-track"><div class="nodes">
+            <div class="node-wrap"><article class="node"><div class="n">08</div><h3>Kanban / estágio</h3><p>Muda ao enviar ao cliente</p><span class="tag">API</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node decision"><div class="n">09</div><h3>Cliente respondeu?</h3><p>Sem resposta X dias → e-mail n8n</p><span class="tag">Decisão</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node human"><div class="n">10</div><h3>Aprovou orçamento</h3><p>Status aprovado no Management</p><span class="tag">Humano</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node auto"><div class="n">11</div><h3>Gerar contrato</h3><p>Prefill itens · editável · push TiFlux</p><span class="tag">Auto</span></article></div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Campos do orçamento</h2>
+          <ul>
+            <li><strong>Implantação:</strong> itens, templates, pagamento, desconto %/R$, 3x…</li>
+            <li><strong>Mensalidade:</strong> cobrança recorrente, add/remove linhas</li>
+            <li><strong>Faturado por:</strong> distribuidor / fornecedor</li>
+            <li><strong>Lead:</strong> temperatura (quente/frio) + filtro na lista</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h2>Ticket TiFlux (defaults)</h2>
+          <ul>
+            <li>Solicitante customizado · cliente via CNPJ</li>
+            <li>Responsável = usuário logado (editável)</li>
+            <li>Mesa: Vendas / Comercial</li>
+            <li>Prioridade: Baixa · Status: Pendente</li>
+            <li>Campo financeiro personalizado</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- FATURAMENTO -->
+    <section class="panel" id="faturamento">
+      <div class="board">
+        <div class="board-head">
+          <h2>Faturamento mensal (pós-contrato)</h2>
+          <div class="legend">
+            <span class="chip mgmt">Management</span>
+            <span class="chip n8n">n8n</span>
+            <span class="chip vhsys">VHSYS</span>
+            <span class="chip tiflux">TiFlux</span>
+            <span class="chip exc">Exceção</span>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="mgmt"><strong>Management</strong><span>Fila</span></div>
+          <div class="lane-track"><div class="nodes">
+            <div class="node-wrap"><article class="node"><div class="n">01</div><h3>Fila do dia</h3><p>Substitui Excel · contratos TiFlux</p><span class="tag">UI</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node human"><div class="n">02</div><h3>Gate aprovação</h3><p>Valor · retenção · boleto/Pix</p><span class="tag">Humano</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node auto"><div class="n">03</div><h3>billing.approved</h3><p>Webhook → n8n</p><span class="tag">Evento</span></article></div>
+          </div></div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="n8n"><strong>n8n</strong><span>Emitir</span></div>
+          <div class="lane-track"><div class="nodes">
+            <div class="node-wrap"><article class="node decision"><div class="n">04</div><h3>Retenção ISS?</h3><p>Flag do cliente</p><span class="tag">Decisão</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node auto"><div class="n">05a</div><h3>VHSYS NF+CR+boleto</h3><p>Caminho feliz</p><span class="tag">Auto</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node exc"><div class="n">05b</div><h3>Fila prefeitura</h3><p>Humano informa nº NF → CR líquido</p><span class="tag">Exceção</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node auto"><div class="n">06</div><h3>Ticket cobrança</h3><p>Relatório + NF + boleto · template</p><span class="tag">Auto</span></article></div>
+          </div></div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="mgmt"><strong>Management</strong><span>Fechamento</span></div>
+          <div class="lane-track"><div class="nodes">
+            <div class="node-wrap"><article class="node"><div class="n">07</div><h3>Callback status</h3><p>enviado · IDs · artefatos</p><span class="tag">API</span></article><div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></div></div>
+            <div class="node-wrap"><article class="node"><div class="n">08</div><h3>Auditoria</h3><p>Histórico por cliente/mês</p><span class="tag">DB</span></article></div>
+          </div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Nota sobre TiFlux “faturar”</h2>
+        <ul>
+          <li>API v2: leitura de contratos + histórico OK · <strong>pending/faturar = 404</strong></li>
+          <li>Fila e fechamento ficam no <strong>Management</strong>; TiFlux recebe o ticket de cobrança</li>
+          <li>Opcional depois: RPA ou endpoint futuro para espelhar faturamento no TiFlux</li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- ARCH -->
+    <section class="panel" id="arch">
+      <div class="svg-wrap">
+        <h2>Arquitetura lógica</h2>
+        <p class="sub">Quem decide · quem executa · quem só armazena resultado</p>
+        <svg viewBox="0 0 1100 420" width="100%">
+          <rect width="1100" height="420" fill="#fbfcfb"/>
+          <rect x="40" y="40" width="320" height="340" rx="16" fill="#fff" stroke="#0f3d2e" stroke-width="1.5"/>
+          <text x="200" y="78" text-anchor="middle" fill="#0f3d2e" font-family="DM Sans, sans-serif" font-size="16" font-weight="700">AVS Management</text>
+          <text x="60" y="110" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">• UI React (orçamento, fila, contrato)</text>
+          <text x="60" y="134" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">• FastAPI · auth RBAC</text>
+          <text x="60" y="158" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">• DB: quotes, billing_runs, artifacts</text>
+          <text x="60" y="182" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">• Aprovação humana</text>
+          <text x="60" y="206" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">• Fonte de verdade</text>
+          <text x="60" y="250" fill="#1f6b4a" font-family="IBM Plex Mono, monospace" font-size="11">WEBHOOKS OUT</text>
+          <text x="60" y="274" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">quote.submit / quote.approved</text>
+          <text x="60" y="298" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">billing.approved / nf_prefeitura</text>
+          <text x="60" y="340" fill="#1f6b4a" font-family="IBM Plex Mono, monospace" font-size="11">CALLBACK IN</text>
+          <text x="60" y="364" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">status + IDs externos + PDFs</text>
+
+          <rect x="420" y="120" width="240" height="180" rx="16" fill="#e7f2eb" stroke="#2d6a4f" stroke-width="1.5"/>
+          <text x="540" y="160" text-anchor="middle" fill="#2d6a4f" font-family="DM Sans, sans-serif" font-size="16" font-weight="700">n8n</text>
+          <text x="440" y="196" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">Orquestra APIs</text>
+          <text x="440" y="220" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">Retries · waits · e-mail</text>
+          <text x="440" y="244" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">Não guarda a verdade</text>
+          <text x="440" y="268" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">Só executa e reporta</text>
+
+          <rect x="720" y="40" width="340" height="150" rx="16" fill="#fff" stroke="#1a5f8a" stroke-width="1.5"/>
+          <text x="890" y="78" text-anchor="middle" fill="#1a5f8a" font-family="DM Sans, sans-serif" font-size="15" font-weight="700">TiFlux</text>
+          <text x="740" y="110" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">Clientes · contratos · tickets</text>
+          <text x="740" y="134" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">Anexos · kanban · cobrança</text>
+          <text x="740" y="158" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">API v2 Bearer JWT ✓</text>
+
+          <rect x="720" y="220" width="340" height="150" rx="16" fill="#fff" stroke="#5b3d8f" stroke-width="1.5"/>
+          <text x="890" y="258" text-anchor="middle" fill="#5b3d8f" font-family="DM Sans, sans-serif" font-size="15" font-weight="700">VHSYS</text>
+          <text x="740" y="290" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">Clientes · OS · NF · CR · boleto</text>
+          <text x="740" y="314" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">Financeiro (a expandir no client)</text>
+          <text x="740" y="338" fill="#3d4f48" font-family="DM Sans, sans-serif" font-size="13">API keys já no Management</text>
+
+          <g fill="none" stroke="#6b7c74" stroke-width="1.6">
+            <path d="M360 200 H420" marker-end="url(#arr2)"/>
+            <path d="M660 180 H720" marker-end="url(#arr2)"/>
+            <path d="M660 260 H720" marker-end="url(#arr2)"/>
+            <path d="M420 280 H380 V360 H200" marker-end="url(#arr2)"/>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <!-- FASES -->
+    <section class="panel" id="fases">
+      <div class="board">
+        <div class="board-head">
+          <h2>Roadmap de entrega</h2>
+        </div>
+        <div style="padding:18px;display:grid;gap:12px;">
+          <div class="card" style="border:0;padding:12px 0;border-bottom:1px solid var(--line);border-radius:0;">
+            <h2>Fase 0 — Base (já existe)</h2>
+            <ul>
+              <li>avs-management: cadastro/consulta/inativar CNPJ → TiFlux + VHSYS</li>
+              <li>API TiFlux JWT validada (clients, contracts, tickets, desks, billing history)</li>
+            </ul>
+          </div>
+          <div class="card" style="border:0;padding:12px 0;border-bottom:1px solid var(--line);border-radius:0;">
+            <h2>Fase 1 — Orçamento no Management (O1)</h2>
+            <ul>
+              <li>UI implantação + mensalidade, templates, desconto, modal cliente</li>
+              <li>Persistência quotes · PDF · temperatura lead</li>
+            </ul>
+          </div>
+          <div class="card" style="border:0;padding:12px 0;border-bottom:1px solid var(--line);border-radius:0;">
+            <h2>Fase 2 — n8n comercial (O2–O3)</h2>
+            <ul>
+              <li>OS VHSYS + ticket TiFlux + anexo + kanban + follow-up e-mail</li>
+              <li>Gerar contrato a partir do orçamento aprovado</li>
+            </ul>
+          </div>
+          <div class="card" style="border:0;padding:12px 0;border-bottom:1px solid var(--line);border-radius:0;">
+            <h2>Fase 3 — Faturamento hub (F1A)</h2>
+            <ul>
+              <li>Fila no Management + aprovação + n8n VHSYS + ticket cobrança</li>
+              <li>Branch retenção prefeitura assistida</li>
+            </ul>
+          </div>
+          <div class="card" style="border:0;padding:12px 0;border-radius:0;">
+            <h2>Fase 4 — Evoluções</h2>
+            <ul>
+              <li>Grafana → quantidades · substituir Excel buffer</li>
+              <li>Endpoint TiFlux pending (se/quando existir) ou RPA pontual</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      Sketch completo · docs: ANALISE_PROJETO_AUTOMACAO.md · MODULO_ORCAMENTO_CONTRATO.md · CHECKLIST_PRE_AUTOMACAO.md · sketch-fluxo-faturamento.html
+    </footer>
+  </div>
+
+  <script>
+    const buttons = document.querySelectorAll(".tabs button");
+    const panels = document.querySelectorAll(".panel");
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        buttons.forEach((b) => b.classList.remove("active"));
+        panels.forEach((p) => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(btn.dataset.tab).classList.add("active");
+      });
+    });
+  </script>
+</body>
+</html>

@@ -12,6 +12,18 @@ export const btnSecondaryClass =
 export const btnAccentClass =
   'aurora-motion inline-flex items-center justify-center gap-2 rounded-lg border border-aurora-accent bg-aurora-accent px-4 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-accent focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
 
+/** Orçamentos — green family */
+export const btnGreenClass =
+  'aurora-motion inline-flex items-center justify-center gap-2 rounded-lg border border-aurora-green bg-aurora-green px-4 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-green/40 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
+
+/** Faturamento — teal (green variant) */
+export const btnTealClass =
+  'aurora-motion inline-flex items-center justify-center gap-2 rounded-lg border border-aurora-teal bg-aurora-teal px-4 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-teal/40 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
+
+/** Documentos — amber */
+export const btnAmberClass =
+  'aurora-motion inline-flex items-center justify-center gap-2 rounded-lg border border-aurora-amber bg-aurora-amber px-4 py-2 text-sm font-semibold text-white shadow-sm hover:brightness-110 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-amber/40 focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50'
+
 export const btnDangerClass =
   'aurora-motion inline-flex items-center justify-center gap-2 rounded-lg border border-aurora-danger/40 bg-aurora-danger/10 px-4 py-2 text-sm font-medium text-aurora-danger hover:bg-aurora-danger/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-danger/30 disabled:pointer-events-none disabled:opacity-50'
 
@@ -23,6 +35,15 @@ export const tileInteractiveRedClass =
 
 export const tileInteractivePurpleClass =
   'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface shadow-sm hover:-translate-y-0.5 hover:border-aurora-purple/50 hover:shadow-md'
+
+export const tileInteractiveGreenClass =
+  'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface shadow-sm hover:-translate-y-0.5 hover:border-aurora-green/50 hover:shadow-md'
+
+export const tileInteractiveTealClass =
+  'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface shadow-sm hover:-translate-y-0.5 hover:border-aurora-teal/50 hover:shadow-md'
+
+export const tileInteractiveAmberClass =
+  'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface shadow-sm hover:-translate-y-0.5 hover:border-aurora-amber/50 hover:shadow-md'
 
 export const linkClass = 'font-medium text-aurora-brand-red hover:underline'
 

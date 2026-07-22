@@ -19,6 +19,11 @@ import { LoginPage } from './pages/LoginPage'
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage'
 import { ResetPasswordPage } from './pages/ResetPasswordPage'
 import { UsersManagePage } from './pages/UsersManagePage'
+import { QuotesPage } from './pages/QuotesPage'
+import { QuoteWizardPage } from './pages/QuoteWizardPage'
+import { BillingPage } from './pages/BillingPage'
+import { BillingDetailPage } from './pages/BillingDetailPage'
+import { DocumentsPage } from './pages/DocumentsPage'
 
 const queryClient = new QueryClient()
 
@@ -66,6 +71,46 @@ export default function App() {
                         element={
                           <PermissionRoute permission="empresas_inativas">
                             <DormantPage />
+                          </PermissionRoute>
+                        }
+                      />
+                      <Route
+                        path="orcamentos"
+                        element={
+                          <PermissionRoute permission="orcamentos">
+                            <QuotesPage />
+                          </PermissionRoute>
+                        }
+                      />
+                      <Route
+                        path="orcamentos/:id"
+                        element={
+                          <PermissionRoute permission="orcamentos">
+                            <QuoteWizardPage />
+                          </PermissionRoute>
+                        }
+                      />
+                      <Route
+                        path="faturamento"
+                        element={
+                          <PermissionRoute permission="faturar">
+                            <BillingPage />
+                          </PermissionRoute>
+                        }
+                      />
+                      <Route
+                        path="faturamento/:id"
+                        element={
+                          <PermissionRoute permission="faturar">
+                            <BillingDetailPage />
+                          </PermissionRoute>
+                        }
+                      />
+                      <Route
+                        path="documentos"
+                        element={
+                          <PermissionRoute anyOf={['orcamentos', 'faturar']}>
+                            <DocumentsPage />
                           </PermissionRoute>
                         }
                       />

@@ -1,0 +1,1035 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Sketch — Fluxo Faturamento Mensal AVS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --ink: #14201c;
+    --ink-soft: #3d4f48;
+    --muted: #6b7c74;
+    --line: #c9d4ce;
+    --paper: #f4f7f5;
+    --card: #ffffff;
+    --excel: #1f6b4a;
+    --grafana: #c45c26;
+    --tiflux: #1a5f8a;
+    --vhsys: #5b3d8f;
+    --pref: #9a2f2f;
+    --n8n: #2d6a4f;
+    --human: #8a6d1f;
+    --ok: #1f6b4a;
+    --warn: #9a6b12;
+    --exc: #9a2f2f;
+    --auto: #1a5f8a;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "DM Sans", system-ui, sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(1200px 600px at 10% -10%, #dfece6 0%, transparent 55%),
+      radial-gradient(900px 500px at 100% 0%, #e8e4f0 0%, transparent 50%),
+      var(--paper);
+    line-height: 1.45;
+  }
+  .page {
+    max-width: 1280px;
+    margin: 0 auto;
+    padding: 40px 28px 80px;
+  }
+  header.hero {
+    display: grid;
+    grid-template-columns: 1.4fr 1fr;
+    gap: 28px;
+    margin-bottom: 28px;
+    align-items: end;
+  }
+  @media (max-width: 900px) {
+    header.hero { grid-template-columns: 1fr; }
+  }
+  .brand {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--excel);
+    font-weight: 500;
+    margin-bottom: 10px;
+  }
+  h1 {
+    font-size: clamp(28px, 4vw, 40px);
+    line-height: 1.1;
+    margin: 0 0 12px;
+    letter-spacing: -0.03em;
+    font-weight: 700;
+  }
+  .lede {
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 16px;
+    max-width: 56ch;
+  }
+  .meta {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 18px 20px;
+  }
+  .meta dl {
+    margin: 0;
+    display: grid;
+    gap: 10px;
+  }
+  .meta dt {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .meta dd { margin: 2px 0 0; font-weight: 600; }
+  .toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin: 8px 0 22px;
+  }
+  .tabs {
+    display: inline-flex;
+    background: #e7eee9;
+    border-radius: 999px;
+    padding: 4px;
+    gap: 2px;
+  }
+  .tabs button {
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 8px 16px;
+    border-radius: 999px;
+    color: var(--ink-soft);
+    cursor: pointer;
+  }
+  .tabs button.active {
+    background: var(--ink);
+    color: #fff;
+  }
+  .hint {
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .panel {
+    display: none;
+  }
+  .panel.active { display: block; }
+
+  /* Swimlane board */
+  .board {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    overflow: hidden;
+    margin-bottom: 22px;
+  }
+  .board-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--line);
+    background: #fafcfb;
+  }
+  .board-head h2 {
+    margin: 0;
+    font-size: 18px;
+    letter-spacing: -0.02em;
+  }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chip {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 4px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink-soft);
+  }
+  .chip.manual { border-color: #b7c4bd; }
+  .chip.auto { background: #e8f2fb; border-color: #b7d3ea; color: var(--auto); }
+  .chip.decision { background: #fff6df; border-color: #ead7a0; color: var(--warn); }
+  .chip.exception { background: #fceeee; border-color: #e5b6b6; color: var(--exc); }
+  .chip.human { background: #fff8e8; border-color: #e6d4a4; color: var(--human); }
+
+  .swim {
+    display: grid;
+    grid-template-columns: 132px 1fr;
+    border-bottom: 1px solid var(--line);
+  }
+  .swim:last-child { border-bottom: 0; }
+  .lane-label {
+    padding: 18px 14px;
+    border-right: 1px solid var(--line);
+    background: #f7faf8;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+  }
+  .lane-label strong {
+    font-size: 13px;
+    letter-spacing: -0.01em;
+  }
+  .lane-label span {
+    font-size: 11px;
+    color: var(--muted);
+  }
+  .lane-label[data-sys="excel"] { box-shadow: inset 3px 0 0 var(--excel); }
+  .lane-label[data-sys="grafana"] { box-shadow: inset 3px 0 0 var(--grafana); }
+  .lane-label[data-sys="tiflux"] { box-shadow: inset 3px 0 0 var(--tiflux); }
+  .lane-label[data-sys="vhsys"] { box-shadow: inset 3px 0 0 var(--vhsys); }
+  .lane-label[data-sys="pref"] { box-shadow: inset 3px 0 0 var(--pref); }
+  .lane-label[data-sys="n8n"] { box-shadow: inset 3px 0 0 var(--n8n); }
+  .lane-label[data-sys="human"] { box-shadow: inset 3px 0 0 var(--human); }
+
+  .lane-track {
+    position: relative;
+    min-height: 110px;
+    padding: 18px 16px;
+    overflow-x: auto;
+  }
+  .nodes {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    min-width: max-content;
+  }
+  .node-wrap {
+    display: flex;
+    align-items: center;
+  }
+  .node {
+    width: 210px;
+    background: #fff;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 12px 12px 11px;
+    position: relative;
+    transition: border-color .15s, transform .15s;
+  }
+  .node:hover {
+    border-color: #9eb0a7;
+    transform: translateY(-1px);
+  }
+  .node .n {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 4px;
+  }
+  .node h3 {
+    margin: 0 0 6px;
+    font-size: 13.5px;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+  }
+  .node p {
+    margin: 0;
+    font-size: 12px;
+    color: var(--ink-soft);
+  }
+  .node .tag {
+    display: inline-block;
+    margin-top: 8px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 3px 7px;
+    border-radius: 6px;
+  }
+  .node.manual .tag { background: #eef2f0; color: var(--ink-soft); }
+  .node.auto .tag { background: #e8f2fb; color: var(--auto); }
+  .node.decision {
+    background: #fffaf0;
+    border-color: #e4cfa0;
+  }
+  .node.decision .tag { background: #fff1c9; color: var(--warn); }
+  .node.exception {
+    background: #fff7f7;
+    border-color: #e5b6b6;
+  }
+  .node.exception .tag { background: #fce0e0; color: var(--exc); }
+  .node.human .tag { background: #fff1d6; color: var(--human); }
+
+  .arrow {
+    width: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #8fa197;
+    flex: 0 0 36px;
+  }
+  .arrow svg { width: 28px; height: 14px; }
+
+  .cross {
+    position: absolute;
+    left: 0; right: 0; top: 0; bottom: 0;
+    pointer-events: none;
+  }
+
+  .grid2 {
+    display: grid;
+    grid-template-columns: 1.15fr 0.85fr;
+    gap: 18px;
+    margin-top: 8px;
+  }
+  @media (max-width: 900px) {
+    .grid2 { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    padding: 18px 20px;
+  }
+  .card h2 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    letter-spacing: -0.02em;
+  }
+  .rules {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+  }
+  .rules li {
+    display: grid;
+    grid-template-columns: 18px 1fr;
+    gap: 8px;
+    font-size: 13.5px;
+    color: var(--ink-soft);
+  }
+  .rules li::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    margin-top: 6px;
+    border-radius: 50%;
+    background: var(--excel);
+  }
+  .flow-ascii {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    line-height: 1.55;
+    background: #13241d;
+    color: #d7ebe1;
+    border-radius: 12px;
+    padding: 16px 18px;
+    overflow-x: auto;
+    white-space: pre;
+  }
+  .flow-ascii .c-ok { color: #7dcca8; }
+  .flow-ascii .c-warn { color: #e6c36b; }
+  .flow-ascii .c-exc { color: #f0a0a0; }
+  .flow-ascii .c-dim { color: #7f9a8d; }
+
+  .compare {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+  }
+  .compare th, .compare td {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  .compare th {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .compare tr:last-child td { border-bottom: 0; }
+
+  .svg-wrap {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    padding: 20px;
+    overflow-x: auto;
+    margin-bottom: 22px;
+  }
+  .svg-wrap h2 {
+    margin: 0 0 6px;
+    font-size: 18px;
+  }
+  .svg-wrap .sub {
+    margin: 0 0 16px;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  footer {
+    margin-top: 28px;
+    color: var(--muted);
+    font-size: 12px;
+  }
+  @media print {
+    body { background: #fff; }
+    .tabs, .hint { display: none; }
+    .panel { display: block !important; break-inside: avoid; page-break-inside: avoid; }
+    .panel + .panel { margin-top: 32px; }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <header class="hero">
+      <div>
+        <div class="brand">AVS Tecnologia · Automação NFE / Faturamento</div>
+        <h1>Sketch do fluxo de faturamento mensal</h1>
+        <p class="lede">
+          Mapa detalhado do processo demonstrado na reunião de 08/06/2026
+          (Alinne Freitas / Jean Nascimento / Susana Veiga): do Excel ao ticket
+          de cobrança, com a Fase 1 acordada (TiFlux → VHSYS).
+        </p>
+      </div>
+      <aside class="meta">
+        <dl>
+          <div>
+            <dt>Escopo Fase 1</dt>
+            <dd>Integrar TiFlux → VHSYS</dd>
+          </div>
+          <div>
+            <dt>Exceção crítica</dt>
+            <dd>NFS-e Prefeitura Campinas (retenção)</dd>
+          </div>
+          <div>
+            <dt>Anexos do ticket</dt>
+            <dd>Relatório + NF + Boleto</dd>
+          </div>
+        </dl>
+      </aside>
+    </header>
+
+    <div class="toolbar">
+      <div class="tabs" role="tablist">
+        <button class="active" data-tab="asis" type="button">AS-IS (manual)</button>
+        <button data-tab="fase1" type="button">TO-BE Fase 1</button>
+        <button data-tab="fase2" type="button">TO-BE Fase 2</button>
+        <button data-tab="map" type="button">Mapa visual</button>
+      </div>
+      <span class="hint">Alterne as abas · bom para apresentar ou imprimir</span>
+    </div>
+
+    <!-- AS-IS -->
+    <section class="panel active" id="asis">
+      <div class="board">
+        <div class="board-head">
+          <h2>AS-IS — processo operacional atual</h2>
+          <div class="legend">
+            <span class="chip manual">Manual</span>
+            <span class="chip decision">Decisão</span>
+            <span class="chip exception">Exceção</span>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="excel">
+            <strong>Excel</strong>
+            <span>SharePoint</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <div class="node-wrap">
+                <article class="node manual">
+                  <div class="n">01</div>
+                  <h3>Selecionar clientes do dia</h3>
+                  <p>Aba do mês · filtrar DT PGTO · status Pendente</p>
+                  <span class="tag">Manual</span>
+                </article>
+                <div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="node-wrap">
+                <article class="node manual">
+                  <div class="n">10</div>
+                  <h3>Atualizar status</h3>
+                  <p>Pronto para enviar → Já enviado</p>
+                  <span class="tag">Manual</span>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="grafana">
+            <strong>Grafana</strong>
+            <span>Inventário N8N</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <div class="node-wrap">
+                <article class="node decision">
+                  <div class="n">03</div>
+                  <h3>Quantidades batem?</h3>
+                  <p>PC / VM / licenças / backup vs contrato</p>
+                  <span class="tag">Decisão</span>
+                </article>
+                <div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="node-wrap">
+                <article class="node manual">
+                  <div class="n">04</div>
+                  <h3>Conferir inventário real</h3>
+                  <p>Dashboard + WebPlus/Acronis · print evidência</p>
+                  <span class="tag">Consulta</span>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="tiflux">
+            <strong>TiFlux</strong>
+            <span>Contratos · Fatura · Ticket</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <div class="node-wrap">
+                <article class="node manual">
+                  <div class="n">02</div>
+                  <h3>Faturamentos pendentes</h3>
+                  <p>Data-base futura + cliente + contratos + avulsos</p>
+                  <span class="tag">Manual</span>
+                </article>
+                <div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="node-wrap">
+                <article class="node manual">
+                  <div class="n">05</div>
+                  <h3>Ajustar contrato / adendo</h3>
+                  <p>Qtd, cancelar duplicado (data ontem), adendo</p>
+                  <span class="tag">Manual</span>
+                </article>
+                <div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="node-wrap">
+                <article class="node manual">
+                  <div class="n">06</div>
+                  <h3>Faturar + relatório</h3>
+                  <p>Total/parcial → download detalhado</p>
+                  <span class="tag">Manual</span>
+                </article>
+                <div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="node-wrap">
+                <article class="node manual">
+                  <div class="n">09</div>
+                  <h3>Ticket cobrança</h3>
+                  <p>Anexa 3 arquivos · e-mail · com. interna · fecha</p>
+                  <span class="tag">Manual</span>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="vhsys">
+            <strong>VHSYS</strong>
+            <span>NF · CR · Boleto</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <div class="node-wrap">
+                <article class="node decision">
+                  <div class="n">07</div>
+                  <h3>NF sai no VHSYS?</h3>
+                  <p>Falha comum: retenção ISS</p>
+                  <span class="tag">Decisão</span>
+                </article>
+                <div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="node-wrap">
+                <article class="node manual">
+                  <div class="n">08a</div>
+                  <h3>Emitir NF + CR + boleto</h3>
+                  <p>Serviços → NF · Financeiro → recebimento</p>
+                  <span class="tag">Manual</span>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="pref">
+            <strong>Prefeitura</strong>
+            <span>NFS-e Campinas</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <div class="node-wrap">
+                <article class="node exception">
+                  <div class="n">08b</div>
+                  <h3>Emitir NFS-e no portal</h3>
+                  <p>Quando VHSYS não retém · voltar ao CR com valor líquido</p>
+                  <span class="tag">Exceção</span>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h2>Regras de negócio (AS-IS)</h2>
+          <ul class="rules">
+            <li>Data-base nos faturamentos pendentes deve ser <strong>futura</strong>, senão o TiFlux não lista.</li>
+            <li>Sempre marcar <strong>contratos + valores avulsos</strong> (tickets).</li>
+            <li>Linhas zeradas → faturamento <strong>parcial</strong>.</li>
+            <li>Excel existe para <strong>acumular alterações</strong> e não antecipar a próxima mensalidade.</li>
+            <li>Cancelar contrato com data de <strong>ontem</strong> para preservar histórico.</li>
+            <li>Ticket exige <strong>relatório + NF + boleto</strong> e comunicação interna.</li>
+            <li>Com retenção: NF na prefeitura; VHSYS recebe valor <strong>líquido</strong>.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h2>Sequência feliz (texto)</h2>
+          <div class="flow-ascii"><span class="c-dim">Excel</span> clientes do dia
+   │
+   ▼
+<span class="c-ok">TiFlux</span> faturamentos pendentes
+   │
+   ├─ <span class="c-warn">divergência?</span> → Grafana → adendo
+   │
+   ▼
+<span class="c-ok">TiFlux</span> faturar + relatório
+   │
+   ├─ <span class="c-exc">retenção?</span> → Prefeitura NFS-e
+   │
+   ▼
+<span class="c-ok">VHSYS</span> NF/CR + boleto
+   │
+   ▼
+<span class="c-ok">TiFlux</span> ticket + 3 anexos
+   │
+   ▼
+<span class="c-dim">Excel</span> status enviado</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FASE 1 -->
+    <section class="panel" id="fase1">
+      <div class="board">
+        <div class="board-head">
+          <h2>TO-BE Fase 1 — automação TiFlux → VHSYS</h2>
+          <div class="legend">
+            <span class="chip auto">Automático</span>
+            <span class="chip human">Humano</span>
+            <span class="chip exception">Exceção assistida</span>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="excel">
+            <strong>Excel</strong>
+            <span>Entrada (mantém)</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <article class="node manual">
+                <div class="n">01</div>
+                <h3>Lista do dia</h3>
+                <p>Continua como buffer humano na Fase 1</p>
+                <span class="tag">Manual</span>
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="n8n">
+            <strong>n8n</strong>
+            <span>Orquestrador</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <div class="node-wrap">
+                <article class="node auto">
+                  <div class="n">02</div>
+                  <h3>Trigger + dry-run</h3>
+                  <p>Agenda / botão · carrega cliente + data-base</p>
+                  <span class="tag">Auto</span>
+                </article>
+                <div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="node-wrap">
+                <article class="node auto">
+                  <div class="n">09</div>
+                  <h3>Log + status</h3>
+                  <p>Auditoria por cliente/mês · retries</p>
+                  <span class="tag">Auto</span>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="human">
+            <strong>Humano</strong>
+            <span>Aprovação</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <article class="node human">
+                <div class="n">03</div>
+                <h3>Gate de aprovação</h3>
+                <p>Confere valor, retenção, boleto/Pix · aprova ou ajusta</p>
+                <span class="tag">Humano</span>
+              </article>
+            </div>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="tiflux">
+            <strong>TiFlux API</strong>
+            <span>Fatura · Ticket</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <div class="node-wrap">
+                <article class="node auto">
+                  <div class="n">04</div>
+                  <h3>Buscar pendentes</h3>
+                  <p>Contratos + avulsos · snapshot</p>
+                  <span class="tag">Auto</span>
+                </article>
+                <div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="node-wrap">
+                <article class="node auto">
+                  <div class="n">05</div>
+                  <h3>Faturar + relatório</h3>
+                  <p>Total/parcial automático</p>
+                  <span class="tag">Auto</span>
+                </article>
+                <div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="node-wrap">
+                <article class="node auto">
+                  <div class="n">08</div>
+                  <h3>Ticket + template</h3>
+                  <p>Anexa 3 arquivos · e-mail · com. interna</p>
+                  <span class="tag">Auto</span>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="vhsys">
+            <strong>VHSYS API</strong>
+            <span>Financeiro</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <div class="node-wrap">
+                <article class="node decision">
+                  <div class="n">06</div>
+                  <h3>Cliente com retenção?</h3>
+                  <p>Cadastro de exceções Campinas</p>
+                  <span class="tag">Decisão</span>
+                </article>
+                <div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="node-wrap">
+                <article class="node auto">
+                  <div class="n">07a</div>
+                  <h3>NF + CR + boleto</h3>
+                  <p>Caminho feliz 100% API</p>
+                  <span class="tag">Auto</span>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="swim">
+          <div class="lane-label" data-sys="pref">
+            <strong>Prefeitura</strong>
+            <span>Fila assistida</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <article class="node exception">
+                <div class="n">07b</div>
+                <h3>Humano emite NFS-e</h3>
+                <p>Informa nº da NF → automação lança CR líquido + boleto</p>
+                <span class="tag">Exceção</span>
+              </article>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>O que a Fase 1 elimina</h2>
+        <table class="compare">
+          <thead>
+            <tr>
+              <th>Hoje (manual)</th>
+              <th>Fase 1</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Digitar cliente/valor/vencimento no VHSYS</td>
+              <td>Payload automático a partir do relatório TiFlux</td>
+            </tr>
+            <tr>
+              <td>Baixar boleto e anexar um a um</td>
+              <td>Download + upload no ticket via API</td>
+            </tr>
+            <tr>
+              <td>Escrever e-mail de cobrança</td>
+              <td>Template padronizado (combinado na reunião)</td>
+            </tr>
+            <tr>
+              <td>Excel + Grafana + adendos</td>
+              <td>Ainda manuais (Fase 2)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- FASE 2 -->
+    <section class="panel" id="fase2">
+      <div class="board">
+        <div class="board-head">
+          <h2>TO-BE Fase 2 — inventário + buffer estruturado</h2>
+          <div class="legend">
+            <span class="chip auto">Automático</span>
+            <span class="chip decision">Alerta</span>
+          </div>
+        </div>
+        <div class="swim">
+          <div class="lane-label" data-sys="grafana">
+            <strong>Grafana</strong>
+            <span>Fonte de verdade</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <article class="node auto">
+                <div class="n">01</div>
+                <h3>Detectar mudança de qtd</h3>
+                <p>Ex.: VMs 5→7 · PCs · seats M365</p>
+                <span class="tag">Auto</span>
+              </article>
+            </div>
+          </div>
+        </div>
+        <div class="swim">
+          <div class="lane-label" data-sys="excel">
+            <strong>Base tipada</strong>
+            <span>Novo Excel / DB</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <article class="node auto">
+                <div class="n">02</div>
+                <h3>Buffer de alterações do mês</h3>
+                <p>Substitui regras em texto livre · aliases de nome</p>
+                <span class="tag">Sistema</span>
+              </article>
+            </div>
+          </div>
+        </div>
+        <div class="swim">
+          <div class="lane-label" data-sys="tiflux">
+            <strong>TiFlux</strong>
+            <span>Virada do ciclo</span>
+          </div>
+          <div class="lane-track">
+            <div class="nodes">
+              <div class="node-wrap">
+                <article class="node auto">
+                  <div class="n">03</div>
+                  <h3>Aplicar adendos acumulados</h3>
+                  <p>Uma vez por ciclo — não antecipa fatura</p>
+                  <span class="tag">Auto</span>
+                </article>
+                <div class="arrow"><svg viewBox="0 0 28 14"><path d="M2 7h20M16 2l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
+              </div>
+              <div class="node-wrap">
+                <article class="node auto">
+                  <div class="n">04</div>
+                  <h3>Disparar pipeline Fase 1</h3>
+                  <p>Emissão TiFlux → VHSYS sem digitação</p>
+                  <span class="tag">Auto</span>
+                </article>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- MAPA SVG -->
+    <section class="panel" id="map">
+      <div class="svg-wrap">
+        <h2>Mapa visual end-to-end (AS-IS com ramos)</h2>
+        <p class="sub">Diagrama único para apresentação — caminho feliz, caso complexo e retenção</p>
+        <svg viewBox="0 0 1100 720" width="100%" role="img" aria-label="Fluxograma faturamento AVS">
+          <defs>
+            <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" fill="#6b7c74"/>
+            </marker>
+            <filter id="soft" x="-5%" y="-5%" width="110%" height="110%">
+              <feDropShadow dx="0" dy="1" stdDeviation="0" flood-opacity="0"/>
+            </filter>
+          </defs>
+
+          <!-- backdrop bands -->
+          <rect x="0" y="0" width="1100" height="720" fill="#fbfcfb"/>
+          <text x="40" y="36" fill="#1f6b4a" font-family="IBM Plex Mono, monospace" font-size="12" letter-spacing="1">AVS · FLUXO DE COBRANÇA MENSAL</text>
+
+          <!-- nodes -->
+          <g font-family="DM Sans, sans-serif">
+            <!-- 1 -->
+            <rect x="40" y="70" width="180" height="64" rx="10" fill="#fff" stroke="#1f6b4a" stroke-width="1.5"/>
+            <text x="54" y="94" fill="#6b7c74" font-size="11" font-family="IBM Plex Mono, monospace">01 · EXCEL</text>
+            <text x="54" y="116" fill="#14201c" font-size="14" font-weight="700">Clientes do dia</text>
+
+            <!-- 2 -->
+            <rect x="280" y="70" width="200" height="64" rx="10" fill="#fff" stroke="#1a5f8a" stroke-width="1.5"/>
+            <text x="294" y="94" fill="#6b7c74" font-size="11" font-family="IBM Plex Mono, monospace">02 · TIFLUX</text>
+            <text x="294" y="116" fill="#14201c" font-size="14" font-weight="700">Faturamentos pendentes</text>
+
+            <!-- decision qty -->
+            <polygon points="620,102 700,62 780,102 700,142" fill="#fffaf0" stroke="#9a6b12" stroke-width="1.5"/>
+            <text x="700" y="98" text-anchor="middle" fill="#9a6b12" font-size="11" font-weight="700">Qtd OK?</text>
+            <text x="700" y="114" text-anchor="middle" fill="#14201c" font-size="12">03</text>
+
+            <!-- grafana branch -->
+            <rect x="620" y="190" width="200" height="70" rx="10" fill="#fff" stroke="#c45c26" stroke-width="1.5"/>
+            <text x="634" y="216" fill="#6b7c74" font-size="11" font-family="IBM Plex Mono, monospace">04 · GRAFANA</text>
+            <text x="634" y="238" fill="#14201c" font-size="13" font-weight="700">Conferir inventário</text>
+
+            <rect x="620" y="290" width="200" height="70" rx="10" fill="#fff" stroke="#1a5f8a" stroke-width="1.5"/>
+            <text x="634" y="316" fill="#6b7c74" font-size="11" font-family="IBM Plex Mono, monospace">05 · TIFLUX</text>
+            <text x="634" y="338" fill="#14201c" font-size="13" font-weight="700">Adendo / cancelar</text>
+
+            <!-- faturar -->
+            <rect x="860" y="70" width="190" height="64" rx="10" fill="#fff" stroke="#1a5f8a" stroke-width="1.5"/>
+            <text x="874" y="94" fill="#6b7c74" font-size="11" font-family="IBM Plex Mono, monospace">06 · TIFLUX</text>
+            <text x="874" y="116" fill="#14201c" font-size="14" font-weight="700">Faturar + relatório</text>
+
+            <!-- retention decision -->
+            <polygon points="955,220 1035,180 1115,220 1035,260" fill="#fffaf0" stroke="#9a6b12" stroke-width="1.5" transform="translate(-80,0)"/>
+            <text x="955" y="216" text-anchor="middle" fill="#9a6b12" font-size="11" font-weight="700">Retenção?</text>
+            <text x="955" y="232" text-anchor="middle" fill="#14201c" font-size="12">07</text>
+
+            <!-- pref -->
+            <rect x="820" y="300" width="200" height="70" rx="10" fill="#fff7f7" stroke="#9a2f2f" stroke-width="1.5"/>
+            <text x="834" y="326" fill="#6b7c74" font-size="11" font-family="IBM Plex Mono, monospace">08b · PREFEITURA</text>
+            <text x="834" y="348" fill="#14201c" font-size="13" font-weight="700">Emitir NFS-e Campinas</text>
+
+            <!-- vhsys -->
+            <rect x="560" y="420" width="220" height="74" rx="10" fill="#fff" stroke="#5b3d8f" stroke-width="1.5"/>
+            <text x="574" y="448" fill="#6b7c74" font-size="11" font-family="IBM Plex Mono, monospace">08a · VHSYS</text>
+            <text x="574" y="470" fill="#14201c" font-size="14" font-weight="700">NF / CR + boleto</text>
+
+            <!-- ticket -->
+            <rect x="300" y="420" width="200" height="74" rx="10" fill="#fff" stroke="#1a5f8a" stroke-width="1.5"/>
+            <text x="314" y="448" fill="#6b7c74" font-size="11" font-family="IBM Plex Mono, monospace">09 · TIFLUX</text>
+            <text x="314" y="470" fill="#14201c" font-size="14" font-weight="700">Ticket + 3 anexos</text>
+
+            <!-- excel end -->
+            <rect x="40" y="420" width="200" height="74" rx="10" fill="#fff" stroke="#1f6b4a" stroke-width="1.5"/>
+            <text x="54" y="448" fill="#6b7c74" font-size="11" font-family="IBM Plex Mono, monospace">10 · EXCEL</text>
+            <text x="54" y="470" fill="#14201c" font-size="14" font-weight="700">Status Já enviado</text>
+
+            <!-- fase1 callout -->
+            <rect x="40" y="560" width="1020" height="120" rx="14" fill="#eef6f1" stroke="#b7d0c2"/>
+            <text x="64" y="596" fill="#1f6b4a" font-size="13" font-family="IBM Plex Mono, monospace" letter-spacing="1">FASE 1 — O QUE AUTOMATIZAR</text>
+            <text x="64" y="624" fill="#14201c" font-size="15" font-weight="600">Automatizar o trecho 06 → 08a → 09 (TiFlux relatório → VHSYS → ticket).</text>
+            <text x="64" y="648" fill="#3d4f48" font-size="14">Humano permanece em aprovação e na exceção 08b (prefeitura). Excel/Grafana ficam para a Fase 2.</text>
+          </g>
+
+          <!-- edges -->
+          <g fill="none" stroke="#6b7c74" stroke-width="1.5" marker-end="url(#arr)">
+            <path d="M220 102 H280"/>
+            <path d="M480 102 H620"/>
+            <path d="M780 102 H860"/>
+            <!-- yes qty -->
+            <path d="M700 62 V48 H955 V70" stroke="#1f6b4a"/>
+            <!-- no qty -->
+            <path d="M700 142 V190" stroke="#c45c26"/>
+            <path d="M720 260 V290"/>
+            <path d="M820 325 H860 325" stroke="#c45c26"/>
+            <path d="M955 150 V180"/>
+            <!-- retention no = vhsys happy -->
+            <path d="M915 240 H780 V420" stroke="#1f6b4a"/>
+            <!-- retention yes -->
+            <path d="M955 260 V300" stroke="#9a2f2f"/>
+            <path d="M920 370 V456 H780" stroke="#9a2f2f"/>
+            <path d="M560 457 H500"/>
+            <path d="M300 457 H240"/>
+          </g>
+
+          <!-- labels on edges -->
+          <g font-family="DM Sans, sans-serif" font-size="11" fill="#6b7c74">
+            <text x="710" y="54">sim</text>
+            <text x="708" y="168">não</text>
+            <text x="970" y="280">sim</text>
+            <text x="800" y="250">não</text>
+          </g>
+        </svg>
+      </div>
+    </section>
+
+    <footer>
+      Sketch gerado a partir da gravação Teams 2026-06-08 · artefatos em NFE/ (transcrição, frames, análise).
+    </footer>
+  </div>
+
+  <script>
+    const buttons = document.querySelectorAll(".tabs button");
+    const panels = document.querySelectorAll(".panel");
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        buttons.forEach((b) => b.classList.remove("active"));
+        panels.forEach((p) => p.classList.remove("active"));
+        btn.classList.add("active");
+        document.getElementById(btn.dataset.tab).classList.add("active");
+      });
+    });
+  </script>
+</body>
+</html>

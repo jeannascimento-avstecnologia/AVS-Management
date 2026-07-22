@@ -5,14 +5,20 @@ import { useAuth, type PermissionKey } from '@/hooks/useAuth'
 
 export function PermissionRoute({
   permission,
+  anyOf,
   children,
 }: {
-  permission: PermissionKey
+  permission?: PermissionKey
+  anyOf?: PermissionKey[]
   children: React.ReactNode
 }) {
   const { user, loading } = useAuth()
   const location = useLocation()
-  const allowed = Boolean(user?.dev_mode || user?.permissions?.[permission])
+  const allowed = Boolean(
+    user?.dev_mode ||
+      (permission ? user?.permissions?.[permission] : false) ||
+      (anyOf?.some((key) => Boolean(user?.permissions?.[key])) ?? false),
+  )
 
   useEffect(() => {
     if (!loading && user && !allowed) {

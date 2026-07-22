@@ -60,6 +60,28 @@ class Settings(BaseSettings):
     tiflux_dormant_batch_pause_every: int = 20
     tiflux_dormant_batch_pause_ms: int = 2000
 
+    # Hub comercial + faturamento (ADR-0001 / ADR-0003) — P0.4
+    hub_db_path: str = "data/hub.db"
+    hub_dry_run: bool = True
+    hub_dry_run_notify_n8n: bool = False
+    hub_outbox_max_attempts: int = 5
+    hub_pdf_dir: str = "data/hub_pdfs"
+    n8n_commercial_webhook_url: str = ""
+    n8n_billing_webhook_url: str = ""
+    n8n_webhook_secret: str = ""
+    tiflux_desk_comercial_id: int = 36089
+    # Emitente do PDF de orçamento (SPEC_PDF_ORCAMENTO) — TiFlux client AVS + fallbacks
+    tiflux_issuer_client_id: int = 37443
+    quote_issuer_name: str = "AVS TECNOLOGIA"
+    quote_issuer_cnpj: str = "08354533000183"
+    quote_issuer_address: str = (
+        "Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.087-240"
+    )
+    quote_issuer_phone: str = "(19) 3243-9559"
+    quote_issuer_mobile: str = "(19) 99656-6524"
+    quote_issuer_email: str = "contato@avstecnologia.com.br"
+    quote_issuer_site: str = "www.avstecnologia.com.br"
+
     @field_validator(
         "tiflux_api_token",
         "vhsys_access_token",
@@ -67,6 +89,7 @@ class Settings(BaseSettings):
         "azure_client_secret",
         "session_secret",
         "smtp_password",
+        "n8n_webhook_secret",
         mode="before",
     )
     @classmethod

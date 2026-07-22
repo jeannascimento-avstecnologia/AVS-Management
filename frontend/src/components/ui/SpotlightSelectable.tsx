@@ -8,19 +8,34 @@ import {
 } from 'react'
 import { cn } from '@/lib/cn'
 
-export type SpotlightAccent = 'accent' | 'red' | 'purple'
+export type SpotlightAccent = 'accent' | 'red' | 'purple' | 'green' | 'teal' | 'amber'
 
 /** RGB tuples for spotlight (avoids color-mix + var() issues in gradients). */
 const ACCENT_RGB: Record<SpotlightAccent, string> = {
   accent: '29, 78, 216',
   red: '220, 38, 38',
   purple: '124, 58, 237',
+  green: '5, 150, 105',
+  teal: '13, 148, 136',
+  amber: '217, 119, 6',
 }
 
 const ACCENT_BORDER: Record<SpotlightAccent, { selected: string; hover: string }> = {
   accent: { selected: 'border-aurora-accent/50', hover: 'border-aurora-accent/40' },
   red: { selected: 'border-aurora-brand-red/50', hover: 'border-aurora-brand-red/40' },
   purple: { selected: 'border-aurora-purple/50', hover: 'border-aurora-purple/40' },
+  green: { selected: 'border-aurora-green/50', hover: 'border-aurora-green/40' },
+  teal: { selected: 'border-aurora-teal/50', hover: 'border-aurora-teal/40' },
+  amber: { selected: 'border-aurora-amber/50', hover: 'border-aurora-amber/40' },
+}
+
+const SELECTED_BORDER: Record<SpotlightAccent, string> = {
+  accent: 'border-aurora-accent/60',
+  red: 'border-aurora-brand-red/60',
+  purple: 'border-aurora-purple/60',
+  green: 'border-aurora-green/60',
+  teal: 'border-aurora-teal/60',
+  amber: 'border-aurora-amber/60',
 }
 
 type Props<T extends ElementType> = {
@@ -54,13 +69,6 @@ export function SpotlightSelectable<T extends ElementType = 'div'>({
   const showSpotlight = hover || selected
   const isSidebar = variant === 'sidebar'
 
-  const selectedBorderClass =
-    accent === 'red'
-      ? 'border-aurora-brand-red/60'
-      : accent === 'purple'
-        ? 'border-aurora-purple/60'
-        : 'border-aurora-accent/60'
-
   function handleMouseMove(e: MouseEvent<HTMLElement>) {
     const rect = ref.current?.getBoundingClientRect()
     if (rect) {
@@ -81,7 +89,7 @@ export function SpotlightSelectable<T extends ElementType = 'div'>({
         isSidebar
           ? cn(
               'border-transparent bg-transparent',
-              selected && cn('border-l-2 shadow-sm', selectedBorderClass),
+              selected && cn('border-l-2 shadow-sm', SELECTED_BORDER[accent]),
               hover && !selected && 'border-l-2 border-white/20',
             )
           : cn(

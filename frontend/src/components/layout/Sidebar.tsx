@@ -9,6 +9,9 @@ import {
   PanelLeft,
   LogOut,
   Shield,
+  FileText,
+  Receipt,
+  FolderSearch,
 } from 'lucide-react'
 import { Logo } from '@/components/brand/Logo'
 import { Button } from '@/components/ui/button'
@@ -25,6 +28,7 @@ const NAV: {
   icon: typeof LayoutDashboard
   end?: boolean
   permission?: PermissionKey
+  anyOf?: PermissionKey[]
   accent: SpotlightAccent
 }[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, accent: 'accent' },
@@ -32,6 +36,9 @@ const NAV: {
   { to: '/inativar', label: 'Inativar', icon: UserX, permission: 'inativar', accent: 'red' },
   { to: '/consultar', label: 'Consultar', icon: Search, permission: 'consultar', accent: 'accent' },
   { to: '/empresas-inativas', label: 'Empresas inativas', icon: Clock, permission: 'empresas_inativas', accent: 'red' },
+  { to: '/orcamentos', label: 'Orçamentos', icon: FileText, permission: 'orcamentos', accent: 'green' },
+  { to: '/faturamento', label: 'Faturamento', icon: Receipt, permission: 'faturar', accent: 'teal' },
+  { to: '/documentos', label: 'Documentos', icon: FolderSearch, anyOf: ['orcamentos', 'faturar'], accent: 'amber' },
   { to: '/usuarios', label: 'Usuários', icon: Shield, permission: 'manage_users', accent: 'purple' },
 ]
 
@@ -90,8 +97,11 @@ export function Sidebar({ collapsed, onToggleCollapse, onNavigate, className }: 
   const { logout, user } = useAuth()
 
   const navItems = NAV.filter((item) => {
-    if (!item.permission) return true
     if (user?.dev_mode) return true
+    if (item.anyOf?.length) {
+      return item.anyOf.some((key) => Boolean(user?.permissions?.[key]))
+    }
+    if (!item.permission) return true
     return Boolean(user?.permissions?.[item.permission])
   })
 

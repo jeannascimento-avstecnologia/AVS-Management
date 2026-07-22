@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sketch — fundos tech para PDF orçamento</title>
+  <style>
+    :root {
+      --navy: #0c1e3a;
+      --blue: #1a4f8c;
+      --accent: #2b8fd9;
+      --red: #dc2626;
+      --paper: #fcfdff;
+      --ink: #1e293b;
+      --muted: #64748b;
+      --border: #e2e8f0;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: #eef2f7;
+      color: var(--ink);
+      line-height: 1.45;
+    }
+    header {
+      background: linear-gradient(135deg, var(--navy), var(--blue));
+      color: #fff;
+      padding: 1.25rem 1.5rem;
+    }
+    header h1 { margin: 0 0 0.35rem; font-size: 1.25rem; }
+    header p { margin: 0; opacity: 0.85; font-size: 0.9rem; max-width: 52rem; }
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 1.25rem 1rem 2.5rem;
+      display: grid;
+      gap: 1.25rem;
+    }
+    .card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: 0 8px 24px rgba(12, 30, 58, 0.06);
+    }
+    .card-head {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem 1rem;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .card-head h2 { margin: 0; font-size: 1.05rem; }
+    .tag {
+      font-size: 0.7rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--blue);
+      background: #dbeafe;
+      border-radius: 999px;
+      padding: 0.2rem 0.55rem;
+    }
+    .card-body { padding: 1rem; display: grid; gap: 0.75rem; }
+    .meta { margin: 0; color: var(--muted); font-size: 0.85rem; }
+    .preview {
+      position: relative;
+      aspect-ratio: 210 / 148;
+      max-height: 280px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+      background: var(--paper);
+    }
+    .preview svg { width: 100%; height: 100%; display: block; }
+    .mock-ui {
+      position: absolute;
+      inset: 12% 10%;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(12,30,58,0.08);
+      box-shadow: 0 4px 16px rgba(12,30,58,0.06);
+      padding: 0.75rem;
+      pointer-events: none;
+    }
+    .mock-ui .bar {
+      height: 10px;
+      width: 42%;
+      border-radius: 3px;
+      background: var(--navy);
+      margin-bottom: 0.5rem;
+    }
+    .mock-ui .line {
+      height: 6px;
+      border-radius: 2px;
+      background: #cbd5e1;
+      margin-bottom: 0.35rem;
+    }
+    .mock-ui .line.short { width: 55%; }
+    .pick {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0 1rem 1rem;
+    }
+    .pick code {
+      font-size: 0.8rem;
+      background: #f1f5f9;
+      padding: 0.25rem 0.5rem;
+      border-radius: 6px;
+    }
+    footer {
+      max-width: 1100px;
+      margin: 0 auto 2rem;
+      padding: 0 1rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Fundos tech para PDF de orçamento</h1>
+    <p>
+      A–E: opções iniciais. <strong>F–H</strong>: no estilo da referência PCB (trilhas + vias),
+      porém <strong>menos densas</strong> — alinhadas ao que você gostou em C/D.
+      Escolha um ID para aplicar no gerador PDF.
+    </p>
+  </header>
+
+  <main>
+
+    <!-- A: PCB traces -->
+    <article class="card" id="A">
+      <div class="card-head">
+        <h2>A — Trilhas de placa-mãe (PCB)</h2>
+        <span class="tag">Recomendado P&amp;B</span>
+      </div>
+      <div class="card-body">
+        <p class="meta">Trilhas horizontais/verticais + pads/vias. Parece circuito impresso. Densidade baixa = legível no texto.</p>
+        <div class="preview">
+          <svg viewBox="0 0 420 296" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="420" height="296" fill="#fcfdff"/>
+            <g stroke="#94a3b8" stroke-width="0.7" fill="none" opacity="0.45">
+              <path d="M20 40 H120 V90 H200"/>
+              <path d="M200 90 V160 H280 V220"/>
+              <path d="M60 180 H160 V240 H300"/>
+              <path d="M320 30 V100 H380 V200"/>
+              <path d="M40 120 H100 V200 H40"/>
+              <path d="M240 40 H360 V80"/>
+              <path d="M140 200 H220 V270"/>
+              <path d="M300 140 H400"/>
+              <path d="M80 60 H180"/>
+            </g>
+            <g fill="#64748b" opacity="0.4">
+              <circle cx="120" cy="40" r="2.2"/><circle cx="200" cy="90" r="2.2"/>
+              <circle cx="280" cy="160" r="2.2"/><circle cx="160" cy="180" r="2.2"/>
+              <circle cx="320" cy="100" r="2.2"/><circle cx="100" cy="120" r="2.2"/>
+              <circle cx="360" cy="80" r="2.2"/><circle cx="220" cy="200" r="2.2"/>
+            </g>
+            <g fill="none" stroke="#dc2626" stroke-width="0.6" opacity="0.25">
+              <circle cx="200" cy="90" r="5"/><circle cx="280" cy="160" r="5"/>
+            </g>
+            <rect x="250" y="200" width="48" height="32" rx="2" fill="none" stroke="#1a4f8c" stroke-width="0.8" opacity="0.35"/>
+            <g stroke="#1a4f8c" stroke-width="0.5" opacity="0.35">
+              <line x1="254" y1="232" x2="254" y2="240"/><line x1="260" y1="232" x2="260" y2="240"/>
+              <line x1="266" y1="232" x2="266" y2="240"/><line x1="272" y1="232" x2="272" y2="240"/>
+              <line x1="278" y1="232" x2="278" y2="240"/><line x1="284" y1="232" x2="284" y2="240"/>
+              <line x1="290" y1="232" x2="290" y2="240"/>
+            </g>
+          </svg>
+          <div class="mock-ui">
+            <div class="bar"></div>
+            <div class="line"></div><div class="line short"></div><div class="line"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pick"><code>padrão A</code> — clássico “motherboard”</div>
+    </article>
+
+    <!-- B: Chip / IC footprint -->
+    <article class="card" id="B">
+      <div class="card-head">
+        <h2>B — Footprint de chip (IC)</h2>
+        <span class="tag">Tech corporativo</span>
+      </div>
+      <div class="card-body">
+        <p class="meta">Grade de retângulos tipo encapsulamento QFP/BGA leve. Ritmo regular, elegante em documentos.</p>
+        <div class="preview">
+          <svg viewBox="0 0 420 296" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="420" height="296" fill="#fcfdff"/>
+            <g opacity="0.28">
+              <!-- repeated chip motifs -->
+              <g transform="translate(30,40)">
+                <rect x="18" y="18" width="36" height="36" fill="none" stroke="#0c1e3a" stroke-width="1"/>
+                <g fill="#1a4f8c">
+                  <rect x="8" y="22" width="8" height="3"/><rect x="8" y="30" width="8" height="3"/><rect x="8" y="38" width="8" height="3"/>
+                  <rect x="56" y="22" width="8" height="3"/><rect x="56" y="30" width="8" height="3"/><rect x="56" y="38" width="8" height="3"/>
+                  <rect x="22" y="8" width="3" height="8"/><rect x="30" y="8" width="3" height="8"/><rect x="38" y="8" width="3" height="8"/>
+                  <rect x="22" y="56" width="3" height="8"/><rect x="30" y="56" width="3" height="8"/><rect x="38" y="56" width="3" height="8"/>
+                </g>
+                <circle cx="36" cy="36" r="2" fill="#dc2626"/>
+              </g>
+              <use href="#chip" x="0" y="0"/>
+            </g>
+            <defs>
+              <g id="chip">
+                <rect x="18" y="18" width="36" height="36" fill="none" stroke="#0c1e3a" stroke-width="1"/>
+                <g fill="#1a4f8c">
+                  <rect x="8" y="22" width="8" height="3"/><rect x="8" y="30" width="8" height="3"/><rect x="8" y="38" width="8" height="3"/>
+                  <rect x="56" y="22" width="8" height="3"/><rect x="56" y="30" width="8" height="3"/><rect x="56" y="38" width="8" height="3"/>
+                  <rect x="22" y="8" width="3" height="8"/><rect x="30" y="8" width="3" height="8"/><rect x="38" y="8" width="3" height="8"/>
+                  <rect x="22" y="56" width="3" height="8"/><rect x="30" y="56" width="3" height="8"/><rect x="38" y="56" width="3" height="8"/>
+                </g>
+                <circle cx="36" cy="36" r="2" fill="#dc2626"/>
+              </g>
+            </defs>
+            <g opacity="0.22" fill="none" stroke="#0c1e3a" stroke-width="1">
+              <use href="#chip" transform="translate(30 40)"/>
+              <use href="#chip" transform="translate(140 40)"/>
+              <use href="#chip" transform="translate(250 40)"/>
+              <use href="#chip" transform="translate(340 40) scale(0.85)"/>
+              <use href="#chip" transform="translate(30 150)"/>
+              <use href="#chip" transform="translate(140 150)"/>
+              <use href="#chip" transform="translate(250 150)"/>
+              <use href="#chip" transform="translate(80 230) scale(0.75)"/>
+              <use href="#chip" transform="translate(200 230) scale(0.75)"/>
+              <use href="#chip" transform="translate(310 200) scale(0.9)"/>
+            </g>
+          </svg>
+          <div class="mock-ui">
+            <div class="bar"></div>
+            <div class="line"></div><div class="line short"></div><div class="line"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pick"><code>padrão B</code> — chips / pinos</div>
+    </article>
+
+    <!-- C: Hex tech mesh -->
+    <article class="card" id="C">
+      <div class="card-head">
+        <h2>C — Malha hexagonal (tech mesh)</h2>
+        <span class="tag">Moderno</span>
+      </div>
+      <div class="card-body">
+        <p class="meta">Colméia / honeycomb usada em dashboards e data centers. Muito “tech”, ainda assim discreta se fina.</p>
+        <div class="preview">
+          <svg viewBox="0 0 420 296" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="420" height="296" fill="#fcfdff"/>
+            <defs>
+              <pattern id="hex" width="28" height="48" patternUnits="userSpaceOnUse" patternTransform="scale(1.4)">
+                <path d="M14 2 L26 10 L26 26 L14 34 L2 26 L2 10 Z" fill="none" stroke="#64748b" stroke-width="0.6"/>
+              </pattern>
+            </defs>
+            <rect width="420" height="296" fill="url(#hex)" opacity="0.35"/>
+            <circle cx="210" cy="148" r="3" fill="#dc2626" opacity="0.35"/>
+            <circle cx="120" cy="90" r="2" fill="#1a4f8c" opacity="0.4"/>
+            <circle cx="300" cy="200" r="2" fill="#1a4f8c" opacity="0.4"/>
+          </svg>
+          <div class="mock-ui">
+            <div class="bar"></div>
+            <div class="line"></div><div class="line short"></div><div class="line"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pick"><code>padrão C</code> — hex mesh</div>
+    </article>
+
+    <!-- D: Network nodes -->
+    <article class="card" id="D">
+      <div class="card-head">
+        <h2>D — Rede / nós conectados</h2>
+        <span class="tag">Integração / hub</span>
+      </div>
+      <div class="card-body">
+        <p class="meta">Nós + arestas (grafo). Combina com o posicionamento do Management como hub TiFlux/VHSYS.</p>
+        <div class="preview">
+          <svg viewBox="0 0 420 296" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="420" height="296" fill="#fcfdff"/>
+            <g stroke="#94a3b8" stroke-width="0.65" opacity="0.4">
+              <line x1="60" y1="70" x2="140" y2="110"/>
+              <line x1="140" y1="110" x2="220" y2="60"/>
+              <line x1="140" y1="110" x2="200" y2="180"/>
+              <line x1="200" y1="180" x2="300" y2="140"/>
+              <line x1="300" y1="140" x2="360" y2="80"/>
+              <line x1="200" y1="180" x2="260" y2="240"/>
+              <line x1="60" y1="70" x2="80" y2="180"/>
+              <line x1="80" y1="180" x2="200" y2="180"/>
+              <line x1="300" y1="140" x2="340" y2="220"/>
+              <line x1="220" y1="60" x2="300" y2="140"/>
+            </g>
+            <g fill="#1a4f8c" opacity="0.45">
+              <circle cx="60" cy="70" r="3.5"/><circle cx="140" cy="110" r="4"/>
+              <circle cx="220" cy="60" r="3"/><circle cx="200" cy="180" r="4.5"/>
+              <circle cx="300" cy="140" r="3.5"/><circle cx="360" cy="80" r="3"/>
+              <circle cx="80" cy="180" r="3"/><circle cx="260" cy="240" r="3"/>
+              <circle cx="340" cy="220" r="3"/>
+            </g>
+            <circle cx="200" cy="180" r="7" fill="none" stroke="#dc2626" stroke-width="1" opacity="0.4"/>
+          </svg>
+          <div class="mock-ui">
+            <div class="bar"></div>
+            <div class="line"></div><div class="line short"></div><div class="line"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pick"><code>padrão D</code> — network graph</div>
+    </article>
+
+    <!-- E: Binary / data stream -->
+    <article class="card" id="E">
+      <div class="card-head">
+        <h2>E — Fluxo de dados / binário</h2>
+        <span class="tag">Discreto</span>
+      </div>
+      <div class="card-body">
+        <p class="meta">Colunas de 0/1 e traços curtos tipo stream serial. Muito leve; quase “papel técnico”.</p>
+        <div class="preview">
+          <svg viewBox="0 0 420 296" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="420" height="296" fill="#fcfdff"/>
+            <g fill="#64748b" font-family="ui-monospace, monospace" font-size="7" opacity="0.28">
+              <text x="24" y="36">01001101</text><text x="24" y="48">11010010</text><text x="24" y="60">00110101</text>
+              <text x="24" y="72">10101011</text><text x="24" y="84">01100100</text>
+              <text x="110" y="100">AVS</text>
+              <text x="110" y="112">1001110</text><text x="110" y="124">0101011</text>
+              <text x="200" y="40">1110001</text><text x="200" y="52">0001101</text><text x="200" y="64">1100110</text>
+              <text x="290" y="160">1011010</text><text x="290" y="172">0100101</text><text x="290" y="184">1110110</text>
+              <text x="50" y="200">00101101</text><text x="50" y="212">11010001</text>
+              <text x="180" y="230">100101</text><text x="180" y="242">011010</text>
+              <text x="340" y="60">01</text><text x="340" y="72">10</text><text x="340" y="84">11</text>
+            </g>
+            <g stroke="#1a4f8c" stroke-width="0.7" opacity="0.25">
+              <path d="M20 140 H80 V170 H150"/>
+              <path d="M250 100 H320 V150 H380"/>
+            </g>
+            <rect x="160" y="150" width="70" height="18" rx="2" fill="none" stroke="#dc2626" stroke-width="0.7" opacity="0.3"/>
+          </svg>
+          <div class="mock-ui">
+            <div class="bar"></div>
+            <div class="line"></div><div class="line short"></div><div class="line"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pick"><code>padrão E</code> — binary / data stream</div>
+    </article>
+
+    <!-- F: Sparse PCB like reference -->
+    <article class="card" id="F">
+      <div class="card-head">
+        <h2>F — PCB esparso (estilo da sua imagem)</h2>
+        <span class="tag">Mais próximo da ref.</span>
+      </div>
+      <div class="card-body">
+        <p class="meta">
+          Mesma linguagem da imagem anexa: trilhas ortogonais + diagonais 45°, terminações em
+          vias (círculos). Densidade ~30–40% da referência — muito espaço em branco para o texto do PDF.
+        </p>
+        <div class="preview">
+          <svg viewBox="0 0 420 296" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="420" height="296" fill="#fcfdff"/>
+            <g stroke="#334155" stroke-width="1.1" fill="none" opacity="0.28" stroke-linecap="square">
+              <!-- sparse buses with 45° elbows -->
+              <path d="M30 50 H90 L120 80 H180"/>
+              <path d="M30 58 H85 L112 85 H170"/>
+              <path d="M240 40 V90 L270 120 H340"/>
+              <path d="M248 40 V85 L275 112 H350"/>
+              <path d="M50 160 H110 L150 200 H230"/>
+              <path d="M50 168 H105 L142 205 H220"/>
+              <path d="M300 160 L340 200 V250"/>
+              <path d="M308 160 L345 197 V250"/>
+              <path d="M100 250 H180 L210 220 H280"/>
+              <path d="M20 120 H60 L90 150"/>
+              <path d="M360 60 H400"/>
+              <path d="M380 100 V160 L400 180"/>
+            </g>
+            <g fill="#334155" opacity="0.32">
+              <circle cx="180" cy="80" r="2.4"/><circle cx="170" cy="85" r="2.4"/>
+              <circle cx="340" cy="120" r="2.4"/><circle cx="350" cy="112" r="2.4"/>
+              <circle cx="230" cy="200" r="2.4"/><circle cx="220" cy="205" r="2.4"/>
+              <circle cx="340" cy="250" r="2.4"/><circle cx="345" cy="250" r="2.4"/>
+              <circle cx="280" cy="220" r="2.4"/><circle cx="90" cy="150" r="2.4"/>
+              <circle cx="400" cy="60" r="2.4"/><circle cx="400" cy="180" r="2.4"/>
+              <circle cx="30" cy="50" r="2"/><circle cx="240" cy="40" r="2"/>
+            </g>
+            <!-- rare accent via -->
+            <circle cx="180" cy="80" r="5" fill="none" stroke="#dc2626" stroke-width="0.8" opacity="0.3"/>
+          </svg>
+          <div class="mock-ui">
+            <div class="bar"></div>
+            <div class="line"></div><div class="line short"></div><div class="line"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pick"><code>padrão F</code> — PCB light (recomendado vs. imagem densa)</div>
+    </article>
+
+    <!-- G: Ultra-sparse PCB -->
+    <article class="card" id="G">
+      <div class="card-head">
+        <h2>G — PCB ultra-leve</h2>
+        <span class="tag">Máxima legibilidade</span>
+      </div>
+      <div class="card-body">
+        <p class="meta">
+          Ainda menos trilhas que F: poucos “ramos” por página, vias espaçadas. Ideal se o PDF tiver
+          muito texto/tabelas.
+        </p>
+        <div class="preview">
+          <svg viewBox="0 0 420 296" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="420" height="296" fill="#fcfdff"/>
+            <g stroke="#475569" stroke-width="1" fill="none" opacity="0.22" stroke-linecap="square">
+              <path d="M40 60 H130 L170 100 H250"/>
+              <path d="M300 50 V120 L350 170 H400"/>
+              <path d="M60 200 H140 L190 250"/>
+              <path d="M220 180 H300 L340 220 V270"/>
+            </g>
+            <g fill="#475569" opacity="0.28">
+              <circle cx="40" cy="60" r="2.2"/><circle cx="250" cy="100" r="2.5"/>
+              <circle cx="300" cy="50" r="2.2"/><circle cx="400" cy="170" r="2.5"/>
+              <circle cx="60" cy="200" r="2.2"/><circle cx="190" cy="250" r="2.5"/>
+              <circle cx="220" cy="180" r="2.2"/><circle cx="340" cy="270" r="2.5"/>
+            </g>
+          </svg>
+          <div class="mock-ui">
+            <div class="bar"></div>
+            <div class="line"></div><div class="line short"></div><div class="line"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pick"><code>padrão G</code> — PCB mínimo</div>
+    </article>
+
+    <!-- H: Hybrid C+D+PCB -->
+    <article class="card" id="H">
+      <div class="card-head">
+        <h2>H — Híbrido C+D + PCB</h2>
+        <span class="tag">C &amp; D + sua imagem</span>
+      </div>
+      <div class="card-body">
+        <p class="meta">
+          Hex discreto no fundo (C) + nós de rede (D) + algumas trilhas PCB com vias — o “meio-termo”
+          entre o que você gostou e a referência.
+        </p>
+        <div class="preview">
+          <svg viewBox="0 0 420 296" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <rect width="420" height="296" fill="#fcfdff"/>
+            <defs>
+              <pattern id="hexSoft" width="36" height="62" patternUnits="userSpaceOnUse">
+                <path d="M18 3 L33 12 L33 30 L18 39 L3 30 L3 12 Z" fill="none" stroke="#94a3b8" stroke-width="0.5"/>
+              </pattern>
+            </defs>
+            <rect width="420" height="296" fill="url(#hexSoft)" opacity="0.18"/>
+            <g stroke="#64748b" stroke-width="0.9" fill="none" opacity="0.28" stroke-linecap="square">
+              <path d="M50 80 H120 L155 115"/>
+              <path d="M280 70 L320 110 H380"/>
+              <path d="M80 210 H160 L200 250"/>
+            </g>
+            <g stroke="#94a3b8" stroke-width="0.6" opacity="0.35">
+              <line x1="155" y1="115" x2="210" y2="150"/>
+              <line x1="210" y1="150" x2="280" y2="130"/>
+              <line x1="210" y1="150" x2="200" y2="250"/>
+              <line x1="320" y1="110" x2="280" y2="130"/>
+            </g>
+            <g fill="#1a4f8c" opacity="0.4">
+              <circle cx="155" cy="115" r="3.5"/><circle cx="210" cy="150" r="4"/>
+              <circle cx="280" cy="130" r="3"/><circle cx="320" cy="110" r="3"/>
+              <circle cx="200" cy="250" r="3"/>
+            </g>
+            <g fill="#475569" opacity="0.3">
+              <circle cx="50" cy="80" r="2"/><circle cx="380" cy="110" r="2"/><circle cx="80" cy="210" r="2"/>
+            </g>
+            <circle cx="210" cy="150" r="7" fill="none" stroke="#dc2626" stroke-width="0.9" opacity="0.35"/>
+          </svg>
+          <div class="mock-ui">
+            <div class="bar"></div>
+            <div class="line"></div><div class="line short"></div><div class="line"></div>
+          </div>
+        </div>
+      </div>
+      <div class="pick"><code>padrão H</code> — hex + rede + PCB light</div>
+    </article>
+
+  </main>
+
+  <footer>
+    Arquivo: <code>docs/hub/sketch-pdf-fundo-tech.html</code> · Abra no browser ·
+    Responda com a letra (<strong>F</strong> / <strong>G</strong> / <strong>H</strong> recomendados agora) para aplicar no PDF.
+    Recarregue a página (Cmd+R) se ainda ver só A–E.
+  </footer>
+</body>
+</html>

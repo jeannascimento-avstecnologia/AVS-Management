@@ -9,6 +9,9 @@ import {
   Moon,
   Sun,
   Shield,
+  FileText,
+  Receipt,
+  FolderSearch,
 } from 'lucide-react'
 import {
   CommandDialog,
@@ -30,12 +33,16 @@ const NAV: {
   label: string
   icon: typeof LayoutDashboard
   permission?: PermissionKey
+  anyOf?: PermissionKey[]
 }[] = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/cadastrar', label: 'Cadastrar cliente', icon: UserPlus, permission: 'cadastrar' },
   { to: '/inativar', label: 'Inativar cliente', icon: UserX, permission: 'inativar' },
   { to: '/consultar', label: 'Consultar status', icon: Search, permission: 'consultar' },
   { to: '/empresas-inativas', label: 'Empresas inativas', icon: Clock, permission: 'empresas_inativas' },
+  { to: '/orcamentos', label: 'Orçamentos', icon: FileText, permission: 'orcamentos' },
+  { to: '/faturamento', label: 'Faturamento', icon: Receipt, permission: 'faturar' },
+  { to: '/documentos', label: 'Documentos', icon: FolderSearch, anyOf: ['orcamentos', 'faturar'] },
   { to: '/usuarios', label: 'Gerenciar usuários', icon: Shield, permission: 'manage_users' },
 ]
 
@@ -46,8 +53,11 @@ export function CommandPalette() {
   const { logout, user } = useAuth()
 
   const navItems = NAV.filter((item) => {
-    if (!item.permission) return true
     if (user?.dev_mode) return true
+    if (item.anyOf?.length) {
+      return item.anyOf.some((key) => Boolean(user?.permissions?.[key]))
+    }
+    if (!item.permission) return true
     return Boolean(user?.permissions?.[item.permission])
   })
 

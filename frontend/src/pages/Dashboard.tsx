@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/hooks/useAuth'
 import { ActionCard } from '@/components/ui/ActionCard'
+import type { SpotlightAccent } from '@/components/ui/SpotlightSelectable'
 import { StatTile } from '@/components/data/StatTile'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { api } from '@/api/client'
 import { formatDate } from '@/lib/format'
-import { UserPlus, UserX, Search, Clock, Users, Database, BarChart3, AlertCircle, Shield } from 'lucide-react'
+import { UserPlus, UserX, Search, Clock, Users, Database, BarChart3, AlertCircle, Shield, FileText, Receipt, FolderSearch } from 'lucide-react'
 import type { PermissionKey } from '@/hooks/useAuth'
 
 const cards: {
@@ -13,8 +14,9 @@ const cards: {
   title: string
   desc: string
   icon: typeof UserPlus
-  accent: 'accent' | 'red' | 'purple'
-  permission: PermissionKey
+  accent: SpotlightAccent
+  permission?: PermissionKey
+  anyOf?: PermissionKey[]
 }[] = [
   {
     to: '/cadastrar',
@@ -49,6 +51,30 @@ const cards: {
     permission: 'empresas_inativas',
   },
   {
+    to: '/orcamentos',
+    title: 'Orçamentos',
+    desc: 'Criar e listar orçamentos comerciais locais',
+    icon: FileText,
+    accent: 'green',
+    permission: 'orcamentos',
+  },
+  {
+    to: '/faturamento',
+    title: 'Faturamento',
+    desc: 'Fila mensal de billing runs e aprovação',
+    icon: Receipt,
+    accent: 'teal',
+    permission: 'faturar',
+  },
+  {
+    to: '/documentos',
+    title: 'Documentos',
+    desc: 'Buscar orçamentos, PDFs e faturamentos por empresa ou ordem',
+    icon: FolderSearch,
+    accent: 'amber',
+    anyOf: ['orcamentos', 'faturar'],
+  },
+  {
     to: '/usuarios',
     title: 'Gerenciar usuários',
     desc: 'Permissões, contas e auditoria de acessos',
@@ -70,6 +96,10 @@ export function Dashboard() {
 
   const visibleCards = cards.filter((c) => {
     if (user?.dev_mode) return true
+    if (c.anyOf?.length) {
+      return c.anyOf.some((key) => Boolean(user?.permissions?.[key]))
+    }
+    if (!c.permission) return true
     return Boolean(user?.permissions?.[c.permission])
   })
 

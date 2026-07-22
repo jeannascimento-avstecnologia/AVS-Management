@@ -57,6 +57,26 @@ def require_permission(permission: str) -> Callable[..., dict[str, Any]]:
     return _dependency
 
 
+def require_any_permission(*permissions: str) -> Callable[..., dict[str, Any]]:
+    """Exige ao menos uma das permissões listadas."""
+
+    if not permissions:
+        raise ValueError("require_any_permission exige ao menos uma permissão.")
+
+    def _dependency(request: Request) -> dict[str, Any]:
+        user = require_user(request)
+        if any(_user_has_permission(user, perm) for perm in permissions):
+            return user
+        raise HTTPException(status_code=403, detail="Sem permissão para esta operação.")
+
+    return _dependency
+
+
+def user_has_permission(user: dict[str, Any], permission: str) -> bool:
+    """Helper público para filtrar resultados por perm dentro de handlers."""
+    return _user_has_permission(user, permission)
+
+
 def require_manage_users(request: Request) -> dict[str, Any]:
     user = require_user(request)
     if not _user_has_permission(user, PERMISSION_MANAGE_USERS):

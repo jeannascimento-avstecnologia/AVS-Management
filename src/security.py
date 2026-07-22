@@ -38,6 +38,7 @@ CSRF_EXEMPT_PATHS = frozenset(
         "/auth/forgot-password",
         "/auth/reset-password",
         "/health",
+        "/webhooks/n8n/callback",
     }
 )
 

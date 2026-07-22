@@ -9,10 +9,15 @@ const venvPython =
     : path.join(root, '.venv', 'bin', 'python')
 
 if (!fs.existsSync(venvPython)) {
+  const activateHint =
+    process.platform === 'win32'
+      ? '  .venv\\Scripts\\activate'
+      : '  source .venv/bin/activate'
   console.error(
-    '[dev:api] Virtualenv não encontrado. Na raiz do projeto:\n' +
-      '  python -m venv .venv\n' +
-      '  .venv\\Scripts\\activate   (Windows)\n' +
+    '[dev:api] Virtualenv não encontrado (ou criado em outro SO). Na raiz do projeto:\n' +
+      '  python3.12 -m venv .venv\n' +
+      activateHint +
+      '\n' +
       '  pip install -r requirements.txt',
   )
   process.exit(1)
