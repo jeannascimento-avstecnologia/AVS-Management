@@ -48,6 +48,7 @@ import {
   type QuoteClientLink,
 } from '@/components/quotes/QuoteClientRegisterDialog'
 import { QuoteModuleTemplatesPanel } from '@/components/quotes/QuoteModuleTemplatesPanel'
+import { localId } from '@/lib/localId'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
 import { VhsysItemSearch } from '@/components/quotes/VhsysItemSearch'
 import { moduleTitleFromTemplate } from '@/lib/quoteModuleTemplates'
@@ -262,7 +263,7 @@ function draftModuleToApi(mod: DraftModule, index: number): QuoteModule {
 }
 
 function newLocalKey(): string {
-  return crypto.randomUUID()
+  return localId()
 }
 
 function parseOptionalNumber(raw: string | number | null | undefined): number | null {
@@ -782,7 +783,7 @@ export function QuoteWizardPage() {
   }
 
   function addModuleFromTemplate(template: QuoteModuleTemplateRead) {
-    const moduleId = `custom_${crypto.randomUUID()}`
+    const moduleId = `custom_${localId()}`
     const title = moduleTitleFromTemplate(template)
     if (!title) {
       toast.error('Bloco sem título — edite na Biblioteca.')
