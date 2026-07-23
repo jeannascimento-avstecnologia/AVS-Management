@@ -77,7 +77,7 @@ def quotes_auth_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("HUB_DB_PATH", str(hub_path))
     monkeypatch.setenv("HUB_PDF_DIR", str(pdf_dir))
     monkeypatch.setenv("HUB_DRY_RUN", "true")
-    monkeypatch.setenv("SESSION_SECRET", "test-secret-key-for-pytest-only")
+    monkeypatch.setenv("SESSION_SECRET", "pytest-only-session-secret-key-32b!!")
     monkeypatch.setenv("APP_BASE_URL", "http://testserver")
     monkeypatch.setenv(
         "ALLOWED_USER_EMAILS",
@@ -180,6 +180,9 @@ def test_list_filter_by_lead_excludes_approved(quotes_client: TestClient) -> Non
 
     bad = quotes_client.get("/orcamentos", params={"lead_temperature": "gelado"})
     assert bad.status_code == 422
+
+    bad_status = quotes_client.get("/orcamentos", params={"status": "invalid_status"})
+    assert bad_status.status_code == 422
 
 
 def test_list_templates_empty(quotes_client: TestClient) -> None:
@@ -579,16 +582,17 @@ def test_pdf_generate_and_download(quotes_client: TestClient, quotes_env: Path) 
     assert gen.status_code == 200, gen.text
     assert gen.headers["content-type"].startswith("application/pdf")
     assert gen.content[:4] == b"%PDF"
-    pdf_name = gen.headers.get("x-pdf-path")
+    # Sem X-Pdf-Path (evita vazar filename em header); path só no body da quote.
+    assert "x-pdf-path" not in {k.lower() for k in gen.headers.keys()}
+
+    got = quotes_client.get(f"/orcamentos/{quote_id}")
+    pdf_name = got.json()["pdf_path"]
     assert pdf_name
     assert pdf_name.endswith(".pdf")
     assert "/" not in pdf_name and "\\" not in pdf_name
 
     pdf_root = Path(get_settings().hub_pdf_dir)
     assert (pdf_root / pdf_name).is_file()
-
-    got = quotes_client.get(f"/orcamentos/{quote_id}")
-    assert got.json()["pdf_path"] == pdf_name
 
     download = quotes_client.get(f"/orcamentos/{quote_id}/pdf")
     assert download.status_code == 200

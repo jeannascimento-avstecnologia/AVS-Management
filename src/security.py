@@ -132,7 +132,7 @@ def validate_security_settings(settings: Settings) -> None:
     if not settings.auth_enabled:
         message = (
             "AUTH_ENABLED=false: todas as rotas da API estão acessíveis sem login. "
-            "Não use em produção."
+            "Aceitável só em rede local confiável; não use em produção."
         )
         if strict:
             raise RuntimeError(message)
@@ -140,16 +140,16 @@ def validate_security_settings(settings: Settings) -> None:
         return
     weak_secret = (
         settings.session_secret.strip() in _WEAK_SESSION_SECRETS
-        or len(settings.session_secret) < 32
+        or len(settings.session_secret.strip()) < 32
     )
     if weak_secret:
         message = (
             "SESSION_SECRET fraco ou padrão com AUTH_ENABLED=true. "
-            "Defina um valor aleatório com pelo menos 32 caracteres no .env."
+            "Defina um valor aleatório com pelo menos 32 caracteres no .env "
+            "(ex.: openssl rand -hex 32)."
         )
-        if strict:
-            raise RuntimeError(message)
-        logger.error(message)
+        # Fail-closed sempre que auth estiver ligado — não só em produção.
+        raise RuntimeError(message)
 
 
 class CsrfMiddleware(BaseHTTPMiddleware):

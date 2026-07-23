@@ -32,6 +32,17 @@ import { TEMP_LABELS } from '@/lib/quoteLead'
 import { btnDangerClass, btnGreenClass, btnSecondaryClass } from '@/lib/ui-classes'
 import { cn } from '@/lib/cn'
 
+const LEAD_FILTER_VALUES = new Set<string>(['all', ...Object.keys(TEMP_LABELS)])
+const STATUS_FILTER_VALUES = new Set<string>([
+  'all',
+  'draft',
+  'submitted',
+  'sent',
+  'approved',
+  'rejected',
+  'contracted',
+])
+
 const STATUS_LABELS: Record<QuoteStatus, string> = {
   draft: 'Rascunho',
   submitted: 'Enviado',
@@ -225,7 +236,10 @@ export function QuotesPage() {
         <div className="flex flex-wrap items-center gap-2">
             <Select
               value={leadFilter}
-              onValueChange={(v) => setLeadFilter(v as LeadTemperature | 'all')}
+              onValueChange={(v) => {
+                if (!LEAD_FILTER_VALUES.has(v)) return
+                setLeadFilter(v as LeadTemperature | 'all')
+              }}
             >
               <SelectTrigger className="w-[160px]" aria-label="Filtrar por lead">
                 <SelectValue placeholder="Lead" />
@@ -241,7 +255,10 @@ export function QuotesPage() {
             </Select>
             <Select
               value={statusFilter}
-              onValueChange={(v) => setStatusFilter(v as QuoteStatus | 'all')}
+              onValueChange={(v) => {
+                if (!STATUS_FILTER_VALUES.has(v)) return
+                setStatusFilter(v as QuoteStatus | 'all')
+              }}
             >
               <SelectTrigger className="w-[180px]" aria-label="Filtrar por status">
                 <SelectValue placeholder="Status" />

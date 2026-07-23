@@ -69,7 +69,7 @@ class QuoteModule(BaseModel):
     title: str = Field(min_length=1, max_length=200)
     legacy_kind: LegacyModuleKind | None = None
     show_labor: bool = False
-    payment_plan: str | None = None
+    payment_plan: str | None = Field(default=None, max_length=200)
     discount_pct: float | None = None
     discount_value: float | None = None
     labor_hours: float | None = None
@@ -193,22 +193,33 @@ class QuoteItemRead(BaseModel):
     sort_order: int = 0
 
 
+def _normalize_optional_text(value: str | None, *, max_len: int, label: str) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if len(cleaned) > max_len:
+        raise ValueError(f"{label}: máximo {max_len} caracteres.")
+    return cleaned
+
+
 class QuoteWrite(BaseModel):
     """Create/update draft — ADR-0002 QuoteWrite."""
 
     cnpj: str
-    client_name: str | None = None
+    client_name: str | None = Field(default=None, max_length=300)
     tiflux_client_id: int | None = None
     vhsys_client_id: int | None = None
     lead_temperature: LeadTemperature | None = None
     billed_by_type: BilledByType | None = None
-    billed_by_name: str | None = None
-    implant_payment_plan: str | None = None
+    billed_by_name: str | None = Field(default=None, max_length=300)
+    implant_payment_plan: str | None = Field(default=None, max_length=200)
     implant_discount_pct: float | None = None
     implant_discount_value: float | None = None
     implant_labor_hours: float | None = None
     implant_labor_hourly_rate: float | None = None
-    monthly_payment_plan: str | None = None
+    monthly_payment_plan: str | None = Field(default=None, max_length=200)
     monthly_discount_pct: float | None = None
     monthly_discount_value: float | None = None
     monthly_labor_hours: float | None = None
@@ -226,6 +237,21 @@ class QuoteWrite(BaseModel):
         if len(digits) != 14 or not validate_cnpj(digits):
             raise ValueError("CNPJ inválido (14 dígitos).")
         return digits
+
+    @field_validator("client_name")
+    @classmethod
+    def _normalize_client_name(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=300, label="Nome do cliente")
+
+    @field_validator("billed_by_name")
+    @classmethod
+    def _normalize_billed_by_name(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=300, label="Faturado por")
+
+    @field_validator("implant_payment_plan", "monthly_payment_plan")
+    @classmethod
+    def _normalize_payment_plan(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=200, label="Plano de pagamento")
 
     @field_validator("client_email")
     @classmethod
@@ -291,18 +317,18 @@ class QuoteUpdate(BaseModel):
     """Update parcial de draft; `items` None = não altera itens; `modules` None = não altera."""
 
     cnpj: str | None = None
-    client_name: str | None = None
+    client_name: str | None = Field(default=None, max_length=300)
     tiflux_client_id: int | None = None
     vhsys_client_id: int | None = None
     lead_temperature: LeadTemperature | None = None
     billed_by_type: BilledByType | None = None
-    billed_by_name: str | None = None
-    implant_payment_plan: str | None = None
+    billed_by_name: str | None = Field(default=None, max_length=300)
+    implant_payment_plan: str | None = Field(default=None, max_length=200)
     implant_discount_pct: float | None = None
     implant_discount_value: float | None = None
     implant_labor_hours: float | None = None
     implant_labor_hourly_rate: float | None = None
-    monthly_payment_plan: str | None = None
+    monthly_payment_plan: str | None = Field(default=None, max_length=200)
     monthly_discount_pct: float | None = None
     monthly_discount_value: float | None = None
     monthly_labor_hours: float | None = None
@@ -322,6 +348,21 @@ class QuoteUpdate(BaseModel):
         if len(digits) != 14 or not validate_cnpj(digits):
             raise ValueError("CNPJ inválido (14 dígitos).")
         return digits
+
+    @field_validator("client_name")
+    @classmethod
+    def _normalize_client_name(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=300, label="Nome do cliente")
+
+    @field_validator("billed_by_name")
+    @classmethod
+    def _normalize_billed_by_name(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=300, label="Faturado por")
+
+    @field_validator("implant_payment_plan", "monthly_payment_plan")
+    @classmethod
+    def _normalize_payment_plan(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=200, label="Plano de pagamento")
 
     @field_validator("client_email")
     @classmethod

@@ -22,7 +22,7 @@ def auth_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("AUTH_ENABLED", "true")
     monkeypatch.setenv("AUTH_PROVIDER", "local")
     monkeypatch.setenv("AUTH_DB_PATH", str(db_path))
-    monkeypatch.setenv("SESSION_SECRET", "test-secret-key-for-pytest-only")
+    monkeypatch.setenv("SESSION_SECRET", "pytest-only-session-secret-key-32b!!")
     monkeypatch.setenv("APP_BASE_URL", "http://testserver")
     monkeypatch.setenv("ALLOWED_USER_EMAILS", "user@avs.com.br,limited@avs.com.br,admin@avs.com.br,target@avs.com.br,autorizado@avstecnologia.cloud")
     monkeypatch.setenv("SMTP_HOST", "")

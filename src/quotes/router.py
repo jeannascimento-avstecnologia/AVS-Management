@@ -19,6 +19,7 @@ from src.quotes.schemas import (
     LeadTemperature,
     QuoteModuleTemplateUpdate,
     QuoteModuleTemplateWrite,
+    QuoteStatus,
     QuoteTemplateUpdate,
     QuoteTemplateWrite,
     QuoteUpdate,
@@ -397,7 +398,7 @@ def build_quotes_router() -> APIRouter:
 
     @router.get("")
     async def list_quotes(
-        status: str | None = Query(default=None),
+        status: QuoteStatus | None = Query(default=None),
         lead_temperature: LeadTemperature | None = Query(default=None),
         limit: int = Query(default=100, ge=1, le=500),
         offset: int = Query(default=0, ge=0),
@@ -604,7 +605,6 @@ def build_quotes_router() -> APIRouter:
             path,
             media_type="application/pdf",
             filename=f"orcamento-M{quote.id}.pdf",
-            headers={"X-Pdf-Path": quote.pdf_path or ""},
         )
 
     @router.get("/{quote_id}/pdf")
@@ -622,7 +622,6 @@ def build_quotes_router() -> APIRouter:
             path,
             media_type="application/pdf",
             filename=f"orcamento-M{quote.id}.pdf",
-            headers={"X-Pdf-Path": quote.pdf_path or ""},
         )
 
     return router

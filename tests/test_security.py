@@ -115,3 +115,59 @@ def test_validate_security_rejects_weak_secret_in_production(monkeypatch: pytest
 
     with pytest.raises(RuntimeError, match="SESSION_SECRET"):
         validate_security_settings(get_settings())
+
+
+def test_validate_security_rejects_weak_secret_even_in_development(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """AUTH on + secret fraco = fail-closed em qualquer APP_ENV."""
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("APP_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("SESSION_SECRET", "change-me-in-production-use-long-random-string")
+    clear_settings_cache()
+
+    from src.security import validate_security_settings
+
+    with pytest.raises(RuntimeError, match="SESSION_SECRET"):
+        validate_security_settings(get_settings())
+
+
+def test_validate_security_rejects_short_secret(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("APP_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("SESSION_SECRET", "only-31-characters-long-secret!")  # 31
+    clear_settings_cache()
+
+    from src.security import validate_security_settings
+
+    with pytest.raises(RuntimeError, match="SESSION_SECRET"):
+        validate_security_settings(get_settings())
+
+
+def test_validate_security_allows_auth_off_locally_with_weak_secret(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Risco aceito: AUTH off em rede local (user dev) — secret não é exigido."""
+    monkeypatch.setenv("AUTH_ENABLED", "false")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("APP_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("SESSION_SECRET", "change-me-in-production")
+    clear_settings_cache()
+
+    from src.security import validate_security_settings
+
+    validate_security_settings(get_settings())  # não levanta
+
+
+def test_validate_security_accepts_strong_secret(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.setenv("APP_BASE_URL", "http://127.0.0.1:8000")
+    monkeypatch.setenv("SESSION_SECRET", "pytest-only-session-secret-key-32b!!")
+    clear_settings_cache()
+
+    from src.security import validate_security_settings
+
+    validate_security_settings(get_settings())

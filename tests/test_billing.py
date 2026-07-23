@@ -83,7 +83,7 @@ def billing_auth_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("HUB_DB_PATH", str(hub_path))
     monkeypatch.setenv("HUB_DRY_RUN", "true")
     monkeypatch.setenv("HUB_DRY_RUN_NOTIFY_N8N", "false")
-    monkeypatch.setenv("SESSION_SECRET", "test-secret-key-for-pytest-only")
+    monkeypatch.setenv("SESSION_SECRET", "pytest-only-session-secret-key-32b!!")
     monkeypatch.setenv("APP_BASE_URL", "http://testserver")
     monkeypatch.setenv(
         "ALLOWED_USER_EMAILS",
