@@ -193,7 +193,8 @@ def test_quote_display_id_prefix_m() -> None:
 
 
 def test_format_payment_plan_label_recorrente_anual() -> None:
-    assert format_payment_plan_label("recorrente_anual") == "Recorrente anual"
+    assert format_payment_plan_label("recorrente_anual") == "Anual - Recorrente Mensal"
+    assert format_payment_plan_label("recorrente_12x") == "Anual - Recorrente Mensal 12x"
     assert format_payment_plan_label("a_vista") == "À vista"
     assert format_payment_plan_label("12x") == "Parcelado 12x"
 
@@ -359,8 +360,9 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "Forma de Pagamento Servicos" in text
     assert "Observacoes" in text
     assert "Condicao implant" in text
-    assert "Faturado por: Fornecedor Modulo" in text
-    assert "Recorrente anual" in text
+    assert "Anual - Recorrente Mensal" in text
+    assert "Faturado por" in text
+    assert "Fornecedor Modulo" in text
     assert "1.500,00" in text or "1500,00" in text
     assert "459,90" in text
     assert "1.959,90" in text or "1959,90" in text

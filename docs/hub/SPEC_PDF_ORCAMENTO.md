@@ -21,8 +21,8 @@
    - Título da banda = `module.title` (não o `id`).
    - Tabela item / qtde / v. unit. / v. total filtrada por `quote_items.section = module.id`.
    - Mão de obra só se `module.show_labor` e horas×taxa > 0 (default: só Mensalidade seedada).
-   - Por módulo: desconto (%↔R$ espelho), forma de pagamento (`a_vista` | `Nx` 1–12 | `recorrente_anual`), total líquido.
-   - Por módulo, opcionais: `module.notes` (Observações) e `module.billed_by_name` (Faturado por) — campos sempre no wizard; PDF imprime só se preenchidos (após o total líquido da seção).
+   - Por módulo: desconto (%↔R$ espelho), forma de pagamento (`a_vista` | `Nx` 1–12 | `recorrente_anual` / `recorrente_Nx` = **Anual - Recorrente Mensal** com meses 1–12), total líquido.
+   - Por módulo, opcionais: `module.notes` (Observações) e `module.billed_by_name` (Faturado por) — wizard em **linhas inteiras** (não lado a lado); PDF imprime só se preenchidos, em células bordadas iguais a desconto/totais (após o total líquido da seção).
    - Seed no create: Implantação + Mensalidade; **removíveis/reordenáveis** — PDF segue a ordem do canvas; se ausentes, **não** imprimir banda.
 4. Divisórias entre módulos quando houver mais de um.
 5. **Dados de pagamento / resumo**:

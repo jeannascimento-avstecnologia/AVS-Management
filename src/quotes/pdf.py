@@ -246,9 +246,9 @@ def _module_meta_height(notes: str | None, billed_by_name: str | None) -> float:
     billed_clean = (billed_by_name or "").strip()
     if notes_clean:
         lines = max(1, (len(notes_clean) + 89) // 90)
-        h += _GAP + 3.6 + lines * 4.0
+        h += _GAP + _ROW_H + lines * 4.0
     if billed_clean:
-        h += _GAP + 4.0
+        h += _GAP + _ROW_H
     return h
 
 
@@ -669,7 +669,7 @@ def _write_section(
     pdf.cell(
         w4,
         _ROW_H,
-        _safe(format_payment_plan_label(payment_plan))[:40],
+        _safe(format_payment_plan_label(payment_plan))[:52],
         border=1,
         fill=True,
         new_x="LMARGIN",
@@ -703,16 +703,29 @@ def _write_section(
     billed_clean = (billed_by_name or "").strip()
     if notes_clean:
         pdf.ln(_GAP)
+        pdf.set_fill_color(*_PANEL)
+        _set_box_stroke(pdf)
         pdf.set_font("Helvetica", "B", _FS_BODY)
-        pdf.cell(0, 3.6, "Observacoes", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(_CONTENT_W, _ROW_H, "Observacoes", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", "", _FS_BODY)
-        pdf.multi_cell(_CONTENT_W, 4.0, _safe(notes_clean))
+        pdf.multi_cell(_CONTENT_W, 4.0, _safe(notes_clean), border=1)
     if billed_clean:
-        pdf.ln(_GAP if not notes_clean else 0.4)
+        pdf.ln(_GAP)
+        pdf.set_fill_color(*_PANEL)
+        _set_box_stroke(pdf)
+        pdf.set_font("Helvetica", "B", _FS_BODY)
+        pdf.cell(_LABEL_W, _ROW_H, "Faturado por", border=1, align="R", fill=True)
         pdf.set_font("Helvetica", "", _FS_BODY)
-        pdf.set_text_color(*_MUTED)
-        pdf.cell(0, 4, f"Faturado por: {_safe(billed_clean)}", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(*_INK)
+        pdf.cell(
+            _COL_TOTAL,
+            _ROW_H,
+            _safe(billed_clean)[:28],
+            border=1,
+            align="R",
+            fill=True,
+            new_x="LMARGIN",
+            new_y="NEXT",
+        )
 
     pdf.ln(_GAP)
 

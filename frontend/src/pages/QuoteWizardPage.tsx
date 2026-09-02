@@ -358,11 +358,18 @@ function mirrorDiscountFromValue(
   return { pct: formatPctInput(pct), value: valueRaw }
 }
 
+const RECORRENTE_LABEL = 'Anual - Recorrente Mensal'
+
 function parsePaymentPlan(value: string): { mode: PaymentMode; installments: number | null } {
   const raw = value.trim()
   if (!raw || raw === 'a_vista') return { mode: raw ? 'a_vista' : '', installments: null }
   if (raw === 'recorrente_anual' || raw === 'recorrente-anual' || raw === 'anual') {
-    return { mode: 'recorrente_anual', installments: null }
+    return { mode: 'recorrente_anual', installments: 12 }
+  }
+  const recorrenteNx = raw.match(/^recorrente_(\d+)x?$/i)
+  if (recorrenteNx) {
+    const n = Number(recorrenteNx[1])
+    if (n >= 1) return { mode: 'recorrente_anual', installments: Math.min(n, 12) }
   }
   const parcelado = raw.match(/^parcelado_(\d+)x?$/i)
   if (parcelado) {
@@ -380,7 +387,10 @@ function parsePaymentPlan(value: string): { mode: PaymentMode; installments: num
 
 function buildPaymentPlan(mode: PaymentMode, installments: number | null): string {
   if (mode === 'a_vista') return 'a_vista'
-  if (mode === 'recorrente_anual') return 'recorrente_anual'
+  if (mode === 'recorrente_anual') {
+    const n = installments && installments >= 1 && installments <= 12 ? installments : 12
+    return `recorrente_${n}x`
+  }
   if (mode === 'parcelado') {
     const n = installments && installments >= 1 && installments <= 12 ? installments : 2
     return `${n}x`
@@ -474,7 +484,9 @@ function paymentLabel(value: string): string {
   if (!value) return '—'
   const { mode, installments } = parsePaymentPlan(value)
   if (mode === 'a_vista') return 'À vista'
-  if (mode === 'recorrente_anual') return 'Recorrente anual'
+  if (mode === 'recorrente_anual') {
+    return installments ? `${RECORRENTE_LABEL} ${installments}x` : RECORRENTE_LABEL
+  }
   if (mode === 'parcelado' && installments) return `Parcelado ${installments}x`
   return value
 }
@@ -1674,7 +1686,7 @@ export function QuoteWizardPage() {
             </CardContent>
           </Card>
 
-          {moduleNets.map(({ mod, sub, net }) => (
+          {moduleNets.map(({ mod, sub }) => (
             <ReviewBlock
               key={mod.id}
               title={mod.title}
@@ -2449,7 +2461,7 @@ function ItemsSection({
           </AccordionItem>
         </Accordion>
 
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="grid gap-3">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
               <Label htmlFor={`mod-notes-${section}`}>Observações</Label>
@@ -2571,6 +2583,8 @@ function PaymentPlanFields({
 }) {
   const { mode, installments } = parsePaymentPlan(paymentPlan)
   const modeValue = mode || NONE
+  const showValueField = mode === 'parcelado' || mode === 'recorrente_anual'
+  const monthsValue = String(installments ?? (mode === 'recorrente_anual' ? 12 : 2))
 
   return (
     <div className="grid gap-3 sm:grid-cols-2">
@@ -2589,7 +2603,7 @@ function PaymentPlanFields({
               return
             }
             if (v === 'recorrente_anual') {
-              onPaymentPlan('recorrente_anual')
+              onPaymentPlan(buildPaymentPlan('recorrente_anual', installments ?? 12))
               return
             }
             onPaymentPlan(buildPaymentPlan('parcelado', installments ?? 2))
@@ -2602,20 +2616,27 @@ function PaymentPlanFields({
             <SelectItem value={NONE}>Não informado</SelectItem>
             <SelectItem value="a_vista">À vista</SelectItem>
             <SelectItem value="parcelado">Parcelado</SelectItem>
-            <SelectItem value="recorrente_anual">Recorrente anual</SelectItem>
+            <SelectItem value="recorrente_anual">{RECORRENTE_LABEL}</SelectItem>
           </SelectContent>
         </Select>
       </div>
-      {mode === 'parcelado' ? (
+      {showValueField ? (
         <div className="space-y-2">
-          <Label>Parcelas</Label>
+          <Label>{mode === 'recorrente_anual' ? 'Meses (recorrência)' : 'Parcelas'}</Label>
           <Select
-            value={String(installments ?? 2)}
+            value={monthsValue}
             disabled={!canEdit}
-            onValueChange={(v) => onPaymentPlan(buildPaymentPlan('parcelado', Number(v)))}
+            onValueChange={(v) =>
+              onPaymentPlan(
+                buildPaymentPlan(
+                  mode === 'recorrente_anual' ? 'recorrente_anual' : 'parcelado',
+                  Number(v),
+                ),
+              )
+            }
           >
-            <SelectTrigger aria-label="Parcelas">
-              <SelectValue placeholder="Parcelas" />
+            <SelectTrigger aria-label={mode === 'recorrente_anual' ? 'Meses' : 'Parcelas'}>
+              <SelectValue placeholder={mode === 'recorrente_anual' ? 'Meses' : 'Parcelas'} />
             </SelectTrigger>
             <SelectContent>
               {INSTALLMENT_OPTIONS.map((n) => (
