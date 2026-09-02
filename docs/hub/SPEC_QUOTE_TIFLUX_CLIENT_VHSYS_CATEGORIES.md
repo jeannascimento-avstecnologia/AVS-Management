@@ -46,25 +46,33 @@ Não confundir com `GET /categorias-clientes` (categorias de **clientes**).
 ### API hub
 | Método | Path | Comportamento |
 |--------|------|---------------|
-| `GET` | `/orcamentos/vhsys/categories` | Proxy `list_categories` — só `status=Ativo` e `lixeira≠Sim`. |
-| `GET` | `/orcamentos/vhsys/catalog?q=&limit=&category_id=` | Extensão: se `category_id` → filtra itens cujo `category_id` bate. |
+| `GET` | `/orcamentos/vhsys/categories` | Proxy `list_categories` + `GET /subcategorias` — só `status=Ativo` e `lixeira≠Sim`. Cada categoria inclui `subcategories: [{ id, name }]`. |
+| `GET` | `/orcamentos/vhsys/catalog?q=&limit=&category_id=&subcategory_id=` | Extensão: `category_id` filtra `id_categoria`; `subcategory_id` filtra `subcategoria` / `id_subcategoria` do produto (pós-fetch). |
 
 Catálogo normalizado inclui `category_id: number | null`.
 
 ### UI
-- Logo abaixo do título da seção (Implantação / Mensalidade): `Select` de categorias VHSYS.
-- Estado local por seção (não persiste no quote).
-- `VhsysItemSearch` recebe `categoryId` e só lista itens da categoria (ou todos se “Todas”).
-- Via-dupla (criar produto): envia `id_categoria` quando categoria selecionada.
+- Em cada bloco do wizard (e nos formulários de biblioteca): `Select` de categorias VHSYS + `Select` de subcategorias da categoria escolhida.
+- Estado local por bloco (não persiste no quote). Trocar a categoria zera a subcategoria.
+- `VhsysItemSearch` recebe `categoryId` e `subcategoryId` e restringe a busca (ou todos se “Todas”).
+- Via-dupla (criar produto): envia `id_categoria` / `id_subcategoria` quando selecionados.
 
 ### Limitações
 - Sem parâmetro oficial de filtro em `/produtos` → filtro pós-fetch (já carregamos catálogo completo no FE).
-- Categorias inativas/lixeira omitidas.
-- Subcategorias: não usadas no MVP (campo existe na resposta; ignorar).
+- Categorias/subcategorias inativas/lixeira omitidas.
+- Produto sem `id_subcategoria`/`subcategoria` some da lista se uma subcategoria estiver selecionada.
 
 ## Critérios de aceite
 1. Buscar cliente TiFlux por CNPJ no passo 1 → `tiflux_client_id` salvo no PUT do orçamento.
 2. Gerar PDF com esse id → `resolve_client` enriquece endereço/contato (mock).
-3. Dropdown categorias nas duas seções; busca de item restrita à categoria.
+3. Dropdown categorias + subcategorias por bloco; busca de item restrita à categoria/subcategoria.
 4. Tokens TiFlux/VHSYS só server-side.
-5. pytest cobre novos endpoints + filtro categoria; tipagem FE sem `any`.
+5. pytest cobre novos endpoints + filtro categoria/subcategoria; tipagem FE sem `any`.
+
+---
+
+## 3) Biblioteca de blocos — defaults e dialogs
+
+- Dialogs/listas (Biblioteca, Inserir bloco, cadastros): altura limitada à viewport (`max-h-[90vh]`) com **scroll vertical**.
+- Template persiste `notes` e `billed_by_name` (opcionais). Ao inserir no orçamento, copiar para o módulo; o wizard continua editável.
+- Sem card **Faturado por** geral no passo 2.

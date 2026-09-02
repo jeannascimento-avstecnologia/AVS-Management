@@ -17,6 +17,7 @@ import {
   type QuoteTemplateLine,
   type QuoteTemplateRead,
 } from '@/api/client'
+import { VhsysCategoryFields } from '@/components/quotes/VhsysCategoryFields'
 import { VhsysItemSearch } from '@/components/quotes/VhsysItemSearch'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -24,13 +25,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import { btnAccentClass, btnDangerClass, btnSecondaryClass } from '@/lib/ui-classes'
 import { cn } from '@/lib/cn'
@@ -94,8 +88,6 @@ function sectionMeta(section: string, overrideTitle?: string): SectionMeta {
   }
   return { ...CUSTOM_META, label }
 }
-
-const NONE = '__none__'
 
 type DraftLine = {
   localKey: string
@@ -202,6 +194,7 @@ export function QuoteTemplatesPanel({
   const [name, setName] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()])
   const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [subcategoryId, setSubcategoryId] = useState<number | null>(null)
 
   const listQuery = useQuery({
     queryKey: ['quote-templates'],
@@ -215,7 +208,6 @@ export function QuoteTemplatesPanel({
     enabled: showForm,
   })
   const categories = categoriesQuery.data?.categories ?? []
-  const categorySelectValue = categoryId != null ? String(categoryId) : NONE
 
   const allTemplates = listQuery.data?.templates ?? []
   const implantCount = allTemplates.filter((t) => t.section === 'implantacao').length
@@ -237,6 +229,7 @@ export function QuoteTemplatesPanel({
     setName('')
     setLines([emptyLine()])
     setCategoryId(null)
+    setSubcategoryId(null)
   }
 
   function switchSection(next: QuoteSection) {
@@ -250,6 +243,7 @@ export function QuoteTemplatesPanel({
     setEditingId(null)
     setName('')
     setCategoryId(null)
+    setSubcategoryId(null)
     const useSeed =
       Boolean(seedLines?.length) &&
       activeSection === (initialSection ?? activeSection)
@@ -263,6 +257,7 @@ export function QuoteTemplatesPanel({
     setName(template.name)
     setLines(linesFromTemplate(template))
     setCategoryId(null)
+    setSubcategoryId(null)
     setShowForm(true)
   }
 
@@ -458,45 +453,23 @@ export function QuoteTemplatesPanel({
               />
             </div>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Categoria VHSYS</Label>
-              <Select
-                value={categorySelectValue}
-                disabled={categoriesQuery.isFetching}
-                onValueChange={(v) => {
-                  if (v === NONE) {
-                    setCategoryId(null)
-                    return
-                  }
-                  const id = Number(v)
-                  setCategoryId(Number.isFinite(id) && id > 0 ? id : null)
-                }}
-              >
-                <SelectTrigger aria-label="Categoria VHSYS do modelo">
-                  <SelectValue placeholder="Todas as categorias" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>Todas as categorias</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={String(cat.id)}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {categoriesQuery.isError ? (
-                <p className="text-[11px] text-aurora-danger">
-                  {categoriesQuery.error instanceof Error
+            <VhsysCategoryFields
+              categories={categories}
+              categoryId={categoryId}
+              subcategoryId={subcategoryId}
+              onCategoryId={setCategoryId}
+              onSubcategoryId={setSubcategoryId}
+              loading={categoriesQuery.isFetching}
+              error={
+                categoriesQuery.isError
+                  ? categoriesQuery.error instanceof Error
                     ? categoriesQuery.error.message
-                    : 'Falha ao carregar categorias VHSYS'}
-                </p>
-              ) : (
-                <p className="text-[11px] text-muted-foreground">
-                  Filtra a busca de itens
-                  {categoryId != null ? ' pela categoria selecionada' : ''}.
-                </p>
-              )}
-            </div>
+                    : 'Falha ao carregar categorias VHSYS'
+                  : null
+              }
+              categoryAriaLabel="Categoria VHSYS do modelo"
+              subcategoryAriaLabel="Subcategoria VHSYS do modelo"
+            />
 
             <fieldset className="space-y-3 overflow-visible">
               <legend className="mb-1 text-sm font-medium text-aurora-fg">Linhas</legend>
@@ -515,6 +488,7 @@ export function QuoteTemplatesPanel({
                       <VhsysItemSearch
                         value={line.name}
                         categoryId={categoryId}
+                        subcategoryId={subcategoryId}
                         unitValue={parseNonNegativeNumber(line.unit_value)}
                         placeholder={`Item ${idx + 1} — buscar VHSYS…`}
                         onChange={(nextName) =>
@@ -644,12 +618,7 @@ export function QuoteTemplatesPanel({
         )}
 
         {!listQuery.isPending && templates.length > 0 && (
-          <ul
-            className={cn(
-              'space-y-2',
-              embedded && !showForm && 'max-h-[36vh] overflow-y-auto pr-1',
-            )}
-          >
+          <ul className="space-y-2">
             {templates.map((template) => {
               const lineSum = template.lines.reduce(
                 (s, l) => s + l.qty * l.unit_value,

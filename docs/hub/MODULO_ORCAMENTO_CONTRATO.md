@@ -67,7 +67,7 @@ Proibido na UI do wizard: strings “modelo de itens”, “modelo de módulo”
   2. **Bloco em branco** — título livre; `id` slug único; `show_labor=false` no MVP
   3. Se Implantação/Mensalidade foram removidos → **restaurar** presets sistema (mesmo `id`/`legacy_kind`) — **não** vêm da Biblioteca
 - Card do bloco: título editável · ↑↓ · **+ Item** · remover; **⋯** só **Salvar na biblioteca**
-- Dialog **Biblioteca de blocos**: CRUD de `quote_module_templates` (nome do bloco + linhas VHSYS)
+- Dialog **Biblioteca de blocos**: CRUD de `quote_module_templates` (nome do bloco + linhas VHSYS + defaults de **Faturado por** e **Observações**). Dialogs/listas: `max-h` dinâmico + `overflow-y-auto` (conteúdo nunca fica inacessível).
 
 **Por bloco (genérico)**
 
@@ -78,7 +78,7 @@ Proibido na UI do wizard: strings “modelo de itens”, “modelo de módulo”
 - **`quote_templates` (modelos de itens) = legado** — API/tabela permanecem; **não montar** painel/apply/save de itens no wizard neste MVP
 - Forma de pagamento + desconto %↔R$ espelho (`líquido = subtotal − desconto`)
 - Mão de obra só se `show_labor` (default Mensalidade; herdado do bloco da Biblioteca se houver)
-- Campo **Faturado por** (global): tipo + busca VHSYS
+- Campo **Faturado por** **por bloco** (busca VHSYS); **sem** Faturado por geral no wizard. Defaults da Biblioteca copiam para o módulo ao inserir e continuam editáveis no orçamento.
 
 #### PDF do orçamento
 - Spec detalhada: [`SPEC_PDF_ORCAMENTO.md`](./SPEC_PDF_ORCAMENTO.md)
@@ -243,6 +243,8 @@ Catálogo reutilizável de **blocos** custom (ex. Licenças). Na UI: **Bibliotec
 | `name` | TEXT NOT NULL | nome no catálogo (picker / CRUD) |
 | `title` | TEXT NOT NULL | título default do módulo ao importar |
 | `show_labor` | INTEGER NOT NULL DEFAULT 0 | 0/1 |
+| `notes` | TEXT NULL | observação default ao importar (editável no orçamento) |
+| `billed_by_name` | TEXT NULL | faturado por default ao importar (editável no orçamento) |
 | `lines_json` | TEXT NOT NULL | `[{name, qty, unit_value, sort_order}]` (pode ser `[]`) |
 | `created_at` | TEXT NOT NULL | ISO |
 
@@ -252,7 +254,7 @@ Catálogo reutilizável de **blocos** custom (ex. Licenças). Na UI: **Bibliotec
 - `PATCH /orcamentos/module-templates/{id}`
 - `DELETE /orcamentos/module-templates/{id}`
 
-**Import no wizard (Inserir bloco ← Biblioteca):** ao selecionar → append módulo `custom_<uuid>` + itens com `section = module.id` a partir de `lines_json`; título resolvido = `title` (com `name` alinhado no save); autosave do draft deve persistir `modules_json` + `quote_items`. `custom_*` é interno — não exibir na UI.
+**Import no wizard (Inserir bloco ← Biblioteca):** ao selecionar → append módulo `custom_<uuid>` + itens com `section = module.id` a partir de `lines_json`; título resolvido = `title` (com `name` alinhado no save); `notes` e `billed_by_name` do template viram defaults do módulo (editáveis depois). Autosave do draft persiste `modules_json` + `quote_items`. `custom_*` é interno — não exibir na UI.
 
 ### `contracts_from_quotes` (opcional)
 - quote_id, tiflux_contract_ids[], snapshot JSON
@@ -330,7 +332,7 @@ Orçamento **não** emite boleto mensal; só define o que depois será cobrado.
 - [x] Seção “Mensalidade” recorrente
 - [x] Add/remove campos
 - [x] Busca CNPJ/nome + modal cadastro sem perder dados
-- [x] Faturado por (distribuidor/fornecedor + busca clientes VHSYS) — global; por bloco: texto opcional (lista VHSYS fast-follow)
+- [x] Faturado por **por bloco** (busca VHSYS); sem Faturado por geral no wizard; defaults na Biblioteca
 - [x] Observações globais (passo 3) + Observações por bloco (opcional)
 - [x] Descrição de item via catálogo VHSYS (`/produtos`)
 - [x] Via dupla: cadastrar no VHSYS item digitado inexistente (`POST /produtos`)  

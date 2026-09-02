@@ -240,7 +240,7 @@ def test_vhsys_categories_list(
     monkeypatch.setenv("VHSYS_ACCESS_TOKEN", "tok")
     monkeypatch.setenv("VHSYS_SECRET_ACCESS_TOKEN", "sec")
     clear_settings_cache()
-    fake = [{"id": 10, "name": "VOIP"}, {"id": 11, "name": "Cloud"}]
+    fake = [{"id": 10, "name": "VOIP", "subcategories": []}, {"id": 11, "name": "Cloud", "subcategories": []}]
     with patch(
         "src.quotes.router.VhsysClient.list_catalog_categories",
         new=AsyncMock(return_value=fake),
@@ -279,6 +279,37 @@ def test_vhsys_catalog_filter_by_category(
     assert body["category_id"] == 10
     assert body["items"][0]["category_id"] == 10
     assert mocked.await_args.kwargs["category_id"] == 10
+    clear_settings_cache()
+
+
+def test_vhsys_catalog_filter_by_subcategory(
+    quotes_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VHSYS_ACCESS_TOKEN", "tok")
+    monkeypatch.setenv("VHSYS_SECRET_ACCESS_TOKEN", "sec")
+    clear_settings_cache()
+    fake = [
+        {
+            "id": 2,
+            "kind": "produto",
+            "name": "Firewall",
+            "code": None,
+            "unit_value": 100.0,
+            "category_id": 10,
+            "subcategory_ids": [22],
+        }
+    ]
+    with patch(
+        "src.quotes.router.VhsysClient.search_catalog_items",
+        new=AsyncMock(return_value=fake),
+    ) as mocked:
+        res = quotes_client.get(
+            "/orcamentos/vhsys/catalog?category_id=10&subcategory_id=22&limit=20"
+        )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["subcategory_id"] == 22
+    assert mocked.await_args.kwargs["subcategory_id"] == 22
     clear_settings_cache()
 
 
@@ -346,6 +377,8 @@ def test_normalize_catalog_category_and_product() -> None:
     from src.integrations.vhsys_client import (
         _normalize_catalog_category,
         _normalize_catalog_product,
+        _normalize_catalog_subcategory,
+        _product_subcategory_ids,
     )
 
     cat = _normalize_catalog_category(
@@ -354,21 +387,41 @@ def test_normalize_catalog_category_and_product() -> None:
             "nome_categoria": "VOIP",
             "status_categoria": "Ativo",
             "lixeira": "Nao",
+            "subcategorias": [
+                {"id_subcategoria": 21, "nome_subcategoria": "Ramais", "status_subcategoria": "Ativo"}
+            ],
         }
     )
-    assert cat == {"id": 9, "name": "VOIP"}
+    assert cat == {
+        "id": 9,
+        "name": "VOIP",
+        "subcategories": [{"id": 21, "name": "Ramais"}],
+    }
     inactive = _normalize_catalog_category(
         {"id_categoria": 1, "nome_categoria": "X", "status_categoria": "Inativo"}
     )
     assert inactive is None
+    sub = _normalize_catalog_subcategory(
+        {
+            "id_subcategoria": 21,
+            "id_categoria": 9,
+            "nome_subcategoria": "Ramais",
+            "status_subcategoria": "Ativo",
+            "lixeira": "Nao",
+        }
+    )
+    assert sub == {"id": 21, "name": "Ramais", "category_id": 9}
     prod = _normalize_catalog_product(
         {
             "id_produto": 3,
             "desc_produto": "Ramal",
             "valor_produto": "99,90",
             "id_categoria": 9,
+            "subcategoria": [{"id_subcategoria": 21}],
         }
     )
     assert prod is not None
     assert prod["category_id"] == 9
     assert prod["unit_value"] == 99.9
+    assert prod["subcategory_ids"] == [21]
+    assert _product_subcategory_ids({"id_subcategoria": 7, "subcategoria": [7, 8]}) == [7, 8]

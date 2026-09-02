@@ -183,6 +183,7 @@ class VhsysCatalogCreateBody(BaseModel):
     tipo_produto: Literal["Servico", "Produto"] = "Servico"
     unidade_produto: str = Field(default="UN", min_length=1, max_length=20)
     id_categoria: int | None = Field(default=None, ge=1)
+    id_subcategoria: int | None = Field(default=None, ge=1)
 
     @field_validator("name")
     @classmethod
@@ -541,6 +542,8 @@ class QuoteModuleTemplateWrite(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     title: str = Field(min_length=1, max_length=200)
     show_labor: bool = False
+    notes: str | None = None
+    billed_by_name: str | None = Field(default=None, max_length=300)
     lines: list[QuoteTemplateLine] = Field(default_factory=list)
 
     @field_validator("name", "title")
@@ -550,6 +553,16 @@ class QuoteModuleTemplateWrite(BaseModel):
         if not cleaned:
             raise ValueError("Campo obrigatório.")
         return cleaned
+
+    @field_validator("notes")
+    @classmethod
+    def _normalize_notes(cls, value: str | None) -> str | None:
+        return _normalize_optional_notes(value)
+
+    @field_validator("billed_by_name")
+    @classmethod
+    def _normalize_billed_by(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=300, label="Faturado por")
 
     @field_validator("key")
     @classmethod
@@ -572,6 +585,8 @@ class QuoteModuleTemplateUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     title: str | None = Field(default=None, min_length=1, max_length=200)
     show_labor: bool | None = None
+    notes: str | None = None
+    billed_by_name: str | None = Field(default=None, max_length=300)
     lines: list[QuoteTemplateLine] | None = None
 
     @field_validator("name", "title")
@@ -584,6 +599,16 @@ class QuoteModuleTemplateUpdate(BaseModel):
             raise ValueError("Campo obrigatório.")
         return cleaned
 
+    @field_validator("notes")
+    @classmethod
+    def _normalize_notes(cls, value: str | None) -> str | None:
+        return _normalize_optional_notes(value)
+
+    @field_validator("billed_by_name")
+    @classmethod
+    def _normalize_billed_by(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=300, label="Faturado por")
+
 
 class QuoteModuleTemplateRead(BaseModel):
     id: int
@@ -591,5 +616,7 @@ class QuoteModuleTemplateRead(BaseModel):
     name: str
     title: str
     show_labor: bool
+    notes: str | None = None
+    billed_by_name: str | None = None
     lines: list[QuoteTemplateLine]
     created_at: str

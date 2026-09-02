@@ -50,6 +50,7 @@ import {
 import { QuoteModuleTemplatesPanel } from '@/components/quotes/QuoteModuleTemplatesPanel'
 import { localId } from '@/lib/localId'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
+import { VhsysCategoryFields } from '@/components/quotes/VhsysCategoryFields'
 import { VhsysItemSearch } from '@/components/quotes/VhsysItemSearch'
 import { moduleTitleFromTemplate } from '@/lib/quoteModuleTemplates'
 import { VhsysPartySearch } from '@/components/quotes/VhsysPartySearch'
@@ -107,11 +108,6 @@ const TEMP_CHIP: Record<LeadTemperature, string> = {
   morno:
     'border-aurora-warning/50 bg-aurora-warning/15 text-aurora-warning ring-2 ring-aurora-warning/25',
   frio: 'border-aurora-info/50 bg-aurora-info/15 text-aurora-info ring-2 ring-aurora-info/25',
-}
-
-const BILLED_LABELS: Record<BilledByType, string> = {
-  distribuidor: 'Distribuidor',
-  fornecedor: 'Fornecedor',
 }
 
 const NONE = '__none__'
@@ -515,6 +511,9 @@ export function QuoteWizardPage() {
   const [extraEmailDraft, setExtraEmailDraft] = useState('')
   const [tifluxSearch, setTifluxSearch] = useState('')
   const [categoryByModule, setCategoryByModule] = useState<Record<string, number | null>>({})
+  const [subcategoryByModule, setSubcategoryByModule] = useState<
+    Record<string, number | null>
+  >({})
   const [addModuleOpen, setAddModuleOpen] = useState(false)
   const [customModuleTitle, setCustomModuleTitle] = useState('')
   const [manageModuleTemplatesOpen, setManageModuleTemplatesOpen] = useState(false)
@@ -836,8 +835,8 @@ export function QuoteWizardPage() {
           discount_value: '',
           labor_hours: '',
           labor_hourly_rate: '',
-          notes: '',
-          billed_by_name: '',
+          notes: template.notes ?? '',
+          billed_by_name: template.billed_by_name ?? '',
           sort_order: prev.modules.length,
         },
       ]
@@ -1340,8 +1339,13 @@ export function QuoteWizardPage() {
                   items={items}
                   canEdit={canEdit}
                   categoryId={categoryByModule[mod.id] ?? null}
-                  onCategoryId={(id) =>
+                  subcategoryId={subcategoryByModule[mod.id] ?? null}
+                  onCategoryId={(id) => {
                     setCategoryByModule((prev) => ({ ...prev, [mod.id]: id }))
+                    setSubcategoryByModule((prev) => ({ ...prev, [mod.id]: null }))
+                  }}
+                  onSubcategoryId={(id) =>
+                    setSubcategoryByModule((prev) => ({ ...prev, [mod.id]: id }))
                   }
                   paymentPlan={mod.payment_plan}
                   discountPct={mod.discount_pct}
@@ -1395,7 +1399,7 @@ export function QuoteWizardPage() {
                   Escolha um bloco da biblioteca, restaure um preset ou comece em branco.
                 </DialogDescription>
               </DialogHeader>
-              <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+              <div className="max-h-[min(70vh,36rem)] space-y-4 overflow-y-auto pr-1">
                 {moduleTemplatesQuery.isPending && (
                   <p className="text-xs text-muted-foreground">Carregando biblioteca…</p>
                 )}
@@ -1519,7 +1523,7 @@ export function QuoteWizardPage() {
             open={manageModuleTemplatesOpen}
             onOpenChange={setManageModuleTemplatesOpen}
           >
-            <DialogContent className="max-h-[90vh] max-w-3xl overflow-visible">
+            <DialogContent className="max-w-3xl">
               <DialogHeader>
                 <DialogTitle>Biblioteca de blocos</DialogTitle>
                 <DialogDescription>
@@ -1529,65 +1533,6 @@ export function QuoteWizardPage() {
               <QuoteModuleTemplatesPanel embedded />
             </DialogContent>
           </Dialog>
-
-          <Card className="border-aurora-border border-l-4 border-l-aurora-info bg-aurora-surface shadow-sm">
-            <CardHeader className="pb-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <CardTitle className="text-base">Faturado por</CardTitle>
-                <Badge
-                  variant="outline"
-                  className="border-aurora-info/40 bg-aurora-info/15 text-aurora-info"
-                >
-                  Opcional
-                </Badge>
-              </div>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Distribuidor ou fornecedor no VHSYS — mesmo padrão visual das seções de itens.
-              </p>
-            </CardHeader>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label>Tipo</Label>
-                <Select
-                  value={form.billed_by_type ?? NONE}
-                  disabled={!canEdit}
-                  onValueChange={(v) =>
-                    patchForm((p) => ({
-                      ...p,
-                      billed_by_type: v === NONE ? null : (v as BilledByType),
-                    }))
-                  }
-                >
-                  <SelectTrigger aria-label="Faturado por tipo">
-                    <SelectValue placeholder="Opcional" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>Não informado</SelectItem>
-                    {(Object.keys(BILLED_LABELS) as BilledByType[]).map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {BILLED_LABELS[t]}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="wiz-billed-name">Nome (VHSYS)</Label>
-                <VhsysPartySearch
-                  value={form.billed_by_name}
-                  disabled={!canEdit}
-                  placeholder="Buscar distribuidor/fornecedor no VHSYS…"
-                  onChange={(v) => patchForm((p) => ({ ...p, billed_by_name: v }))}
-                  onSelect={(party) =>
-                    patchForm((p) => ({
-                      ...p,
-                      billed_by_name: party.fantasy_name || party.name,
-                    }))
-                  }
-                />
-              </div>
-            </CardContent>
-          </Card>
         </div>
       )}
 
@@ -1665,21 +1610,6 @@ export function QuoteWizardPage() {
                     ) : (
                       <span className="text-sm text-muted-foreground">—</span>
                     )}
-                  </dd>
-                </div>
-                <div
-                  className={cn(
-                    'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface-2/50 p-3',
-                    'hover:border-aurora-accent/40 hover:shadow-sm',
-                  )}
-                >
-                  <dt className="text-xs text-muted-foreground">Faturado por</dt>
-                  <dd className="mt-1 text-sm font-medium">
-                    {form.billed_by_type
-                      ? `${BILLED_LABELS[form.billed_by_type]}${
-                          form.billed_by_name ? ` — ${form.billed_by_name}` : ''
-                        }`
-                      : form.billed_by_name || '—'}
                   </dd>
                 </div>
               </dl>
@@ -2049,7 +1979,9 @@ function ItemsSection({
   items,
   canEdit,
   categoryId,
+  subcategoryId,
   onCategoryId,
+  onSubcategoryId,
   paymentPlan,
   discountPct,
   discountValue,
@@ -2081,7 +2013,9 @@ function ItemsSection({
   items: DraftItem[]
   canEdit: boolean
   categoryId: number | null
+  subcategoryId: number | null
   onCategoryId: (id: number | null) => void
+  onSubcategoryId: (id: number | null) => void
   paymentPlan: string
   discountPct: string
   discountValue: string
@@ -2132,13 +2066,14 @@ function ItemsSection({
     enabled: canEdit || items.length > 0,
   })
   const categories = categoriesQuery.data?.categories ?? []
-  const categorySelectValue = categoryId != null ? String(categoryId) : NONE
 
   const saveAsModuleMutation = useMutation({
     mutationFn: (payload: {
       name: string
       title: string
       show_labor: boolean
+      notes: string | null
+      billed_by_name: string | null
       lines: QuoteTemplateLine[]
     }) => api.createQuoteModuleTemplate(payload),
     onSuccess: (created) => {
@@ -2176,6 +2111,8 @@ function ItemsSection({
       name: trimmed,
       title: trimmed,
       show_labor: showLabor,
+      notes: notes.trim() || null,
+      billed_by_name: billedByName.trim() || null,
       lines,
     })
   }
@@ -2299,6 +2236,7 @@ function ItemsSection({
                     value={item.name}
                     disabled={!canEdit}
                     categoryId={categoryId}
+                    subcategoryId={subcategoryId}
                     unitValue={parseNonNegativeNumber(item.unit_value)}
                     onChange={(name) => onUpdate(item.localKey, { name })}
                     onSelect={(catalog) =>
@@ -2353,49 +2291,28 @@ function ItemsSection({
         <Accordion type="single" collapsible className="rounded-lg border border-aurora-border/80 px-3">
           <AccordionItem value="conditions" className="border-0">
             <AccordionTrigger className="py-3 text-sm hover:no-underline">
-              Condições (categoria, desconto, pagamento
+              Condições (categoria, subcategoria, desconto, pagamento
               {showLabor ? ', mão de obra' : ''})
             </AccordionTrigger>
             <AccordionContent className="space-y-4 pb-3">
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground">Categoria VHSYS</Label>
-                <Select
-                  value={categorySelectValue}
-                  disabled={!canEdit || categoriesQuery.isFetching}
-                  onValueChange={(v) => {
-                    if (v === NONE) {
-                      onCategoryId(null)
-                      return
-                    }
-                    const id = Number(v)
-                    onCategoryId(Number.isFinite(id) && id > 0 ? id : null)
-                  }}
-                >
-                  <SelectTrigger aria-label={`Categoria VHSYS ${title}`}>
-                    <SelectValue placeholder="Todas as categorias" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value={NONE}>Todas as categorias</SelectItem>
-                    {categories.map((cat) => (
-                      <SelectItem key={cat.id} value={String(cat.id)}>
-                        {cat.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {categoriesQuery.isError ? (
-                  <p className="text-[11px] text-aurora-danger">
-                    {categoriesQuery.error instanceof Error
+              <VhsysCategoryFields
+                categories={categories}
+                categoryId={categoryId}
+                subcategoryId={subcategoryId}
+                onCategoryId={onCategoryId}
+                onSubcategoryId={onSubcategoryId}
+                disabled={!canEdit}
+                loading={categoriesQuery.isFetching}
+                error={
+                  categoriesQuery.isError
+                    ? categoriesQuery.error instanceof Error
                       ? categoriesQuery.error.message
-                      : 'Falha ao carregar categorias VHSYS'}
-                  </p>
-                ) : (
-                  <p className="text-[11px] text-muted-foreground">
-                    Filtra a busca de itens
-                    {categoryId != null ? ' pela categoria selecionada' : ''}.
-                  </p>
-                )}
-              </div>
+                      : 'Falha ao carregar categorias VHSYS'
+                    : null
+                }
+                categoryAriaLabel={`Categoria VHSYS ${title}`}
+                subcategoryAriaLabel={`Subcategoria VHSYS ${title}`}
+              />
 
               {showLabor ? (
                 <div className="rounded-lg border border-aurora-border/60 p-3">
@@ -2496,13 +2413,12 @@ function ItemsSection({
                 Opcional
               </Badge>
             </div>
-            <Input
-              id={`mod-billed-${section}`}
-              disabled={!canEdit}
+            <VhsysPartySearch
               value={billedByName}
-              maxLength={300}
-              placeholder="Lista VHSYS em breve"
-              onChange={(e) => onBilledByName(e.target.value)}
+              disabled={!canEdit}
+              placeholder="Buscar distribuidor/fornecedor no VHSYS…"
+              onChange={onBilledByName}
+              onSelect={(party) => onBilledByName(party.fantasy_name || party.name)}
             />
           </div>
         </div>

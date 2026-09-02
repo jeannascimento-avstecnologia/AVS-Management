@@ -14,6 +14,8 @@ type Props = {
   unitValue?: number
   /** Filtra catálogo pela categoria VHSYS selecionada na seção. */
   categoryId?: number | null
+  /** Filtra catálogo pela subcategoria da categoria selecionada. */
+  subcategoryId?: number | null
   onChange: (value: string) => void
   onSelect: (item: VhsysCatalogItem) => void
 }
@@ -42,6 +44,7 @@ export function VhsysItemSearch({
   placeholder = 'Buscar produto/serviço VHSYS…',
   unitValue = 0,
   categoryId = null,
+  subcategoryId = null,
   onChange,
   onSelect,
 }: Props) {
@@ -64,11 +67,15 @@ export function VhsysItemSearch({
     return () => document.removeEventListener('mousedown', onDoc)
   }, [])
 
-  const catalogKey = ['vhsys-catalog-all', categoryId ?? 'all'] as const
+  const catalogKey = [
+    'vhsys-catalog-all',
+    categoryId ?? 'all',
+    subcategoryId ?? 'all',
+  ] as const
 
   const catalog = useQuery({
     queryKey: catalogKey,
-    queryFn: () => api.searchVhsysCatalog('', 0, categoryId),
+    queryFn: () => api.searchVhsysCatalog('', 0, categoryId, subcategoryId),
     enabled: open && !disabled,
     staleTime: 5 * 60_000,
     gcTime: 30 * 60_000,
@@ -81,6 +88,7 @@ export function VhsysItemSearch({
         unit_value: Number.isFinite(unitValue) ? Math.max(0, unitValue) : 0,
         tipo_produto: 'Servico',
         id_categoria: categoryId != null && categoryId > 0 ? categoryId : null,
+        id_subcategoria: subcategoryId != null && subcategoryId > 0 ? subcategoryId : null,
       }),
     onSuccess: (data) => {
       const prev = queryClient.getQueryData<{
@@ -97,6 +105,7 @@ export function VhsysItemSearch({
         query: '',
         count: nextItems.length,
         category_id: categoryId ?? null,
+        subcategory_id: subcategoryId ?? null,
       })
       onSelect(data.item)
       setOpen(false)
@@ -172,9 +181,11 @@ export function VhsysItemSearch({
               <li className="sticky top-0 z-10 bg-popover px-2 py-1.5 text-[11px] text-muted-foreground">
                 {debounced.trim()
                   ? `${items.length} de ${total} no VHSYS`
-                  : categoryId
-                    ? `${total} itens da categoria`
-                    : `${total} itens do VHSYS (via dupla)`}
+                  : subcategoryId
+                    ? `${total} itens da subcategoria`
+                    : categoryId
+                      ? `${total} itens da categoria`
+                      : `${total} itens do VHSYS (via dupla)`}
                 {catalog.isFetching ? ' · atualizando…' : null}
               </li>
               {canCreate ? (
@@ -202,7 +213,12 @@ export function VhsysItemSearch({
               {items.length === 0 && !canCreate ? (
                 <li className="px-2 py-2 text-xs text-muted-foreground">
                   Nenhum item encontrado
-                  {categoryId ? ' nesta categoria' : ` em ${total} do VHSYS`}.
+                  {subcategoryId
+                    ? ' nesta subcategoria'
+                    : categoryId
+                      ? ' nesta categoria'
+                      : ` em ${total} do VHSYS`}
+                  .
                 </li>
               ) : (
                 items.map((item) => (

@@ -313,6 +313,8 @@ def test_create_update_delete_module_template(quotes_client: TestClient) -> None
     assert body["name"] == "Licenças"
     assert body["title"] == "Licenças de software"
     assert body["show_labor"] is False
+    assert body["notes"] is None
+    assert body["billed_by_name"] is None
     assert body["key"].startswith("mod_licen")
     assert len(body["lines"]) == 2
     template_id = body["id"]
@@ -327,6 +329,8 @@ def test_create_update_delete_module_template(quotes_client: TestClient) -> None
             "name": "Licenças v2",
             "title": "Licenças AVS",
             "show_labor": True,
+            "notes": "Renovação anual",
+            "billed_by_name": "Parceiro VHSYS",
             "lines": [{"name": "Licença X", "qty": 1, "unit_value": 99.0, "sort_order": 0}],
         },
     )
@@ -334,6 +338,8 @@ def test_create_update_delete_module_template(quotes_client: TestClient) -> None
     assert updated.json()["name"] == "Licenças v2"
     assert updated.json()["title"] == "Licenças AVS"
     assert updated.json()["show_labor"] is True
+    assert updated.json()["notes"] == "Renovação anual"
+    assert updated.json()["billed_by_name"] == "Parceiro VHSYS"
     assert updated.json()["lines"][0]["name"] == "Licença X"
 
     conflict = quotes_client.post(
@@ -476,6 +482,31 @@ def test_module_template_allows_empty_lines(quotes_client: TestClient) -> None:
     )
     assert created.status_code == 201
     assert created.json()["lines"] == []
+
+
+def test_module_template_notes_and_billed_by_roundtrip(quotes_client: TestClient) -> None:
+    created = quotes_client.post(
+        "/orcamentos/module-templates",
+        json={
+            "name": "Backup",
+            "title": "Backup",
+            "notes": "Cobrar por seat",
+            "billed_by_name": "Fornecedor M365",
+            "lines": [{"name": "Licença", "qty": 1, "unit_value": 26.4, "sort_order": 0}],
+        },
+    )
+    assert created.status_code == 201
+    body = created.json()
+    assert body["notes"] == "Cobrar por seat"
+    assert body["billed_by_name"] == "Fornecedor M365"
+
+    cleared = quotes_client.patch(
+        f"/orcamentos/module-templates/{body['id']}",
+        json={"notes": "", "billed_by_name": ""},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["notes"] is None
+    assert cleared.json()["billed_by_name"] is None
 
 
 def test_approve_status_transition(quotes_client: TestClient) -> None:

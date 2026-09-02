@@ -14,25 +14,18 @@ import {
   type QuoteModuleTemplateRead,
   type QuoteTemplateLine,
 } from '@/api/client'
+import { VhsysCategoryFields } from '@/components/quotes/VhsysCategoryFields'
 import { VhsysItemSearch } from '@/components/quotes/VhsysItemSearch'
+import { VhsysPartySearch } from '@/components/quotes/VhsysPartySearch'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { btnAccentClass, btnDangerClass, btnSecondaryClass } from '@/lib/ui-classes'
+import { btnAccentClass, btnDangerClass, btnSecondaryClass, inputClass } from '@/lib/ui-classes'
 import { cn } from '@/lib/cn'
-
-const NONE = '__none__'
 
 type DraftLine = {
   localKey: string
@@ -148,8 +141,11 @@ export function QuoteModuleTemplatesPanel({
   const [editingId, setEditingId] = useState<number | null>(null)
   const [blockName, setBlockName] = useState('')
   const [showLabor, setShowLabor] = useState(false)
+  const [notes, setNotes] = useState('')
+  const [billedByName, setBilledByName] = useState('')
   const [lines, setLines] = useState<DraftLine[]>([emptyLine()])
   const [categoryId, setCategoryId] = useState<number | null>(null)
+  const [subcategoryId, setSubcategoryId] = useState<number | null>(null)
 
   const listQuery = useQuery({
     queryKey: ['quote-module-templates'],
@@ -163,22 +159,27 @@ export function QuoteModuleTemplatesPanel({
     enabled: showForm,
   })
   const categories = categoriesQuery.data?.categories ?? []
-  const categorySelectValue = categoryId != null ? String(categoryId) : NONE
   const templates = listQuery.data?.templates ?? []
 
   function resetForm() {
     setEditingId(null)
     setBlockName('')
     setShowLabor(false)
+    setNotes('')
+    setBilledByName('')
     setLines([emptyLine()])
     setCategoryId(null)
+    setSubcategoryId(null)
   }
 
   function openCreate() {
     setEditingId(null)
     setBlockName(seedTitle?.trim() || '')
     setShowLabor(seedShowLabor)
+    setNotes('')
+    setBilledByName('')
     setCategoryId(null)
+    setSubcategoryId(null)
     setLines(draftFromSeed(seedLines))
     setShowForm(true)
   }
@@ -187,8 +188,11 @@ export function QuoteModuleTemplatesPanel({
     setEditingId(template.id)
     setBlockName(displayBlockName(template))
     setShowLabor(template.show_labor)
+    setNotes(template.notes ?? '')
+    setBilledByName(template.billed_by_name ?? '')
     setLines(linesFromTemplate(template))
     setCategoryId(null)
+    setSubcategoryId(null)
     setShowForm(true)
   }
 
@@ -197,6 +201,8 @@ export function QuoteModuleTemplatesPanel({
       name: string
       title: string
       show_labor: boolean
+      notes: string | null
+      billed_by_name: string | null
       lines: QuoteTemplateLine[]
     }) => api.createQuoteModuleTemplate(payload),
     onSuccess: (created) => {
@@ -216,12 +222,16 @@ export function QuoteModuleTemplatesPanel({
       name: string
       title: string
       show_labor: boolean
+      notes: string | null
+      billed_by_name: string | null
       lines: QuoteTemplateLine[]
     }) =>
       api.updateQuoteModuleTemplate(payload.id, {
         name: payload.name,
         title: payload.title,
         show_labor: payload.show_labor,
+        notes: payload.notes,
+        billed_by_name: payload.billed_by_name,
         lines: payload.lines,
       }),
     onSuccess: (updated) => {
@@ -260,12 +270,16 @@ export function QuoteModuleTemplatesPanel({
     const title = trimmed
     const parsed = parseLines(lines)
     if (parsed == null) return
+    const notesValue = notes.trim() || null
+    const billedValue = billedByName.trim() || null
     if (editingId != null) {
       updateMutation.mutate({
         id: editingId,
         name,
         title,
         show_labor: showLabor,
+        notes: notesValue,
+        billed_by_name: billedValue,
         lines: parsed,
       })
       return
@@ -274,6 +288,8 @@ export function QuoteModuleTemplatesPanel({
       name,
       title,
       show_labor: showLabor,
+      notes: notesValue,
+      billed_by_name: billedValue,
       lines: parsed,
     })
   }
@@ -358,33 +374,68 @@ export function QuoteModuleTemplatesPanel({
               Exibir mão de obra neste bloco
             </label>
 
-            <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">Categoria VHSYS</Label>
-              <Select
-                value={categorySelectValue}
-                disabled={categoriesQuery.isFetching}
-                onValueChange={(v) => {
-                  if (v === NONE) {
-                    setCategoryId(null)
-                    return
-                  }
-                  const id = Number(v)
-                  setCategoryId(Number.isFinite(id) && id > 0 ? id : null)
-                }}
-              >
-                <SelectTrigger aria-label="Categoria VHSYS do bloco">
-                  <SelectValue placeholder="Todas as categorias" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={NONE}>Todas as categorias</SelectItem>
-                  {categories.map((cat) => (
-                    <SelectItem key={cat.id} value={String(cat.id)}>
-                      {cat.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Label htmlFor="mod-template-billed">Faturado por</Label>
+                <Badge
+                  variant="outline"
+                  className="border-aurora-info/40 bg-aurora-info/15 text-aurora-info"
+                >
+                  Opcional
+                </Badge>
+              </div>
+              <VhsysPartySearch
+                value={billedByName}
+                placeholder="Buscar distribuidor/fornecedor no VHSYS…"
+                onChange={setBilledByName}
+                onSelect={(party) => setBilledByName(party.fantasy_name || party.name)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Pré-preenche o bloco no orçamento; dá para editar depois de inserir.
+              </p>
             </div>
+
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Label htmlFor="mod-template-notes">Observações</Label>
+                <Badge
+                  variant="outline"
+                  className="border-aurora-accent/40 bg-aurora-accent-muted text-aurora-accent"
+                >
+                  Opcional
+                </Badge>
+              </div>
+              <textarea
+                id="mod-template-notes"
+                rows={3}
+                maxLength={4000}
+                value={notes}
+                placeholder="Condições deste bloco…"
+                className={cn(inputClass, 'min-h-[72px] resize-y py-2.5')}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+              <p className="text-right text-[11px] text-muted-foreground tabular-nums">
+                {notes.length}/4000
+              </p>
+            </div>
+
+            <VhsysCategoryFields
+              categories={categories}
+              categoryId={categoryId}
+              subcategoryId={subcategoryId}
+              onCategoryId={setCategoryId}
+              onSubcategoryId={setSubcategoryId}
+              loading={categoriesQuery.isFetching}
+              error={
+                categoriesQuery.isError
+                  ? categoriesQuery.error instanceof Error
+                    ? categoriesQuery.error.message
+                    : 'Falha ao carregar categorias VHSYS'
+                  : null
+              }
+              categoryAriaLabel="Categoria VHSYS do bloco"
+              subcategoryAriaLabel="Subcategoria VHSYS do bloco"
+            />
 
             <fieldset className="space-y-3 overflow-visible">
               <legend className="mb-1 text-sm font-medium text-aurora-fg">
@@ -404,6 +455,7 @@ export function QuoteModuleTemplatesPanel({
                       <VhsysItemSearch
                         value={line.name}
                         categoryId={categoryId}
+                        subcategoryId={subcategoryId}
                         unitValue={parseNonNegativeNumber(line.unit_value)}
                         placeholder={`Item ${idx + 1} — buscar VHSYS…`}
                         onChange={(nextName) =>
@@ -533,12 +585,7 @@ export function QuoteModuleTemplatesPanel({
         )}
 
         {!listQuery.isPending && templates.length > 0 && (
-          <ul
-            className={cn(
-              'space-y-2',
-              embedded && !showForm && 'max-h-[36vh] overflow-y-auto pr-1',
-            )}
-          >
+          <ul className="space-y-2">
             {templates.map((template) => {
               const label = displayBlockName(template)
               const itemCount = template.lines.length
@@ -566,6 +613,9 @@ export function QuoteModuleTemplatesPanel({
                       <p className="text-xs text-muted-foreground">
                         {itemCount} {itemCount === 1 ? 'item' : 'itens'}
                         {lineSum > 0 ? ` · ${formatBrl(lineSum)}` : ''}
+                        {template.billed_by_name?.trim()
+                          ? ` · Faturado por: ${template.billed_by_name.trim()}`
+                          : ''}
                       </p>
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2">

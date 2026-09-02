@@ -818,7 +818,8 @@ class QuoteService:
         with self._db.connect() as conn:
             rows = conn.execute(
                 """
-                SELECT id, key, name, title, show_labor, lines_json, created_at
+                SELECT id, key, name, title, show_labor, notes, billed_by_name,
+                       lines_json, created_at
                 FROM quote_module_templates
                 ORDER BY name, id
                 """
@@ -829,7 +830,8 @@ class QuoteService:
         with self._db.connect() as conn:
             row = conn.execute(
                 """
-                SELECT id, key, name, title, show_labor, lines_json, created_at
+                SELECT id, key, name, title, show_labor, notes, billed_by_name,
+                       lines_json, created_at
                 FROM quote_module_templates
                 WHERE id = ?
                 """,
@@ -855,14 +857,17 @@ class QuoteService:
             cur = conn.execute(
                 """
                 INSERT INTO quote_module_templates
-                    (key, name, title, show_labor, lines_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                    (key, name, title, show_labor, notes, billed_by_name,
+                     lines_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     key,
                     data.name,
                     data.title,
                     1 if data.show_labor else 0,
+                    data.notes,
+                    data.billed_by_name,
                     json.dumps(lines, ensure_ascii=False),
                     now,
                 ),
@@ -878,6 +883,12 @@ class QuoteService:
         title = data.title if data.title is not None else current.title
         show_labor = (
             data.show_labor if data.show_labor is not None else current.show_labor
+        )
+        notes = data.notes if "notes" in data.model_fields_set else current.notes
+        billed_by_name = (
+            data.billed_by_name
+            if "billed_by_name" in data.model_fields_set
+            else current.billed_by_name
         )
         if data.lines is not None:
             lines = self._normalize_template_lines(data.lines)
@@ -895,13 +906,16 @@ class QuoteService:
             cur = conn.execute(
                 """
                 UPDATE quote_module_templates
-                SET name = ?, title = ?, show_labor = ?, lines_json = ?
+                SET name = ?, title = ?, show_labor = ?, notes = ?, billed_by_name = ?,
+                    lines_json = ?
                 WHERE id = ?
                 """,
                 (
                     name,
                     title,
                     1 if show_labor else 0,
+                    notes,
+                    billed_by_name,
                     json.dumps(lines, ensure_ascii=False),
                     template_id,
                 ),
@@ -946,6 +960,8 @@ class QuoteService:
             name=str(row["name"]),
             title=str(row["title"]),
             show_labor=bool(row["show_labor"]),
+            notes=row["notes"],
+            billed_by_name=row["billed_by_name"],
             lines=lines,
             created_at=str(row["created_at"]),
         )

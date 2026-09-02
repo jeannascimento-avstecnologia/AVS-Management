@@ -102,6 +102,8 @@ CREATE TABLE quote_module_templates (
     title       TEXT    NOT NULL,
     show_labor  INTEGER NOT NULL DEFAULT 0
                 CHECK (show_labor IN (0, 1)),
+    notes           TEXT,
+    billed_by_name  TEXT,
     lines_json  TEXT    NOT NULL,
     created_at  TEXT    NOT NULL
 );

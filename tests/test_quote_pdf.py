@@ -363,6 +363,7 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "Anual - Recorrente Mensal" in text
     assert "Faturado por" in text
     assert "Fornecedor Modulo" in text
+    assert "Parceiro X" not in text
     assert "1.500,00" in text or "1500,00" in text
     assert "459,90" in text
     assert "1.959,90" in text or "1959,90" in text

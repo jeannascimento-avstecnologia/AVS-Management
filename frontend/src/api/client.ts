@@ -197,6 +197,8 @@ export type QuoteModuleTemplateRead = {
   name: string
   title: string
   show_labor: boolean
+  notes: string | null
+  billed_by_name: string | null
   lines: QuoteTemplateLine[]
   created_at: string
 }
@@ -206,6 +208,8 @@ export type QuoteModuleTemplateWrite = {
   name: string
   title: string
   show_labor?: boolean
+  notes?: string | null
+  billed_by_name?: string | null
   lines?: QuoteTemplateLine[]
 }
 
@@ -213,7 +217,14 @@ export type QuoteModuleTemplateUpdate = {
   name?: string | null
   title?: string | null
   show_labor?: boolean | null
+  notes?: string | null
+  billed_by_name?: string | null
   lines?: QuoteTemplateLine[] | null
+}
+
+export type VhsysCatalogSubcategory = {
+  id: number
+  name: string
 }
 
 export type VhsysCatalogItem = {
@@ -223,11 +234,13 @@ export type VhsysCatalogItem = {
   code: string | null
   unit_value: number
   category_id?: number | null
+  subcategory_ids?: number[]
 }
 
 export type VhsysCatalogCategory = {
   id: number
   name: string
+  subcategories?: VhsysCatalogSubcategory[]
 }
 
 export type TifluxQuoteClient = {
@@ -881,16 +894,23 @@ export const api = {
   },
 
   /** `limit=0` (default) = catálogo VHSYS completo (paginação server-side). */
-  searchVhsysCatalog: (q = '', limit = 0, categoryId?: number | null) => {
+  searchVhsysCatalog: (
+    q = '',
+    limit = 0,
+    categoryId?: number | null,
+    subcategoryId?: number | null,
+  ) => {
     const qs = new URLSearchParams()
     if (q.trim()) qs.set('q', q.trim())
     qs.set('limit', String(limit))
     if (categoryId != null && categoryId > 0) qs.set('category_id', String(categoryId))
+    if (subcategoryId != null && subcategoryId > 0) qs.set('subcategory_id', String(subcategoryId))
     return request<{
       items: VhsysCatalogItem[]
       query: string
       count?: number
       category_id?: number | null
+      subcategory_id?: number | null
     }>(`/orcamentos/vhsys/catalog?${qs}`)
   },
 
@@ -906,6 +926,7 @@ export const api = {
     tipo_produto?: 'Servico' | 'Produto'
     unidade_produto?: string
     id_categoria?: number | null
+    id_subcategoria?: number | null
   }) =>
     request<{ item: VhsysCatalogItem; created: boolean }>('/orcamentos/vhsys/catalog', {
       method: 'POST',

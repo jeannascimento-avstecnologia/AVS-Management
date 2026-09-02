@@ -400,18 +400,7 @@ def render_quote_pdf(
     _ensure_space(pdf, _estimate_observations_height(quote.notes))
     _write_observations(pdf, quote.notes)
 
-    if quote.billed_by_type or quote.billed_by_name:
-        billed_h = _GAP + 4.0
-        _ensure_space(pdf, billed_h + _estimate_signatures_height())
-        pdf.ln(_GAP)
-        pdf.set_font("Helvetica", "", _FS_BODY)
-        pdf.set_text_color(*_MUTED)
-        billed = f"{_dash(quote.billed_by_type)} - {_dash(quote.billed_by_name)}"
-        pdf.cell(0, 4, f"Faturado por: {_safe(billed)}", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(*_INK)
-    else:
-        _ensure_space(pdf, _estimate_signatures_height())
-
+    _ensure_space(pdf, _estimate_signatures_height())
     _write_signatures(pdf)
     dest.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(dest))

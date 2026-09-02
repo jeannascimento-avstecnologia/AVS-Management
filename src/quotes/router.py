@@ -250,7 +250,7 @@ def build_quotes_router() -> APIRouter:
     async def list_vhsys_categories(
         _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
     ) -> dict[str, Any]:
-        """Categorias de produtos VHSYS (GET /categorias) — filtro do catálogo no wizard."""
+        """Categorias + subcategorias VHSYS — filtro do catálogo no wizard."""
         settings = get_settings()
         if not settings.vhsys_access_token or not settings.vhsys_secret_access_token:
             raise HTTPException(
@@ -276,6 +276,7 @@ def build_quotes_router() -> APIRouter:
             description="0 = catálogo completo (paginação VHSYS).",
         ),
         category_id: int | None = Query(default=None, ge=1),
+        subcategory_id: int | None = Query(default=None, ge=1),
         _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
     ) -> dict[str, Any]:
         """Autocomplete catálogo VHSYS. Default: puxa tudo (paginado no client VHSYS)."""
@@ -287,7 +288,10 @@ def build_quotes_router() -> APIRouter:
             )
         try:
             items = await VhsysClient(settings).search_catalog_items(
-                q, limit=limit, category_id=category_id
+                q,
+                limit=limit,
+                category_id=category_id,
+                subcategory_id=subcategory_id,
             )
         except VhsysApiError as exc:
             status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
@@ -299,6 +303,7 @@ def build_quotes_router() -> APIRouter:
             "query": q.strip(),
             "count": len(items),
             "category_id": category_id,
+            "subcategory_id": subcategory_id,
         }
 
     @router.post("/vhsys/catalog")
@@ -321,6 +326,7 @@ def build_quotes_router() -> APIRouter:
                 tipo_produto=body.tipo_produto,
                 unidade_produto=body.unidade_produto,
                 id_categoria=body.id_categoria,
+                id_subcategoria=body.id_subcategoria,
             )
         except VhsysApiError as exc:
             status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
@@ -334,7 +340,12 @@ def build_quotes_router() -> APIRouter:
             request,
             action="quotes.vhsys.catalog.create" if created else "quotes.vhsys.catalog.reuse",
             resource=f"vhsys_product:{item.get('id')}",
-            detail={"name": item.get("name"), "created": created, "category_id": body.id_categoria},
+            detail={
+                "name": item.get("name"),
+                "created": created,
+                "category_id": body.id_categoria,
+                "subcategory_id": body.id_subcategoria,
+            },
             user=user,
         )
         return {"item": item, "created": created}

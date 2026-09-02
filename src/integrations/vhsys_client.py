@@ -259,7 +259,12 @@ class VhsysClient:
                 response = await client.get(
                     f"{self._base}/categorias",
                     headers=self._auth_headers(),
-                    params={"lixeira": lixeira, "limit": page_size, "offset": offset},
+                    params={
+                        "lixeira": lixeira,
+                        "limit": page_size,
+                        "offset": offset,
+                        "subcategoria": 1,
+                    },
                 )
             if response.status_code == 401:
                 raise VhsysApiError("Tokens VHSYS inválidos.", 401, response.text)
@@ -288,14 +293,91 @@ class VhsysClient:
             offset += page_size
         return collected
 
+    async def list_subcategories(
+        self,
+        *,
+        lixeira: str = "Nao",
+        limit: int = 250,
+        id_categoria: int | None = None,
+    ) -> list[dict]:
+        """GET /subcategorias — subcategorias de produtos vinculadas a categorias."""
+        page_size = min(max(limit, 1), 250)
+        collected: list[dict] = []
+        offset = 0
+        max_pages = 40
+        for _ in range(max_pages):
+            params: dict[str, str | int] = {
+                "lixeira": lixeira,
+                "limit": page_size,
+                "offset": offset,
+            }
+            if id_categoria is not None and int(id_categoria) > 0:
+                params["id_categoria"] = int(id_categoria)
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(
+                    f"{self._base}/subcategorias",
+                    headers=self._auth_headers(),
+                    params=params,
+                )
+            if response.status_code == 401:
+                raise VhsysApiError("Tokens VHSYS inválidos.", 401, response.text)
+            if _is_not_found_response(response):
+                break
+            if response.status_code >= 400:
+                raise VhsysApiError(
+                    f"Erro ao listar subcategorias VHSYS: {response.status_code}.",
+                    response.status_code,
+                    response.text,
+                )
+            data = response.json()
+            if isinstance(data, dict) and int(data.get("code", 200)) == 403:
+                break
+            if isinstance(data, dict):
+                code = data.get("code")
+                if code is not None and int(code) >= 400:
+                    message = data.get("message") or data.get("data") or "Erro VHSYS."
+                    raise VhsysApiError(str(message), int(code), response.text)
+            page = _extract_vhsys_list(data)
+            if not page:
+                break
+            collected.extend(page)
+            if len(page) < page_size:
+                break
+            offset += page_size
+        return collected
+
     async def list_catalog_categories(self) -> list[dict]:
-        """Categorias ativas normalizadas para o wizard de orçamento."""
+        """Categorias ativas + subcategorias aninhadas para o wizard de orçamento."""
         raw = await self.list_categories(lixeira="Nao")
+        try:
+            raw_subs = await self.list_subcategories(lixeira="Nao")
+        except VhsysApiError:
+            raw_subs = []
+        by_cat: dict[int, dict[int, dict]] = {}
+        for row in raw_subs:
+            sub = _normalize_catalog_subcategory(row)
+            if sub is None:
+                continue
+            cid = int(sub["category_id"])
+            by_cat.setdefault(cid, {})[int(sub["id"])] = {
+                "id": int(sub["id"]),
+                "name": sub["name"],
+            }
         items: list[dict] = []
         for row in raw:
             normalized = _normalize_catalog_category(row)
-            if normalized is not None:
-                items.append(normalized)
+            if normalized is None:
+                continue
+            merged = {
+                int(s["id"]): {"id": int(s["id"]), "name": s["name"]}
+                for s in _subcategories_from_category_row(row)
+            }
+            merged.update(by_cat.get(int(normalized["id"]), {}))
+            normalized["subcategories"] = sorted(
+                merged.values(),
+                key=lambda it: str(it.get("name") or "").casefold(),
+            )
+            items.append(normalized)
         items.sort(key=lambda it: str(it.get("name") or "").casefold())
         return items
 
@@ -340,6 +422,7 @@ class VhsysClient:
         limit: int = 100,
         *,
         category_id: int | None = None,
+        subcategory_id: int | None = None,
     ) -> list[dict]:
         """Normaliza produtos/serviços VHSYS. `limit<=0` = todos os ativos."""
         fetch_all = limit <= 0
@@ -376,6 +459,10 @@ class VhsysClient:
                 continue
             if category_id is not None and normalized.get("category_id") != category_id:
                 continue
+            if subcategory_id is not None:
+                sub_ids = normalized.get("subcategory_ids") or []
+                if subcategory_id not in sub_ids:
+                    continue
             items.append(normalized)
             if not fetch_all and len(items) >= target:
                 break
@@ -391,6 +478,7 @@ class VhsysClient:
         unidade_produto: str = "UN",
         cod_produto: str | None = None,
         id_categoria: int | None = None,
+        id_subcategoria: int | None = None,
     ) -> dict:
         """POST /produtos — cadastra produto/serviço no VHSYS (via dupla do orçamento)."""
         name = (desc_produto or "").strip()
@@ -410,6 +498,8 @@ class VhsysClient:
             payload["cod_produto"] = code
         if id_categoria is not None and int(id_categoria) > 0:
             payload["id_categoria"] = int(id_categoria)
+        if id_subcategoria is not None and int(id_subcategoria) > 0:
+            payload["id_subcategoria"] = int(id_subcategoria)
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{self._base}/produtos",
@@ -443,6 +533,8 @@ class VhsysClient:
             row["tipo_produto"] = tipo
         if id_categoria is not None and "id_categoria" not in row:
             row["id_categoria"] = int(id_categoria)
+        if id_subcategoria is not None and "id_subcategoria" not in row:
+            row["id_subcategoria"] = int(id_subcategoria)
         return row
 
     async def find_or_create_catalog_item(
@@ -453,6 +545,7 @@ class VhsysClient:
         tipo_produto: str = "Servico",
         unidade_produto: str = "UN",
         id_categoria: int | None = None,
+        id_subcategoria: int | None = None,
     ) -> tuple[dict, bool]:
         """
         Via dupla: se nome já existir (casefold) no catálogo ativo, devolve existente.
@@ -475,6 +568,7 @@ class VhsysClient:
             tipo_produto=tipo_produto,
             unidade_produto=unidade_produto,
             id_categoria=id_categoria,
+            id_subcategoria=id_subcategoria,
         )
         normalized = _normalize_catalog_product(raw)
         if normalized is None:
@@ -606,6 +700,80 @@ def _parse_vhsys_money(raw: object) -> float:
         return 0.0
 
 
+def _positive_int(raw: object) -> int | None:
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None
+
+
+def _normalize_catalog_subcategory(row: dict) -> dict | None:
+    subcategory_id = _positive_int(row.get("id_subcategoria") or row.get("id"))
+    category_id = _positive_int(row.get("id_categoria"))
+    if subcategory_id is None or category_id is None:
+        return None
+    name = str(row.get("nome_subcategoria") or row.get("name") or "").strip()
+    if not name:
+        return None
+    status = str(row.get("status_subcategoria") or "").strip().lower()
+    if status and status not in {"ativo", "active", "1", "sim"}:
+        return None
+    trash = str(row.get("lixeira") or "").strip().lower()
+    if trash in {"sim", "s", "1", "true"}:
+        return None
+    return {"id": subcategory_id, "name": name, "category_id": category_id}
+
+
+def _subcategories_from_category_row(row: dict) -> list[dict]:
+    raw = row.get("subcategorias") or row.get("subcategoria")
+    if isinstance(raw, dict):
+        items = [raw]
+    elif isinstance(raw, list):
+        items = [x for x in raw if isinstance(x, dict)]
+    else:
+        return []
+    parent_id = _positive_int(row.get("id_categoria"))
+    out: list[dict] = []
+    seen: set[int] = set()
+    for item in items:
+        payload = dict(item)
+        if parent_id is not None and payload.get("id_categoria") is None:
+            payload["id_categoria"] = parent_id
+        normalized = _normalize_catalog_subcategory(payload)
+        if normalized is None or int(normalized["id"]) in seen:
+            continue
+        seen.add(int(normalized["id"]))
+        out.append({"id": int(normalized["id"]), "name": normalized["name"]})
+    return out
+
+
+def _product_subcategory_ids(row: dict) -> list[int]:
+    ids: list[int] = []
+    seen: set[int] = set()
+
+    def _add(raw: object) -> None:
+        value = _positive_int(raw)
+        if value is None or value in seen:
+            return
+        seen.add(value)
+        ids.append(value)
+
+    _add(row.get("id_subcategoria"))
+    raw = row.get("subcategoria") or row.get("subcategorias")
+    if isinstance(raw, dict):
+        _add(raw.get("id_subcategoria") or raw.get("id"))
+    elif isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                _add(item.get("id_subcategoria") or item.get("id"))
+            else:
+                _add(item)
+    return ids
+
+
 def _normalize_catalog_category(row: dict) -> dict | None:
     raw_id = row.get("id_categoria")
     if raw_id is None:
@@ -623,7 +791,11 @@ def _normalize_catalog_category(row: dict) -> dict | None:
     trash = str(row.get("lixeira") or "").strip().lower()
     if trash in {"sim", "s", "1", "true"}:
         return None
-    return {"id": category_id, "name": name}
+    return {
+        "id": category_id,
+        "name": name,
+        "subcategories": _subcategories_from_category_row(row),
+    }
 
 
 def _normalize_catalog_product(row: dict) -> dict | None:
@@ -653,6 +825,7 @@ def _normalize_catalog_product(row: dict) -> dict | None:
         "code": code,
         "unit_value": unit_value,
         "category_id": category_id,
+        "subcategory_ids": _product_subcategory_ids(row),
     }
 
 

@@ -72,6 +72,7 @@ class HubDatabase:
             self._migrate_quotes_columns(conn)
             self._migrate_relax_section_checks(conn)
             self._migrate_quote_module_templates(conn)
+            self._migrate_quote_module_template_columns(conn)
             self._migrate_billing_columns(conn)
 
     def _migrate_quotes_columns(self, conn: sqlite3.Connection) -> None:
@@ -166,11 +167,28 @@ class HubDatabase:
                 title       TEXT    NOT NULL,
                 show_labor  INTEGER NOT NULL DEFAULT 0
                             CHECK (show_labor IN (0, 1)),
+                notes           TEXT,
+                billed_by_name  TEXT,
                 lines_json  TEXT    NOT NULL,
                 created_at  TEXT    NOT NULL
             );
             """
         )
+
+    def _migrate_quote_module_template_columns(self, conn: sqlite3.Connection) -> None:
+        """ALTER TABLE idempotente — defaults de observação / faturado por na biblioteca."""
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'quote_module_templates'"
+        ).fetchone()
+        if exists is None:
+            return
+        existing = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(quote_module_templates)").fetchall()
+        }
+        for name, col_type in (("notes", "TEXT"), ("billed_by_name", "TEXT")):
+            if name not in existing:
+                conn.execute(f"ALTER TABLE quote_module_templates ADD COLUMN {name} {col_type}")
 
     def _migrate_billing_columns(self, conn: sqlite3.Connection) -> None:
         """ALTER TABLE idempotente — desconto em billing_runs."""
