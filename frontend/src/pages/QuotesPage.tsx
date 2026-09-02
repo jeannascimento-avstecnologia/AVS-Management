@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileDown, FileText, Plus, Send, Trash2, AlertCircle, Loader2 } from 'lucide-react'
+import { FileDown, FileText, Plus, Send, Trash2, AlertCircle, Loader2, Boxes } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   ApiError,
@@ -17,6 +17,7 @@ import {
 } from '@/api/client'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { QuoteLeadPipelinePanel } from '@/components/quotes/QuoteLeadPipelinePanel'
+import { QuoteModuleTemplatesPanel } from '@/components/quotes/QuoteModuleTemplatesPanel'
 import { QuoteProposalTemplatesPanel } from '@/components/quotes/QuoteProposalTemplatesPanel'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -99,6 +100,7 @@ export function QuotesPage() {
   const [leadTemperature, setLeadTemperature] = useState<LeadTemperature | null>(null)
   const [pdfId, setPdfId] = useState<number | null>(null)
   const [proposalLibraryOpen, setProposalLibraryOpen] = useState(false)
+  const [moduleLibraryOpen, setModuleLibraryOpen] = useState(false)
   const [pendingProposal, setPendingProposal] = useState<{
     name: string
     modules: QuoteModule[]
@@ -253,6 +255,9 @@ export function QuotesPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+            {/* #region agent log */}
+            {(() => { fetch('http://127.0.0.1:7498/ingest/30ad15c1-c7b0-4774-9a80-dadc1d901feb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cb0cec'},body:JSON.stringify({sessionId:'cb0cec',runId:'post-fix',hypothesisId:'H5',location:'QuotesPage.tsx:toolbar',message:'list header buttons',data:{hasBlocos:true,hasOrcamentos:true,novoInSameWrapAsLibraries:false},timestamp:Date.now()})}).catch(()=>{}); return null })()}
+            {/* #endregion */}
             <Select
               value={leadFilter}
               onValueChange={(v) => {
@@ -293,14 +298,6 @@ export function QuotesPage() {
             </Select>
             <Button
               type="button"
-              className={btnSecondaryClass}
-              onClick={() => setProposalLibraryOpen(true)}
-            >
-              <FileText className="h-4 w-4" />
-              Biblioteca de Orçamentos
-            </Button>
-            <Button
-              type="button"
               className={btnGreenClass}
               onClick={() => setShowCreate((v) => !v)}
             >
@@ -308,6 +305,24 @@ export function QuotesPage() {
               Novo
             </Button>
           </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          className={btnSecondaryClass}
+          onClick={() => setModuleLibraryOpen(true)}
+        >
+          <Boxes className="h-4 w-4" />
+          Biblioteca de Blocos
+        </Button>
+        <Button
+          type="button"
+          className={btnSecondaryClass}
+          onClick={() => setProposalLibraryOpen(true)}
+        >
+          <FileText className="h-4 w-4" />
+          Biblioteca de Orçamentos
+        </Button>
       </div>
 
       {showCreate && (
@@ -554,6 +569,18 @@ export function QuotesPage() {
           ))}
         </ul>
       )}
+
+      <Dialog open={moduleLibraryOpen} onOpenChange={setModuleLibraryOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Biblioteca de Blocos</DialogTitle>
+            <DialogDescription>
+              Modelos de seção para inserir no wizard (itens + condições).
+            </DialogDescription>
+          </DialogHeader>
+          <QuoteModuleTemplatesPanel embedded />
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={proposalLibraryOpen} onOpenChange={setProposalLibraryOpen}>
         <DialogContent className="max-w-3xl">

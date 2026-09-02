@@ -296,8 +296,8 @@ def _estimate_observations_height(notes: str | None) -> float:
 
 
 def _estimate_signatures_height() -> float:
-    """Altura do bloco de assinaturas (sem empurrar para o rodapé)."""
-    return _GAP + 5.0 + 1.5 + 4.0 + 3.0  # ln + rule gap + offset + labels + ln
+    """Altura do bloco de assinaturas (espaço em branco + linhas)."""
+    return 8.0 + 22.0 + 3.0 + 5.0 + 6.0
 
 
 def _estimate_disclaimer_signatures_height() -> float:
@@ -422,39 +422,27 @@ def _write_header(pdf: _QuotePdf, quote: QuoteRead, issuer: QuotePdfIssuer) -> N
     contact_y = pdf.get_y()
     x = text_x
     pdf.set_text_color(*_INK)
-    pdf.set_draw_color(*_INK)
-    pdf.set_line_width(0.35)
 
-    def _icon_phone(ix: float, iy: float) -> None:
-        pdf.ellipse(ix, iy, 2.6, 2.6)
-
-    def _icon_mail(ix: float, iy: float) -> None:
-        pdf.rect(ix, iy + 0.3, 2.8, 2.0, style="D")
-
-    def _icon_site(ix: float, iy: float) -> None:
-        pdf.ellipse(ix, iy, 2.6, 2.6)
-
-    entries: list[tuple[str, object]] = []
+    contact_bits: list[str] = []
     if issuer.phone:
-        entries.append((issuer.phone, _icon_phone))
+        contact_bits.append(f"Tel. {_safe(issuer.phone)}")
     if issuer.email:
-        entries.append((issuer.email, _icon_mail))
+        contact_bits.append(f"E-mail {_safe(issuer.email)}")
     if issuer.site:
-        entries.append((issuer.site, _icon_site))
-    for i, (val, draw) in enumerate(entries):
-        draw(x, contact_y)
-        x += 3.4
-        pdf.set_xy(x, contact_y)
+        contact_bits.append(_safe(issuer.site))
+    if contact_bits:
+        pdf.set_xy(text_x, contact_y)
         pdf.set_font("Helvetica", "", _FS_SMALL)
-        label = _safe(val)
-        pdf.cell(pdf.get_string_width(label) + 1.5, 3.2, label)
-        x += pdf.get_string_width(label) + 1.5
-        if i < len(entries) - 1:
-            pdf.set_xy(x, contact_y)
-            pdf.cell(4.0, 3.2, " | ")
-            x += 4.0
-    if entries:
-        pdf.set_y(contact_y + 3.6)
+        pdf.multi_cell(pdf.w - pdf.r_margin - text_x, 3.4, "  |  ".join(contact_bits))
+        x = pdf.get_x()
+    # #region agent log
+    try:
+        import json, time
+        with open("/Users/jean.nascimento/Projetos/AVS-Management-1/.cursor/debug-cb0cec.log", "a", encoding="utf-8") as _df:
+            _df.write(json.dumps({"sessionId":"cb0cec","runId":"post-fix","hypothesisId":"H1","location":"pdf.py:_write_header","message":"contact icons","data":{"icon_impl":"text_labels","n_entries":len(contact_bits),"final_x":x,"page_w":pdf.w,"r_margin":pdf.r_margin},"timestamp":int(time.time()*1000)}) + "\n")
+    except OSError:
+        pass
+    # #endregion
 
     pdf.set_text_color(*_INK)
     content_y = max(pdf.get_y(), top_y + logo_h)
@@ -493,10 +481,7 @@ def _write_client_block(pdf: _QuotePdf, quote: QuoteRead, client: QuotePdfClient
         rows.append(("Complemento:", client.complement, "", ""))
 
     panel_h = len(rows) * _ROW_H + 2.0
-    pdf.set_fill_color(*_PANEL)
-    _set_box_stroke(pdf)
-    pdf.rect(pdf.l_margin, panel_top, _CONTENT_W, panel_h, style="DF")
-    pdf.set_y(panel_top + 1.0)
+    pdf.set_y(panel_top)
 
     for left_label, left_val, right_label, right_val in rows:
         y0 = pdf.get_y()
@@ -588,42 +573,39 @@ def _write_section(
     items_total = sum(float(i.total_value) for i in items)
     if simplified:
         label = (display_name or title or "").strip() or title
-        pdf.cell(_LABEL_W, _ROW_H, _safe(label)[:70], border=1, fill=True)
+        pdf.cell(_LABEL_W, _ROW_H, _safe(label)[:70], fill=True)
         pdf.cell(
             _COL_TOTAL,
             _ROW_H,
             _brl(items_total),
-            border=1,
             align="R",
             fill=True,
             new_x="LMARGIN",
             new_y="NEXT",
         )
     else:
-        pdf.cell(_COL_ITEM, _ROW_H, "ITEM", border=1, fill=True)
-        pdf.cell(_COL_QTY, _ROW_H, "QTDE.", border=1, align="C", fill=True)
-        pdf.cell(_COL_UNIT, _ROW_H, "V. UNIT.", border=1, align="R", fill=True)
-        pdf.cell(_COL_TOTAL, _ROW_H, "V. TOTAL", border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(_COL_ITEM, _ROW_H, "ITEM", fill=True)
+        pdf.cell(_COL_QTY, _ROW_H, "QTDE.", align="C", fill=True)
+        pdf.cell(_COL_UNIT, _ROW_H, "V. UNIT.", align="R", fill=True)
+        pdf.cell(_COL_TOTAL, _ROW_H, "V. TOTAL", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_draw_color(*_RULE)
+        pdf.set_line_width(0.25)
+        pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
         pdf.set_text_color(*_INK)
-        _set_box_stroke(pdf)
 
         pdf.set_font("Helvetica", "", _FS_BODY)
         if not items:
-            pdf.set_fill_color(*_PANEL)
-            _set_box_stroke(pdf)
-            pdf.cell(_CONTENT_W, _ROW_H, "(sem itens)", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(_CONTENT_W, _ROW_H, "(sem itens)", new_x="LMARGIN", new_y="NEXT")
         else:
             for idx, item in enumerate(items):
-                pdf.set_fill_color(*(_ROW_ALT if idx % 2 == 1 else _PANEL))
-                _set_box_stroke(pdf)
-                pdf.cell(_COL_ITEM, _ROW_H, _safe(item.name)[:54], border=1, fill=True)
-                pdf.cell(_COL_QTY, _ROW_H, f"{item.qty:g}", border=1, align="R", fill=True)
-                pdf.cell(_COL_UNIT, _ROW_H, _brl(float(item.unit_value)), border=1, align="R", fill=True)
+                pdf.set_fill_color(*(_ROW_ALT if idx % 2 == 1 else _PAGE))
+                pdf.cell(_COL_ITEM, _ROW_H, _safe(item.name)[:54], fill=True)
+                pdf.cell(_COL_QTY, _ROW_H, f"{item.qty:g}", align="R", fill=True)
+                pdf.cell(_COL_UNIT, _ROW_H, _brl(float(item.unit_value)), align="R", fill=True)
                 pdf.cell(
                     _COL_TOTAL,
                     _ROW_H,
                     _brl(float(item.total_value)),
-                    border=1,
                     align="R",
                     fill=True,
                     new_x="LMARGIN",
@@ -646,14 +628,7 @@ def _write_section(
             pdf.cell(0, 3.6, "Mao de obra", new_x="LMARGIN", new_y="NEXT")
             pdf.set_text_color(*_INK)
             pdf.set_font("Helvetica", "", _FS_BODY)
-            pdf.set_fill_color(*_PANEL)
-            _set_box_stroke(pdf)
-            w_a = round(_CONTENT_W / 3.0, 2)
-            w_b = round(_CONTENT_W / 3.0, 2)
-            w_c = _CONTENT_W - w_a - w_b
-            pdf.cell(w_a, _ROW_H, f"Horas: {hours:g}", border=1, fill=True)
-            pdf.cell(w_b, _ROW_H, f"Valor hora: {_brl(rate)}", border=1, fill=True)
-            pdf.cell(w_c, _ROW_H, f"Total: {_brl(labor)}", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+            pdf.cell(0, _ROW_H, f"Horas: {hours:g}    Valor hora: {_brl(rate)}    Total: {_brl(labor)}", new_x="LMARGIN", new_y="NEXT")
 
     section_subtotal = round_money(items_total + labor)
     discount, net = apply_section_discount(section_subtotal, discount_pct, discount_value)
@@ -666,43 +641,25 @@ def _write_section(
     pdf.set_font("Helvetica", "", _FS_BODY)
     pct_label = f"{float(discount_pct or 0):g}%" if discount_pct is not None else "0%"
     val_label = _brl(float(discount_value or 0.0))
-    pdf.set_fill_color(*_PANEL)
-    _set_box_stroke(pdf)
-    w1 = w2 = w3 = round(_CONTENT_W / 4.0, 2)
-    w4 = _CONTENT_W - w1 - w2 - w3
-    pdf.cell(w1, _ROW_H, f"%: {pct_label}", border=1, fill=True)
-    pdf.cell(w2, _ROW_H, f"R$: {val_label}", border=1, fill=True)
-    pdf.cell(w3, _ROW_H, f"Aplic.: {_brl(discount)}", border=1, fill=True)
-    pdf.cell(
-        w4,
-        _ROW_H,
-        _safe(format_payment_plan_label(payment_plan))[:52],
-        border=1,
-        fill=True,
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
+    pay = _safe(format_payment_plan_label(payment_plan))
+    pdf.cell(0, _ROW_H, f"Desconto {pct_label} ({val_label})  ·  Aplicado {_brl(discount)}  ·  {pay}", new_x="LMARGIN", new_y="NEXT")
 
     pdf.ln(_GAP)
-    pdf.set_font("Helvetica", "B", _FS_BODY)
-    _set_box_stroke(pdf)
+    pdf.set_font("Helvetica", "", _FS_BODY)
     subtotal_label = "Subtotal (itens + mao de obra)" if include_labor and labor > 0 else "Subtotal (itens)"
-    pdf.set_fill_color(*_ROW_ALT)
-    pdf.cell(_LABEL_W, _ROW_H, subtotal_label, border=1, align="R", fill=True)
-    pdf.cell(_COL_TOTAL, _ROW_H, _brl(section_subtotal), border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(_LABEL_W, _ROW_H, subtotal_label, align="R")
+    pdf.cell(_COL_TOTAL, _ROW_H, _brl(section_subtotal), align="R", new_x="LMARGIN", new_y="NEXT")
     if discount > 0:
-        pdf.set_fill_color(*_PANEL)
-        _set_box_stroke(pdf)
-        pdf.cell(_LABEL_W, _ROW_H, "Desconto", border=1, align="R", fill=True)
-        pdf.cell(_COL_TOTAL, _ROW_H, f"- {_brl(discount)}", border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(_LABEL_W, _ROW_H, "Desconto", align="R")
+        pdf.cell(_COL_TOTAL, _ROW_H, f"- {_brl(discount)}", align="R", new_x="LMARGIN", new_y="NEXT")
 
-    pdf.set_fill_color(*_HEADER_FILL)
-    pdf.set_text_color(*_INK)
     pdf.set_font("Helvetica", "B", _FS_BODY)
-    _set_box_stroke(pdf)
-    pdf.cell(_LABEL_W, _ROW_H + 0.6, "TOTAL LIQUIDO", border=1, align="R", fill=True)
-    pdf.cell(_COL_TOTAL, _ROW_H + 0.6, _brl(net), border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(_LABEL_W, _ROW_H + 0.6, "TOTAL LIQUIDO", align="R")
+    pdf.cell(_COL_TOTAL, _ROW_H + 0.6, _brl(net), align="R", new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(*_INK)
+    pdf.set_draw_color(*_RULE)
+    pdf.set_line_width(0.3)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
     pdf.set_draw_color(0, 0, 0)
 
     notes_clean = (notes or "").strip()
@@ -710,32 +667,18 @@ def _write_section(
     cnpj_clean = (billed_by_cnpj or "").strip()
     if notes_clean:
         pdf.ln(_GAP)
-        pdf.set_fill_color(*_PANEL)
-        _set_box_stroke(pdf)
         pdf.set_font("Helvetica", "B", _FS_BODY)
-        pdf.cell(_CONTENT_W, _ROW_H, "Observacoes", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(0, _ROW_H, "Observacoes", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", "", _FS_BODY)
-        pdf.multi_cell(_CONTENT_W, 4.0, _safe(notes_clean), border=1)
+        pdf.multi_cell(_CONTENT_W, 4.0, _safe(notes_clean))
     if billed_clean or cnpj_clean:
         billed_label = billed_clean
         if cnpj_clean:
             pretty = format_cnpj(cnpj_clean) or cnpj_clean
             billed_label = f"{billed_clean} · CNPJ {pretty}" if billed_clean else f"CNPJ {pretty}"
         pdf.ln(_GAP)
-        pdf.set_fill_color(*_PANEL)
-        _set_box_stroke(pdf)
-        pdf.set_font("Helvetica", "B", _FS_BODY)
-        pdf.cell(32.0, _ROW_H, "Faturado por", border=1, fill=True)
         pdf.set_font("Helvetica", "", _FS_BODY)
-        pdf.cell(
-            _CONTENT_W - 32.0,
-            _ROW_H,
-            _safe(billed_label)[:80],
-            border=1,
-            fill=True,
-            new_x="LMARGIN",
-            new_y="NEXT",
-        )
+        pdf.cell(0, _ROW_H, f"Faturado por: {_safe(billed_label)[:90]}", new_x="LMARGIN", new_y="NEXT")
 
     pdf.ln(_GAP)
 
@@ -755,54 +698,32 @@ def _write_payment_summary(
     _section_band(pdf, "DADOS DE PAGAMENTO", _NAVY)
 
     def _pair(left_label: str, left_val: str, right_label: str, right_val: str) -> None:
-        pdf.set_fill_color(*_PANEL)
-        _set_box_stroke(pdf)
-        pdf.set_font("Helvetica", "B", _FS_MUTED)
+        pdf.set_font("Helvetica", "", _FS_MUTED)
         pdf.set_text_color(*_MUTED)
-        pdf.cell(lab_w, _ROW_H, _safe(left_label), border="LTB", fill=True)
+        pdf.cell(lab_w, _ROW_H, _safe(left_label))
         pdf.set_font("Helvetica", "B", _FS_BODY)
         pdf.set_text_color(*_INK)
-        pdf.cell(val_w, _ROW_H, left_val, border="RTB", align="R", fill=True)
-        pdf.set_font("Helvetica", "B", _FS_MUTED)
+        pdf.cell(val_w, _ROW_H, left_val, align="R")
+        pdf.set_font("Helvetica", "", _FS_MUTED)
         pdf.set_text_color(*_MUTED)
-        pdf.cell(lab_w, _ROW_H, _safe(right_label), border="LTB", fill=True)
+        pdf.cell(lab_w, _ROW_H, _safe(right_label))
         pdf.set_font("Helvetica", "B", _FS_BODY)
         pdf.set_text_color(*_INK)
-        pdf.cell(
-            val_w,
-            _ROW_H,
-            right_val,
-            border="RTB",
-            align="R",
-            fill=True,
-            new_x="LMARGIN",
-            new_y="NEXT",
-        )
+        pdf.cell(val_w, _ROW_H, right_val, align="R", new_x="LMARGIN", new_y="NEXT")
 
     def _full_row(label: str, qty: float, net: float) -> None:
-        pdf.set_fill_color(*_PANEL)
-        _set_box_stroke(pdf)
-        pdf.set_font("Helvetica", "B", _FS_MUTED)
+        pdf.set_font("Helvetica", "", _FS_MUTED)
         pdf.set_text_color(*_MUTED)
-        pdf.cell(lab_w, _ROW_H, _safe(f"QTDE {label}")[:40], border="LTB", fill=True)
+        pdf.cell(lab_w, _ROW_H, _safe(f"QTDE {label}")[:40])
         pdf.set_font("Helvetica", "B", _FS_BODY)
         pdf.set_text_color(*_INK)
-        pdf.cell(val_w, _ROW_H, _qty(qty), border="RTB", align="R", fill=True)
-        pdf.set_font("Helvetica", "B", _FS_MUTED)
+        pdf.cell(val_w, _ROW_H, _qty(qty), align="R")
+        pdf.set_font("Helvetica", "", _FS_MUTED)
         pdf.set_text_color(*_MUTED)
-        pdf.cell(lab_w, _ROW_H, _safe(f"TOTAL {label}")[:40], border="LTB", fill=True)
+        pdf.cell(lab_w, _ROW_H, _safe(f"TOTAL {label}")[:40])
         pdf.set_font("Helvetica", "B", _FS_BODY)
         pdf.set_text_color(*_INK)
-        pdf.cell(
-            val_w,
-            _ROW_H,
-            _brl(net),
-            border="RTB",
-            align="R",
-            fill=True,
-            new_x="LMARGIN",
-            new_y="NEXT",
-        )
+        pdf.cell(val_w, _ROW_H, _brl(net), align="R", new_x="LMARGIN", new_y="NEXT")
 
     implant = next(
         ((m, q, n) for m, q, n in module_nets if m.legacy_kind == "implantacao"),
@@ -856,13 +777,12 @@ def _write_payment_summary(
         for mod, qty, net in module_nets:
             _full_row(_module_band_title(mod), qty, net)
 
-    pdf.set_fill_color(*_HEADER_FILL)
-    pdf.set_draw_color(*_BOX_BORDER)
-    pdf.set_line_width(_BOX_LINE)
-    pdf.set_text_color(*_INK)
     pdf.set_font("Helvetica", "B", _FS_SECTION)
-    pdf.cell(_LABEL_W, _ROW_H + 0.8, "VALOR TOTAL DO ORCAMENTO", border=1, align="R", fill=True)
-    pdf.cell(_COL_TOTAL, _ROW_H + 0.8, _brl(quote_total), border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(_LABEL_W, _ROW_H + 0.8, "VALOR TOTAL DO ORCAMENTO", align="R")
+    pdf.cell(_COL_TOTAL, _ROW_H + 0.8, _brl(quote_total), align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_draw_color(*_RULE)
+    pdf.set_line_width(0.35)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
     pdf.set_text_color(*_INK)
     pdf.set_draw_color(0, 0, 0)
     pdf.ln(_GAP)
@@ -877,17 +797,10 @@ def _write_observations(pdf: _QuotePdf, notes: str | None) -> None:
         clipped = clipped[:477] + "..."
 
     line_h = 3.6
-    n_lines = max(1, clipped.count("\n") + 1)
-    box_h = max(_ROW_H * 2, n_lines * line_h + 2.4)
-    box_top = pdf.get_y()
-    pdf.set_fill_color(*_PANEL)
-    _set_box_stroke(pdf)
-    pdf.rect(pdf.l_margin, box_top, _CONTENT_W, box_h, style="DF")
-    pdf.set_xy(pdf.l_margin + 2, box_top + 1.2)
     pdf.set_font("Helvetica", "", _FS_BODY)
     pdf.set_text_color(*_INK)
-    pdf.multi_cell(_CONTENT_W - 4, line_h, _safe(clipped))
-    pdf.set_y(box_top + box_h + _GAP)
+    pdf.multi_cell(_CONTENT_W, line_h, _safe(clipped))
+    pdf.ln(_GAP)
 
 
 def _write_disclaimer_and_ticket(pdf: _QuotePdf, quote: QuoteRead) -> None:
@@ -901,15 +814,34 @@ def _write_disclaimer_and_ticket(pdf: _QuotePdf, quote: QuoteRead) -> None:
     )
     ticket = (quote.tiflux_ticket_number or "").strip()
     line = f"Ticket no.: {ticket}" if ticket else "Ticket no.:"
-    pdf.cell(0, 4.5, _safe(line), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_x(pdf.l_margin)
+    # #region agent log
+    try:
+        import json, time
+        with open("/Users/jean.nascimento/Projetos/AVS-Management-1/.cursor/debug-cb0cec.log", "a", encoding="utf-8") as _df:
+            _df.write(json.dumps({"sessionId":"cb0cec","runId":"post-fix","hypothesisId":"H3","location":"pdf.py:_write_disclaimer_and_ticket","message":"ticket cell before","data":{"x":pdf.get_x(),"y":pdf.get_y(),"l_margin":pdf.l_margin,"cell_w":_CONTENT_W,"align":"L"},"timestamp":int(time.time()*1000)}) + "\n")
+    except OSError:
+        pass
+    # #endregion
+    pdf.cell(_CONTENT_W, 4.5, _safe(line), align="L", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(_GAP)
 
 
 def _write_signatures(pdf: _QuotePdf) -> None:
-    pdf.ln(_GAP)
-    _rule(pdf, color=_RULE, width=0.35, gap_after=5.0)
+    pdf.ln(8.0)
+    _rule(pdf, color=_RULE, width=0.35, gap_after=4.0)
     col_w = _CONTENT_W / 3.0
-    y_line = pdf.get_y()
+    blank = 22.0
+    y_start = pdf.get_y()
+    y_line = y_start + blank
+    # #region agent log
+    try:
+        import json, time
+        with open("/Users/jean.nascimento/Projetos/AVS-Management-1/.cursor/debug-cb0cec.log", "a", encoding="utf-8") as _df:
+            _df.write(json.dumps({"sessionId":"cb0cec","runId":"post-fix","hypothesisId":"H4","location":"pdf.py:_write_signatures","message":"signature layout","data":{"y_line":y_line,"blank_above_line_mm":blank,"est_h":_estimate_signatures_height(),"page_h":pdf.h},"timestamp":int(time.time()*1000)}) + "\n")
+    except OSError:
+        pass
+    # #endregion
     pdf.set_draw_color(*_NAVY)
     pdf.set_line_width(0.3)
     for i in range(3):
@@ -917,7 +849,7 @@ def _write_signatures(pdf: _QuotePdf) -> None:
         x1 = pdf.l_margin + (i + 1) * col_w - 4
         pdf.line(x0, y_line, x1, y_line)
 
-    pdf.set_y(y_line + 1.5)
+    pdf.set_y(y_line + 3.0)
     pdf.set_font("Helvetica", "", _FS_SMALL)
     pdf.set_text_color(*_MUTED)
     labels = (
@@ -929,4 +861,4 @@ def _write_signatures(pdf: _QuotePdf) -> None:
         pdf.set_x(pdf.l_margin + i * col_w)
         pdf.cell(col_w, 4.0, _safe(label), align="C")
     pdf.set_text_color(*_INK)
-    pdf.ln(3.0)
+    pdf.ln(6.0)
