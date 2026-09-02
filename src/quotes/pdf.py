@@ -11,6 +11,7 @@ import unicodedata
 
 from fpdf import FPDF
 
+from src.cnpj.validator import format_cnpj
 from src.quotes.pdf_parties import QuotePdfClient, QuotePdfIssuer, client_from_quote, issuer_from_settings
 from src.quotes.schemas import QuoteItemRead, QuoteModule, QuoteRead
 from src.quotes.totals import (
@@ -28,13 +29,14 @@ _BRAND_RED = (220, 38, 38)  # logo A / aurora-brand-red #dc2626
 _BRAND_RED_DARK = (185, 28, 28)  # fills de seção (melhor em grayscale)
 _INK = (30, 41, 59)
 _MUTED = (100, 116, 139)
-_RULE = (148, 163, 184)  # divisores
-_BOX_BORDER = (71, 85, 105)  # slate-600 — bordas de caixas
-_ROW_ALT = (241, 245, 249)
-_PANEL = (255, 255, 255)  # branco sólido — destaca do fundo
-_PAGE = (252, 253, 255)
+_RULE = (148, 163, 184)
+_BOX_BORDER = (148, 163, 184)
+_ROW_ALT = (248, 250, 252)
+_PANEL = (255, 255, 255)
+_PAGE = (255, 255, 255)
 _WHITE = (255, 255, 255)
-_BOX_LINE = 0.4
+_HEADER_FILL = (241, 245, 249)
+_BOX_LINE = 0.3
 
 _LOGO_PATH = Path(__file__).resolve().parents[1] / "cropped-AVS-SemArco-Colorido_2024.png"
 # Grade tipográfica / geometria (tudo alinhado à mesma largura útil)
@@ -120,55 +122,15 @@ def _module_band_title(module: QuoteModule) -> str:
 def _ordered_modules(quote: QuoteRead) -> list[QuoteModule]:
     if quote.modules:
         return sorted(quote.modules, key=lambda m: (m.sort_order, m.id))
-    # Legado sem modules: sintetiza a partir das colunas flat
-    from src.quotes.schemas import seed_default_modules
-
-    seeded = seed_default_modules()
-    out: list[QuoteModule] = []
-    for mod in seeded:
-        if mod.legacy_kind == "implantacao":
-            out.append(
-                mod.model_copy(
-                    update={
-                        "payment_plan": quote.implant_payment_plan,
-                        "discount_pct": quote.implant_discount_pct,
-                        "discount_value": quote.implant_discount_value,
-                    }
-                )
-            )
-        elif mod.legacy_kind == "mensalidade":
-            out.append(
-                mod.model_copy(
-                    update={
-                        "payment_plan": quote.monthly_payment_plan,
-                        "discount_pct": quote.monthly_discount_pct,
-                        "discount_value": quote.monthly_discount_value,
-                        "labor_hours": quote.monthly_labor_hours,
-                        "labor_hourly_rate": quote.monthly_labor_hourly_rate,
-                    }
-                )
-            )
-    return out
+    return []
 
 
 class _QuotePdf(FPDF):
-    """A4 com fundo liso, barras de marca e rodapé tipográfico."""
+    """A4 comercial — fundo branco, sem barras de marca."""
 
     def header(self) -> None:
-        # Fundo suave (papel)
         self.set_fill_color(*_PAGE)
         self.rect(0, 0, self.w, self.h, style="F")
-
-        # Barra superior marca (navy + accent)
-        self.set_fill_color(*_NAVY)
-        self.rect(0, 0, self.w, 3.2, style="F")
-        self.set_fill_color(*_ACCENT)
-        self.rect(0, 3.2, self.w, 1.1, style="F")
-
-        # Faixa lateral sutil
-        self.set_fill_color(*_ACCENT)
-        self.rect(0, 0, 1.4, self.h, style="F")
-
         self.set_draw_color(0, 0, 0)
         self.set_text_color(*_INK)
         self.set_xy(self.l_margin, self.t_margin)
@@ -177,7 +139,7 @@ class _QuotePdf(FPDF):
         self.set_y(-12)
         y = self.get_y()
         self.set_draw_color(*_RULE)
-        self.set_line_width(0.25)
+        self.set_line_width(0.2)
         self.line(self.l_margin, y, self.w - self.r_margin, y)
         self.set_y(y + 1.0)
         self.set_font("Helvetica", "I", _FS_MUTED)
@@ -239,7 +201,11 @@ def _divider_height() -> float:
     return _GAP + (_GAP * 2)
 
 
-def _module_meta_height(notes: str | None, billed_by_name: str | None) -> float:
+def _module_meta_height(
+    notes: str | None,
+    billed_by_name: str | None,
+    billed_by_cnpj: str | None = None,
+) -> float:
     """Altura extra de observações / faturado por no módulo (só se preenchidos)."""
     h = 0.0
     notes_clean = (notes or "").strip()
@@ -247,7 +213,7 @@ def _module_meta_height(notes: str | None, billed_by_name: str | None) -> float:
     if notes_clean:
         lines = max(1, (len(notes_clean) + 89) // 90)
         h += _GAP + _ROW_H + lines * 4.0
-    if billed_clean:
+    if billed_clean or (billed_by_cnpj or "").strip():
         h += _GAP + _ROW_H
     return h
 
@@ -262,11 +228,16 @@ def _estimate_section_height(
     include_labor: bool,
     notes: str | None = None,
     billed_by_name: str | None = None,
+    billed_by_cnpj: str | None = None,
+    simplified: bool = False,
 ) -> float:
     """Altura estimada de `_write_section` (banda → total líquido + gap final)."""
     h = _BAND_H + _GAP  # section band
-    h += _ROW_H  # header ITEM/QTDE/...
-    h += max(1, len(items)) * _ROW_H  # rows or "(sem itens)"
+    if simplified:
+        h += _ROW_H  # single display row
+    else:
+        h += _ROW_H  # header ITEM/QTDE/...
+        h += max(1, len(items)) * _ROW_H  # rows or "(sem itens)"
 
     labor = 0.0
     if include_labor:
@@ -283,7 +254,7 @@ def _estimate_section_height(
     if discount > 0:
         h += _ROW_H
     h += (_ROW_H + 0.6) + _GAP  # TOTAL LIQUIDO + ln
-    h += _module_meta_height(notes, billed_by_name)
+    h += _module_meta_height(notes, billed_by_name, billed_by_cnpj)
     return h
 
 
@@ -329,6 +300,10 @@ def _estimate_signatures_height() -> float:
     return _GAP + 5.0 + 1.5 + 4.0 + 3.0  # ln + rule gap + offset + labels + ln
 
 
+def _estimate_disclaimer_signatures_height() -> float:
+    return 8.0 + 5.0 + 5.0 + 20.0
+
+
 def render_quote_pdf(
     quote: QuoteRead,
     dest: Path,
@@ -338,7 +313,7 @@ def render_quote_pdf(
 ) -> None:
     """Grava PDF do orçamento em `dest` (arquivo já resolvido sob HUB_PDF_DIR)."""
     issuer = issuer or issuer_from_settings()
-    client = client or client_from_quote(quote)
+    _ = client or client_from_quote(quote)
 
     pdf = _QuotePdf(format="A4")
     pdf.alias_nb_pages()
@@ -347,7 +322,6 @@ def render_quote_pdf(
     pdf.add_page()
 
     _write_header(pdf, quote, issuer)
-    _write_client_block(pdf, quote, client)
 
     modules = _ordered_modules(quote)
     module_nets: list[tuple[QuoteModule, float, float]] = []  # mod, qty, net
@@ -364,6 +338,8 @@ def render_quote_pdf(
             include_labor=include_labor,
             notes=mod.notes,
             billed_by_name=mod.billed_by_name,
+            billed_by_cnpj=mod.billed_by_cnpj,
+            simplified=bool(mod.simplified),
         )
         if idx > 0:
             section_h += _divider_height()
@@ -373,7 +349,7 @@ def render_quote_pdf(
         _write_section(
             pdf,
             title=_module_band_title(mod),
-            accent=_section_accent(mod, idx),
+            accent=_INK,
             items=mod_items,
             payment_plan=mod.payment_plan,
             discount_pct=mod.discount_pct,
@@ -383,6 +359,9 @@ def render_quote_pdf(
             include_labor=include_labor,
             notes=mod.notes,
             billed_by_name=mod.billed_by_name,
+            billed_by_cnpj=mod.billed_by_cnpj,
+            simplified=bool(mod.simplified),
+            display_name=mod.display_name,
         )
         net = _section_net_total(
             mod_items,
@@ -400,7 +379,8 @@ def render_quote_pdf(
     _ensure_space(pdf, _estimate_observations_height(quote.notes))
     _write_observations(pdf, quote.notes)
 
-    _ensure_space(pdf, _estimate_signatures_height())
+    _ensure_space(pdf, _estimate_disclaimer_signatures_height())
+    _write_disclaimer_and_ticket(pdf, quote)
     _write_signatures(pdf)
     dest.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(dest))
@@ -419,25 +399,19 @@ def _write_header(pdf: _QuotePdf, quote: QuoteRead, issuer: QuotePdfIssuer) -> N
 
     pdf.set_xy(text_x, top_y)
     pdf.set_font("Helvetica", "B", _FS_TITLE)
-    pdf.set_text_color(*_NAVY)
-    pdf.cell(
-        0,
-        5.8,
-        _safe(f"Orcamento : {quote_display_id(quote.id)}"),
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
+    pdf.set_text_color(*_INK)
+    title = _safe(f"Orcamento : {quote_display_id(quote.id)}")
+    date_s = _fmt_date(quote.updated_at or quote.created_at)
+    pdf.cell(0, 5.8, f"{title}    {date_s}", new_x="LMARGIN", new_y="NEXT")
 
+    ie = (issuer.ie or "").strip()
+    line1 = f"{issuer.name} - CNPJ: {issuer.cnpj}"
+    if ie:
+        line1 = f"{line1} | Insc Estadual: {ie}"
     pdf.set_x(text_x)
     pdf.set_font("Helvetica", "B", _FS_BODY)
-    pdf.set_text_color(*_BLUE)
-    pdf.cell(
-        0,
-        4.0,
-        _safe(f"{issuer.name} - {issuer.cnpj}"),
-        new_x="LMARGIN",
-        new_y="NEXT",
-    )
+    pdf.set_text_color(*_INK)
+    pdf.multi_cell(pdf.w - pdf.r_margin - text_x, 4.0, _safe(line1))
 
     pdf.set_font("Helvetica", "", _FS_SMALL)
     pdf.set_text_color(*_MUTED)
@@ -445,21 +419,47 @@ def _write_header(pdf: _QuotePdf, quote: QuoteRead, issuer: QuotePdfIssuer) -> N
         pdf.set_x(text_x)
         pdf.multi_cell(pdf.w - pdf.r_margin - text_x, 3.4, _safe(issuer.address_line))
 
-    contact_bits = [
-        f"Telefone: {_safe(issuer.phone)}" if issuer.phone else "",
-        f"Celular: {_safe(issuer.mobile)}" if issuer.mobile else "",
-        f"E-mail: {_safe(issuer.email)}" if issuer.email else "",
-        f"Site: {_safe(issuer.site)}" if issuer.site else "",
-    ]
-    contact_line = "  |  ".join(b for b in contact_bits if b)
-    if contact_line:
-        pdf.set_x(text_x)
-        pdf.multi_cell(pdf.w - pdf.r_margin - text_x, 3.4, contact_line)
+    contact_y = pdf.get_y()
+    x = text_x
+    pdf.set_text_color(*_INK)
+    pdf.set_draw_color(*_INK)
+    pdf.set_line_width(0.35)
+
+    def _icon_phone(ix: float, iy: float) -> None:
+        pdf.ellipse(ix, iy, 2.6, 2.6)
+
+    def _icon_mail(ix: float, iy: float) -> None:
+        pdf.rect(ix, iy + 0.3, 2.8, 2.0, style="D")
+
+    def _icon_site(ix: float, iy: float) -> None:
+        pdf.ellipse(ix, iy, 2.6, 2.6)
+
+    entries: list[tuple[str, object]] = []
+    if issuer.phone:
+        entries.append((issuer.phone, _icon_phone))
+    if issuer.email:
+        entries.append((issuer.email, _icon_mail))
+    if issuer.site:
+        entries.append((issuer.site, _icon_site))
+    for i, (val, draw) in enumerate(entries):
+        draw(x, contact_y)
+        x += 3.4
+        pdf.set_xy(x, contact_y)
+        pdf.set_font("Helvetica", "", _FS_SMALL)
+        label = _safe(val)
+        pdf.cell(pdf.get_string_width(label) + 1.5, 3.2, label)
+        x += pdf.get_string_width(label) + 1.5
+        if i < len(entries) - 1:
+            pdf.set_xy(x, contact_y)
+            pdf.cell(4.0, 3.2, " | ")
+            x += 4.0
+    if entries:
+        pdf.set_y(contact_y + 3.6)
 
     pdf.set_text_color(*_INK)
     content_y = max(pdf.get_y(), top_y + logo_h)
     pdf.set_y(content_y + _GAP)
-    _rule(pdf, color=_ACCENT, width=0.45)
+    _rule(pdf, color=_RULE, width=0.35)
 
 
 def _write_client_block(pdf: _QuotePdf, quote: QuoteRead, client: QuotePdfClient) -> None:
@@ -547,18 +547,16 @@ def _section_band(
     color: tuple[int, int, int],
 ) -> None:
     y = pdf.get_y()
-    pdf.set_fill_color(*color)
-    pdf.rect(pdf.l_margin, y, _CONTENT_W, _BAND_H, style="F")
-    edge = _BRAND_RED if color == _BRAND_RED_DARK else _ACCENT
-    pdf.set_fill_color(*edge)
-    pdf.rect(pdf.l_margin, y, 1.8, _BAND_H, style="F")
-    pdf.set_xy(pdf.l_margin + 3.2, y + 0.55)
+    pdf.set_xy(pdf.l_margin, y)
     pdf.set_font("Helvetica", "B", _FS_SECTION)
-    pdf.set_text_color(*_WHITE)
+    pdf.set_text_color(*_INK)
     pdf.cell(0, _BAND_H - 1.1, _safe(title), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_draw_color(*_RULE)
+    pdf.set_line_width(0.3)
+    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+    pdf.ln(_GAP)
     pdf.set_text_color(*_INK)
     pdf.set_draw_color(0, 0, 0)
-    pdf.set_y(y + _BAND_H + _GAP)
 
 
 
@@ -576,45 +574,65 @@ def _write_section(
     include_labor: bool,
     notes: str | None = None,
     billed_by_name: str | None = None,
+    billed_by_cnpj: str | None = None,
+    simplified: bool = False,
+    display_name: str | None = None,
 ) -> None:
     _section_band(pdf, title, accent)
 
-    pdf.set_fill_color(*_NAVY)
-    pdf.set_text_color(*_WHITE)
-    pdf.set_font("Helvetica", "B", _FS_SMALL)
-    pdf.set_draw_color(*_NAVY)
-    pdf.set_line_width(_BOX_LINE)
-    pdf.cell(_COL_ITEM, _ROW_H, "ITEM", border=1, fill=True)
-    pdf.cell(_COL_QTY, _ROW_H, "QTDE.", border=1, align="C", fill=True)
-    pdf.cell(_COL_UNIT, _ROW_H, "V. UNIT.", border=1, align="R", fill=True)
-    pdf.cell(_COL_TOTAL, _ROW_H, "V. TOTAL", border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+    pdf.set_fill_color(*_HEADER_FILL)
     pdf.set_text_color(*_INK)
+    pdf.set_font("Helvetica", "B", _FS_SMALL)
     _set_box_stroke(pdf)
 
-    pdf.set_font("Helvetica", "", _FS_BODY)
-    items_total = 0.0
-    if not items:
-        pdf.set_fill_color(*_PANEL)
-        _set_box_stroke(pdf)
-        pdf.cell(_CONTENT_W, _ROW_H, "(sem itens)", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+    items_total = sum(float(i.total_value) for i in items)
+    if simplified:
+        label = (display_name or title or "").strip() or title
+        pdf.cell(_LABEL_W, _ROW_H, _safe(label)[:70], border=1, fill=True)
+        pdf.cell(
+            _COL_TOTAL,
+            _ROW_H,
+            _brl(items_total),
+            border=1,
+            align="R",
+            fill=True,
+            new_x="LMARGIN",
+            new_y="NEXT",
+        )
     else:
-        for idx, item in enumerate(items):
-            items_total += float(item.total_value)
-            pdf.set_fill_color(*(_ROW_ALT if idx % 2 == 1 else _PANEL))
+        pdf.cell(_COL_ITEM, _ROW_H, "ITEM", border=1, fill=True)
+        pdf.cell(_COL_QTY, _ROW_H, "QTDE.", border=1, align="C", fill=True)
+        pdf.cell(_COL_UNIT, _ROW_H, "V. UNIT.", border=1, align="R", fill=True)
+        pdf.cell(_COL_TOTAL, _ROW_H, "V. TOTAL", border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*_INK)
+        _set_box_stroke(pdf)
+
+        pdf.set_font("Helvetica", "", _FS_BODY)
+        if not items:
+            pdf.set_fill_color(*_PANEL)
             _set_box_stroke(pdf)
-            pdf.cell(_COL_ITEM, _ROW_H, _safe(item.name)[:54], border=1, fill=True)
-            pdf.cell(_COL_QTY, _ROW_H, f"{item.qty:g}", border=1, align="R", fill=True)
-            pdf.cell(_COL_UNIT, _ROW_H, _brl(float(item.unit_value)), border=1, align="R", fill=True)
-            pdf.cell(
-                _COL_TOTAL,
-                _ROW_H,
-                _brl(float(item.total_value)),
-                border=1,
-                align="R",
-                fill=True,
-                new_x="LMARGIN",
-                new_y="NEXT",
-            )
+            pdf.cell(_CONTENT_W, _ROW_H, "(sem itens)", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
+        else:
+            for idx, item in enumerate(items):
+                pdf.set_fill_color(*(_ROW_ALT if idx % 2 == 1 else _PANEL))
+                _set_box_stroke(pdf)
+                pdf.cell(_COL_ITEM, _ROW_H, _safe(item.name)[:54], border=1, fill=True)
+                pdf.cell(_COL_QTY, _ROW_H, f"{item.qty:g}", border=1, align="R", fill=True)
+                pdf.cell(_COL_UNIT, _ROW_H, _brl(float(item.unit_value)), border=1, align="R", fill=True)
+                pdf.cell(
+                    _COL_TOTAL,
+                    _ROW_H,
+                    _brl(float(item.total_value)),
+                    border=1,
+                    align="R",
+                    fill=True,
+                    new_x="LMARGIN",
+                    new_y="NEXT",
+                )
+
+    pdf.set_text_color(*_INK)
+    _set_box_stroke(pdf)
+    pdf.set_font("Helvetica", "", _FS_BODY)
 
     labor = 0.0
     if include_labor:
@@ -624,7 +642,7 @@ def _write_section(
         if labor > 0:
             pdf.ln(_GAP)
             pdf.set_font("Helvetica", "B", _FS_BODY)
-            pdf.set_text_color(*accent)
+            pdf.set_text_color(*_INK)
             pdf.cell(0, 3.6, "Mao de obra", new_x="LMARGIN", new_y="NEXT")
             pdf.set_text_color(*_INK)
             pdf.set_font("Helvetica", "", _FS_BODY)
@@ -642,7 +660,7 @@ def _write_section(
 
     pdf.ln(_GAP)
     pdf.set_font("Helvetica", "B", _FS_BODY)
-    pdf.set_text_color(*accent)
+    pdf.set_text_color(*_INK)
     pdf.cell(0, 3.6, "Desconto / Pagamento", new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(*_INK)
     pdf.set_font("Helvetica", "", _FS_BODY)
@@ -678,11 +696,10 @@ def _write_section(
         pdf.cell(_LABEL_W, _ROW_H, "Desconto", border=1, align="R", fill=True)
         pdf.cell(_COL_TOTAL, _ROW_H, f"- {_brl(discount)}", border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
 
-    pdf.set_fill_color(*accent)
-    pdf.set_text_color(*_WHITE)
+    pdf.set_fill_color(*_HEADER_FILL)
+    pdf.set_text_color(*_INK)
     pdf.set_font("Helvetica", "B", _FS_BODY)
-    pdf.set_draw_color(*accent)
-    pdf.set_line_width(_BOX_LINE)
+    _set_box_stroke(pdf)
     pdf.cell(_LABEL_W, _ROW_H + 0.6, "TOTAL LIQUIDO", border=1, align="R", fill=True)
     pdf.cell(_COL_TOTAL, _ROW_H + 0.6, _brl(net), border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(*_INK)
@@ -690,6 +707,7 @@ def _write_section(
 
     notes_clean = (notes or "").strip()
     billed_clean = (billed_by_name or "").strip()
+    cnpj_clean = (billed_by_cnpj or "").strip()
     if notes_clean:
         pdf.ln(_GAP)
         pdf.set_fill_color(*_PANEL)
@@ -698,19 +716,22 @@ def _write_section(
         pdf.cell(_CONTENT_W, _ROW_H, "Observacoes", border=1, fill=True, new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", "", _FS_BODY)
         pdf.multi_cell(_CONTENT_W, 4.0, _safe(notes_clean), border=1)
-    if billed_clean:
+    if billed_clean or cnpj_clean:
+        billed_label = billed_clean
+        if cnpj_clean:
+            pretty = format_cnpj(cnpj_clean) or cnpj_clean
+            billed_label = f"{billed_clean} · CNPJ {pretty}" if billed_clean else f"CNPJ {pretty}"
         pdf.ln(_GAP)
         pdf.set_fill_color(*_PANEL)
         _set_box_stroke(pdf)
         pdf.set_font("Helvetica", "B", _FS_BODY)
-        pdf.cell(_LABEL_W, _ROW_H, "Faturado por", border=1, align="R", fill=True)
+        pdf.cell(32.0, _ROW_H, "Faturado por", border=1, fill=True)
         pdf.set_font("Helvetica", "", _FS_BODY)
         pdf.cell(
-            _COL_TOTAL,
+            _CONTENT_W - 32.0,
             _ROW_H,
-            _safe(billed_clean)[:28],
+            _safe(billed_label)[:80],
             border=1,
-            align="R",
             fill=True,
             new_x="LMARGIN",
             new_y="NEXT",
@@ -835,10 +856,10 @@ def _write_payment_summary(
         for mod, qty, net in module_nets:
             _full_row(_module_band_title(mod), qty, net)
 
-    pdf.set_fill_color(*_NAVY)
-    pdf.set_draw_color(*_NAVY)
+    pdf.set_fill_color(*_HEADER_FILL)
+    pdf.set_draw_color(*_BOX_BORDER)
     pdf.set_line_width(_BOX_LINE)
-    pdf.set_text_color(*_WHITE)
+    pdf.set_text_color(*_INK)
     pdf.set_font("Helvetica", "B", _FS_SECTION)
     pdf.cell(_LABEL_W, _ROW_H + 0.8, "VALOR TOTAL DO ORCAMENTO", border=1, align="R", fill=True)
     pdf.cell(_COL_TOTAL, _ROW_H + 0.8, _brl(quote_total), border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
@@ -869,13 +890,24 @@ def _write_observations(pdf: _QuotePdf, notes: str | None) -> None:
     pdf.set_y(box_top + box_h + _GAP)
 
 
-def _write_signatures(pdf: _QuotePdf) -> None:
-    needed = 20.0
-    if pdf.get_y() + needed < pdf.h - pdf.b_margin - 6:
-        pdf.set_y(pdf.h - pdf.b_margin - needed)
-
+def _write_disclaimer_and_ticket(pdf: _QuotePdf, quote: QuoteRead) -> None:
     pdf.ln(_GAP)
-    _rule(pdf, color=_ACCENT, width=0.4, gap_after=5.0)
+    pdf.set_font("Helvetica", "", _FS_BODY)
+    pdf.set_text_color(*_INK)
+    pdf.multi_cell(
+        _CONTENT_W,
+        4.0,
+        _safe("Os valores podem sofrer alteracao sem previo aviso."),
+    )
+    ticket = (quote.tiflux_ticket_number or "").strip()
+    line = f"Ticket no.: {ticket}" if ticket else "Ticket no.:"
+    pdf.cell(0, 4.5, _safe(line), new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(_GAP)
+
+
+def _write_signatures(pdf: _QuotePdf) -> None:
+    pdf.ln(_GAP)
+    _rule(pdf, color=_RULE, width=0.35, gap_after=5.0)
     col_w = _CONTENT_W / 3.0
     y_line = pdf.get_y()
     pdf.set_draw_color(*_NAVY)

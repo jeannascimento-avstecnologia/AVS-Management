@@ -14,6 +14,7 @@ HUB_TABLES: tuple[str, ...] = (
     "quote_items",
     "quote_templates",
     "quote_module_templates",
+    "quote_proposal_templates",
     "billing_runs",
     "billing_items",
     "billing_artifacts",
@@ -73,6 +74,7 @@ class HubDatabase:
             self._migrate_relax_section_checks(conn)
             self._migrate_quote_module_templates(conn)
             self._migrate_quote_module_template_columns(conn)
+            self._migrate_quote_proposal_templates(conn)
             self._migrate_billing_columns(conn)
 
     def _migrate_quotes_columns(self, conn: sqlite3.Connection) -> None:
@@ -186,9 +188,34 @@ class HubDatabase:
             str(row[1])
             for row in conn.execute("PRAGMA table_info(quote_module_templates)").fetchall()
         }
-        for name, col_type in (("notes", "TEXT"), ("billed_by_name", "TEXT")):
+        for name, col_type in (
+            ("notes", "TEXT"),
+            ("billed_by_name", "TEXT"),
+            ("billed_by_cnpj", "TEXT"),
+            ("simplified", "INTEGER NOT NULL DEFAULT 0"),
+            ("display_name", "TEXT"),
+        ):
             if name not in existing:
                 conn.execute(f"ALTER TABLE quote_module_templates ADD COLUMN {name} {col_type}")
+
+    def _migrate_quote_proposal_templates(self, conn: sqlite3.Connection) -> None:
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'quote_proposal_templates'"
+        ).fetchone()
+        if row is not None:
+            return
+        conn.executescript(
+            """
+            CREATE TABLE quote_proposal_templates (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                name          TEXT    NOT NULL,
+                modules_json  TEXT    NOT NULL,
+                items_json    TEXT    NOT NULL,
+                created_at    TEXT    NOT NULL,
+                updated_at    TEXT    NOT NULL
+            );
+            """
+        )
 
     def _migrate_billing_columns(self, conn: sqlite3.Connection) -> None:
         """ALTER TABLE idempotente — desconto em billing_runs."""

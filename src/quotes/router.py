@@ -19,6 +19,8 @@ from src.quotes.schemas import (
     LeadTemperature,
     QuoteModuleTemplateUpdate,
     QuoteModuleTemplateWrite,
+    QuoteProposalTemplateUpdate,
+    QuoteProposalTemplateWrite,
     QuoteStatus,
     QuoteTemplateUpdate,
     QuoteTemplateWrite,
@@ -184,6 +186,67 @@ def build_quotes_router() -> APIRouter:
         log_action(
             request,
             action="orcamento.module_template.delete",
+            resource=str(template_id),
+            detail={},
+            user=user,
+        )
+
+    @router.get("/proposal-templates")
+    async def list_proposal_templates(
+        _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        templates = _service().list_proposal_templates()
+        return {"templates": [t.model_dump() for t in templates]}
+
+    @router.post("/proposal-templates", status_code=201)
+    async def create_proposal_template(
+        request: Request,
+        body: QuoteProposalTemplateWrite,
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        template = _service().create_proposal_template(body)
+        log_action(
+            request,
+            action="orcamento.proposal_template.create",
+            resource=str(template.id),
+            detail={"name": template.name},
+            user=user,
+        )
+        return template.model_dump()
+
+    @router.patch("/proposal-templates/{template_id}")
+    async def update_proposal_template(
+        request: Request,
+        template_id: int,
+        body: QuoteProposalTemplateUpdate,
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        try:
+            template = _service().update_proposal_template(template_id, body)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        log_action(
+            request,
+            action="orcamento.proposal_template.update",
+            resource=str(template.id),
+            detail={"name": template.name},
+            user=user,
+        )
+        return template.model_dump()
+
+    @router.delete("/proposal-templates/{template_id}", status_code=204)
+    async def delete_proposal_template(
+        request: Request,
+        template_id: int,
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> None:
+        try:
+            _service().delete_proposal_template(template_id)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        log_action(
+            request,
+            action="orcamento.proposal_template.delete",
             resource=str(template_id),
             detail={},
             user=user,

@@ -72,6 +72,9 @@ export type QuoteModule = {
   labor_hourly_rate: number | null
   notes: string | null
   billed_by_name: string | null
+  billed_by_cnpj: string | null
+  simplified: boolean
+  display_name: string | null
   sort_order: number
 }
 
@@ -199,6 +202,9 @@ export type QuoteModuleTemplateRead = {
   show_labor: boolean
   notes: string | null
   billed_by_name: string | null
+  billed_by_cnpj: string | null
+  simplified: boolean
+  display_name: string | null
   lines: QuoteTemplateLine[]
   created_at: string
 }
@@ -210,6 +216,9 @@ export type QuoteModuleTemplateWrite = {
   show_labor?: boolean
   notes?: string | null
   billed_by_name?: string | null
+  billed_by_cnpj?: string | null
+  simplified?: boolean
+  display_name?: string | null
   lines?: QuoteTemplateLine[]
 }
 
@@ -219,7 +228,31 @@ export type QuoteModuleTemplateUpdate = {
   show_labor?: boolean | null
   notes?: string | null
   billed_by_name?: string | null
+  billed_by_cnpj?: string | null
+  simplified?: boolean | null
+  display_name?: string | null
   lines?: QuoteTemplateLine[] | null
+}
+
+export type QuoteProposalTemplateRead = {
+  id: number
+  name: string
+  modules: QuoteModule[]
+  items: QuoteItemWrite[]
+  created_at: string
+  updated_at: string
+}
+
+export type QuoteProposalTemplateWrite = {
+  name: string
+  modules: QuoteModule[]
+  items: QuoteItemWrite[]
+}
+
+export type QuoteProposalTemplateUpdate = {
+  name?: string | null
+  modules?: QuoteModule[] | null
+  items?: QuoteItemWrite[] | null
 }
 
 export type VhsysCatalogSubcategory = {
@@ -889,6 +922,27 @@ export const api = {
 
   deleteQuoteModuleTemplate: async (id: number): Promise<void> => {
     await request<Record<string, never>>(`/orcamentos/module-templates/${id}`, {
+      method: 'DELETE',
+    })
+  },
+
+  listQuoteProposalTemplates: () =>
+    request<{ templates: QuoteProposalTemplateRead[] }>('/orcamentos/proposal-templates'),
+
+  createQuoteProposalTemplate: (body: QuoteProposalTemplateWrite) =>
+    request<QuoteProposalTemplateRead>('/orcamentos/proposal-templates', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  updateQuoteProposalTemplate: (id: number, body: QuoteProposalTemplateUpdate) =>
+    request<QuoteProposalTemplateRead>(`/orcamentos/proposal-templates/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    }),
+
+  deleteQuoteProposalTemplate: async (id: number): Promise<void> => {
+    await request<Record<string, never>>(`/orcamentos/proposal-templates/${id}`, {
       method: 'DELETE',
     })
   },

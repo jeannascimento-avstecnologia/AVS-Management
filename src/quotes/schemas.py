@@ -76,6 +76,9 @@ class QuoteModule(BaseModel):
     labor_hourly_rate: float | None = None
     notes: str | None = None
     billed_by_name: str | None = Field(default=None, max_length=300)
+    billed_by_cnpj: str | None = None
+    simplified: bool = False
+    display_name: str | None = Field(default=None, max_length=200)
     sort_order: int = Field(default=0, ge=0)
 
     @field_validator("id")
@@ -101,6 +104,16 @@ class QuoteModule(BaseModel):
     def _normalize_module_billed_by(cls, value: str | None) -> str | None:
         return _normalize_optional_text(value, max_len=300, label="Faturado por")
 
+    @field_validator("billed_by_cnpj")
+    @classmethod
+    def _normalize_module_billed_cnpj(cls, value: str | None) -> str | None:
+        return _normalize_optional_cnpj(value)
+
+    @field_validator("display_name")
+    @classmethod
+    def _normalize_display_name(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=200, label="Nome de exibição")
+
     @model_validator(mode="after")
     def _legacy_kind_matches_id(self) -> QuoteModule:
         if self.legacy_kind is not None and self.id != self.legacy_kind:
@@ -116,23 +129,56 @@ class QuoteModule(BaseModel):
 
 
 def seed_default_modules() -> list[QuoteModule]:
-    """Seed obrigatório no create: Implantação + Mensalidade."""
-    return [
-        QuoteModule(
-            id="implantacao",
-            title="Implantação",
-            legacy_kind="implantacao",
-            show_labor=False,
-            sort_order=0,
-        ),
-        QuoteModule(
-            id="mensalidade",
-            title="Mensalidade",
-            legacy_kind="mensalidade",
-            show_labor=True,
-            sort_order=1,
-        ),
-    ]
+    """Create sem `modules` e sem itens → canvas vazio.
+
+    Clientes que omitem `modules` mas enviam itens (legado) recebem módulos inferidos.
+    """
+    return []
+
+
+def _preset_implant() -> QuoteModule:
+    return QuoteModule(
+        id="implantacao",
+        title="Implantação",
+        legacy_kind="implantacao",
+        show_labor=False,
+        sort_order=0,
+    )
+
+
+def _preset_monthly() -> QuoteModule:
+    return QuoteModule(
+        id="mensalidade",
+        title="Mensalidade",
+        legacy_kind="mensalidade",
+        show_labor=True,
+        sort_order=1,
+    )
+
+
+def infer_modules_from_items(items: list[QuoteItemWrite]) -> list[QuoteModule]:
+    """Quando create omite `modules` mas traz itens, reconstroi blocos pelos `section`."""
+    sections: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item.section not in seen:
+            seen.add(item.section)
+            sections.append(item.section)
+    out: list[QuoteModule] = []
+    for idx, section in enumerate(sections):
+        if section == "implantacao":
+            out.append(_preset_implant().model_copy(update={"sort_order": idx}))
+        elif section == "mensalidade":
+            out.append(_preset_monthly().model_copy(update={"sort_order": idx}))
+        else:
+            out.append(
+                QuoteModule(
+                    id=section,
+                    title=section.replace("_", " ").title(),
+                    sort_order=idx,
+                )
+            )
+    return out
 
 
 def validate_modules_and_items(
@@ -204,6 +250,17 @@ class QuoteItemRead(BaseModel):
     total_value: float
     template_key: str | None = None
     sort_order: int = 0
+
+
+def _normalize_optional_cnpj(value: str | None) -> str | None:
+    if value is None:
+        return None
+    digits = normalize_cnpj(value)
+    if not digits:
+        return None
+    if len(digits) != 14 or not validate_cnpj(digits):
+        raise ValueError("CNPJ inválido (14 dígitos).")
+    return digits
 
 
 def _normalize_optional_text(value: str | None, *, max_len: int, label: str) -> str | None:
@@ -283,10 +340,13 @@ class QuoteWrite(BaseModel):
 
     @model_validator(mode="after")
     def _validate_modules(self) -> QuoteWrite:
-        mods = self.modules if self.modules is not None else seed_default_modules()
-        # Merge flat legacy fields into seed modules when modules omitted
-        if self.modules is None:
+        if self.modules is not None:
+            mods = self.modules
+        elif self.items:
+            mods = infer_modules_from_items(self.items)
             mods = _apply_flat_to_seed(mods, self)
+        else:
+            mods = seed_default_modules()
         mods = validate_modules_and_items(mods, self.items)
         object.__setattr__(self, "modules", mods)
         return self
@@ -544,6 +604,9 @@ class QuoteModuleTemplateWrite(BaseModel):
     show_labor: bool = False
     notes: str | None = None
     billed_by_name: str | None = Field(default=None, max_length=300)
+    billed_by_cnpj: str | None = None
+    simplified: bool = False
+    display_name: str | None = Field(default=None, max_length=200)
     lines: list[QuoteTemplateLine] = Field(default_factory=list)
 
     @field_validator("name", "title")
@@ -563,6 +626,16 @@ class QuoteModuleTemplateWrite(BaseModel):
     @classmethod
     def _normalize_billed_by(cls, value: str | None) -> str | None:
         return _normalize_optional_text(value, max_len=300, label="Faturado por")
+
+    @field_validator("billed_by_cnpj")
+    @classmethod
+    def _normalize_billed_cnpj(cls, value: str | None) -> str | None:
+        return _normalize_optional_cnpj(value)
+
+    @field_validator("display_name")
+    @classmethod
+    def _normalize_display(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=200, label="Nome de exibição")
 
     @field_validator("key")
     @classmethod
@@ -587,6 +660,9 @@ class QuoteModuleTemplateUpdate(BaseModel):
     show_labor: bool | None = None
     notes: str | None = None
     billed_by_name: str | None = Field(default=None, max_length=300)
+    billed_by_cnpj: str | None = None
+    simplified: bool | None = None
+    display_name: str | None = Field(default=None, max_length=200)
     lines: list[QuoteTemplateLine] | None = None
 
     @field_validator("name", "title")
@@ -609,6 +685,16 @@ class QuoteModuleTemplateUpdate(BaseModel):
     def _normalize_billed_by(cls, value: str | None) -> str | None:
         return _normalize_optional_text(value, max_len=300, label="Faturado por")
 
+    @field_validator("billed_by_cnpj")
+    @classmethod
+    def _normalize_billed_cnpj(cls, value: str | None) -> str | None:
+        return _normalize_optional_cnpj(value)
+
+    @field_validator("display_name")
+    @classmethod
+    def _normalize_display(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=200, label="Nome de exibição")
+
 
 class QuoteModuleTemplateRead(BaseModel):
     id: int
@@ -618,5 +704,64 @@ class QuoteModuleTemplateRead(BaseModel):
     show_labor: bool
     notes: str | None = None
     billed_by_name: str | None = None
+    billed_by_cnpj: str | None = None
+    simplified: bool = False
+    display_name: str | None = None
     lines: list[QuoteTemplateLine]
     created_at: str
+
+
+class QuoteProposalTemplateWrite(BaseModel):
+    """Snapshot do canvas do passo 2 (sem cliente)."""
+
+    name: str = Field(min_length=1, max_length=200)
+    modules: list[QuoteModule] = Field(default_factory=list)
+    items: list[QuoteItemWrite] = Field(default_factory=list)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Nome do modelo é obrigatório.")
+        return cleaned
+
+    @model_validator(mode="after")
+    def _validate_canvas(self) -> QuoteProposalTemplateWrite:
+        mods = validate_modules_and_items(self.modules, self.items)
+        object.__setattr__(self, "modules", mods)
+        return self
+
+
+class QuoteProposalTemplateUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    modules: list[QuoteModule] | None = None
+    items: list[QuoteItemWrite] | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Nome do modelo é obrigatório.")
+        return cleaned
+
+    @model_validator(mode="after")
+    def _validate_canvas(self) -> QuoteProposalTemplateUpdate:
+        if self.modules is not None:
+            items = self.items if self.items is not None else []
+            object.__setattr__(
+                self, "modules", validate_modules_and_items(self.modules, items)
+            )
+        return self
+
+
+class QuoteProposalTemplateRead(BaseModel):
+    id: int
+    name: str
+    modules: list[QuoteModule]
+    items: list[QuoteItemWrite]
+    created_at: str
+    updated_at: str

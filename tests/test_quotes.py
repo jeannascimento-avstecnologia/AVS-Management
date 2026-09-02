@@ -492,6 +492,7 @@ def test_module_template_notes_and_billed_by_roundtrip(quotes_client: TestClient
             "title": "Backup",
             "notes": "Cobrar por seat",
             "billed_by_name": "Fornecedor M365",
+            "billed_by_cnpj": "08354533000183",
             "lines": [{"name": "Licença", "qty": 1, "unit_value": 26.4, "sort_order": 0}],
         },
     )
@@ -499,14 +500,16 @@ def test_module_template_notes_and_billed_by_roundtrip(quotes_client: TestClient
     body = created.json()
     assert body["notes"] == "Cobrar por seat"
     assert body["billed_by_name"] == "Fornecedor M365"
+    assert body["billed_by_cnpj"] == "08354533000183"
 
     cleared = quotes_client.patch(
         f"/orcamentos/module-templates/{body['id']}",
-        json={"notes": "", "billed_by_name": ""},
+        json={"notes": "", "billed_by_name": "", "billed_by_cnpj": ""},
     )
     assert cleared.status_code == 200
     assert cleared.json()["notes"] is None
     assert cleared.json()["billed_by_name"] is None
+    assert cleared.json()["billed_by_cnpj"] is None
 
 
 def test_approve_status_transition(quotes_client: TestClient) -> None:
@@ -634,7 +637,7 @@ def test_pdf_layout_title_and_no_implant_labor(quotes_client: TestClient, tmp_pa
     """PDF: Orçamento : M{id}, assinaturas; implant labor ignorada no cálculo/render."""
     from src.quotes.pdf import quote_display_id, render_quote_pdf
     from src.quotes.pdf_parties import QuotePdfClient, QuotePdfIssuer
-    from src.quotes.schemas import QuoteItemRead, QuoteRead
+    from src.quotes.schemas import QuoteItemRead, QuoteModule, QuoteRead
 
     quote = QuoteRead(
         id=2353,
@@ -668,6 +671,24 @@ def test_pdf_layout_title_and_no_implant_labor(quotes_client: TestClient, tmp_pa
         submitted_at=None,
         sent_at=None,
         approved_at=None,
+        modules=[
+            QuoteModule(
+                id="implantacao",
+                title="Implantação",
+                legacy_kind="implantacao",
+                show_labor=False,
+                sort_order=0,
+            ),
+            QuoteModule(
+                id="mensalidade",
+                title="Mensalidade",
+                legacy_kind="mensalidade",
+                show_labor=True,
+                labor_hours=2.0,
+                labor_hourly_rate=50.0,
+                sort_order=1,
+            ),
+        ],
         items=[
             QuoteItemRead(
                 id=1,
@@ -793,20 +814,15 @@ def test_pdf_requires_permission(quotes_auth_client: TestClient) -> None:
     assert blocked_get.status_code == 403
 
 
-def test_create_seeds_implant_and_mensalidade_modules(quotes_client: TestClient) -> None:
-    created = quotes_client.post("/orcamentos", json=QUOTE_PAYLOAD)
+def test_create_starts_with_empty_modules(quotes_client: TestClient) -> None:
+    created = quotes_client.post(
+        "/orcamentos",
+        json={"cnpj": CNPJ, "client_name": "Vazio", "items": []},
+    )
     assert created.status_code == 201, created.text
     body = created.json()
-    mods = body["modules"]
-    assert len(mods) == 2
-    assert mods[0]["id"] == "implantacao"
-    assert mods[0]["legacy_kind"] == "implantacao"
-    assert mods[0]["show_labor"] is False
-    assert mods[1]["id"] == "mensalidade"
-    assert mods[1]["legacy_kind"] == "mensalidade"
-    assert mods[1]["show_labor"] is True
-    assert mods[0]["notes"] is None
-    assert mods[0]["billed_by_name"] is None
+    assert body["modules"] == []
+    assert body["items"] == []
 
 
 def test_module_notes_billed_by_and_recorrente_anual_persist(
@@ -1000,3 +1016,49 @@ def test_legacy_quote_without_modules_json_loads_seed(
     assert len(mods) == 2
     assert mods[0]["id"] == "implantacao"
     assert mods[1]["id"] == "mensalidade"
+
+
+def test_proposal_template_crud_and_apply_payload(quotes_client: TestClient) -> None:
+    created = quotes_client.post(
+        "/orcamentos/proposal-templates",
+        json={
+            "name": "Pacote M365",
+            "modules": [
+                {
+                    "id": "custom_pack",
+                    "title": "Licenças",
+                    "show_labor": False,
+                    "simplified": True,
+                    "display_name": "Microsoft 365",
+                    "billed_by_name": "Parceiro",
+                    "billed_by_cnpj": "08354533000183",
+                    "sort_order": 0,
+                }
+            ],
+            "items": [
+                {
+                    "section": "custom_pack",
+                    "name": "M365 E3",
+                    "qty": 2,
+                    "unit_value": 10,
+                    "sort_order": 0,
+                }
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["name"] == "Pacote M365"
+    assert body["modules"][0]["simplified"] is True
+    assert body["modules"][0]["display_name"] == "Microsoft 365"
+    assert body["modules"][0]["billed_by_cnpj"] == "08354533000183"
+    tid = body["id"]
+
+    listed = quotes_client.get("/orcamentos/proposal-templates")
+    assert listed.status_code == 200
+    assert any(t["id"] == tid for t in listed.json()["templates"])
+
+    deleted = quotes_client.delete(f"/orcamentos/proposal-templates/{tid}")
+    assert deleted.status_code == 204
+    assert quotes_client.get("/orcamentos/proposal-templates").json()["templates"] == []
+

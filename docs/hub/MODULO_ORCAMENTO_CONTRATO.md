@@ -46,18 +46,19 @@ flowchart LR
 
 | Verbo | Onde | O quê |
 |-------|------|--------|
-| **Inserir bloco** | Topo do passo 2 (primary) | Abre picker: Biblioteca · em branco · restaurar Implantação/Mensalidade (se ausentes) |
-| **Biblioteca** | Topo (secondary) + dialog CRUD | Catálogo `quote_module_templates` — **Biblioteca de blocos** |
+| **Inserir bloco** | Topo do passo 2 (primary) | Abre picker: Biblioteca de Blocos (com busca) · em branco · restaurar Implantação/Mensalidade (se ausentes) |
+| **Biblioteca de Blocos** | Topo + dialog CRUD | Catálogo `quote_module_templates` — busca por nome |
+| **Biblioteca de Orçamentos** | Topo do passo 2 + lista `/orcamentos` | Catálogo `quote_proposal_templates` — busca; apply substitui o canvas |
+| **Salvar modelo de orçamento** | Fim do passo 2 | Persiste nome + `modules_json` + itens → `quote_proposal_templates` |
 | **Salvar na biblioteca** | Menu ⋯ do card do bloco | Persiste título + `show_labor` + linhas → `quote_module_templates` (`name` = `title` = valor digitado) |
 
 Proibido na UI do wizard: strings “modelo de itens”, “modelo de módulo”, ids `custom_*` expostos, dualidade apply/save de itens.
 
-**Seed automático ≠ bloco fixo**
+**Seed vazio; presets só via restaurar**
 
-- Em **todo orçamento novo**, o sistema **sempre seeda** dois módulos:
-  - `id=implantacao`, título `Implantação`, `legacy_kind=implantacao`, `show_labor=false`
-  - `id=mensalidade`, título `Mensalidade`, `legacy_kind=mensalidade`, `show_labor=true`
-- Eles **não são fixos**: o usuário trata **todos** os módulos como blocos iguais:
+- Em **todo orçamento novo**, o canvas do passo 2 inicia **vazio** (`modules=[]`). Não seedar Implantação/Mensalidade.
+- Presets sistema (`id=implantacao` / `id=mensalidade`) existem só no picker **Inserir bloco → Restaurar**.
+- O usuário trata **todos** os módulos como blocos iguais:
   - **Remover** (confirmação; apaga itens daquele `module.id`)
   - **Reordenar** (MVP: botões ↑↓; PDF segue `sort_order` do canvas)
   - **Renomear** título (ex. Implantação → outro nome; `id`/`legacy_kind` permanecem para espelho/PDF OS enquanto o módulo existir)
@@ -67,18 +68,22 @@ Proibido na UI do wizard: strings “modelo de itens”, “modelo de módulo”
   2. **Bloco em branco** — título livre; `id` slug único; `show_labor=false` no MVP
   3. Se Implantação/Mensalidade foram removidos → **restaurar** presets sistema (mesmo `id`/`legacy_kind`) — **não** vêm da Biblioteca
 - Card do bloco: título editável · ↑↓ · **+ Item** · remover; **⋯** só **Salvar na biblioteca**
-- Dialog **Biblioteca de blocos**: CRUD de `quote_module_templates` (nome do bloco + linhas VHSYS + defaults de **Faturado por** e **Observações**). Dialogs/listas: `max-h` dinâmico + `overflow-y-auto` (conteúdo nunca fica inacessível).
+- Dialog **Biblioteca de Blocos**: CRUD de `quote_module_templates` (nome do bloco + linhas VHSYS + defaults de **Faturado por** + CNPJ e **Observações**). Barra de pesquisa por nome. Dialogs/listas: `max-h` dinâmico + `overflow-y-auto`.
+- Dialog **Biblioteca de Orçamentos**: CRUD listagem de `quote_proposal_templates` (nome + snapshot de módulos/itens, **sem** cliente). Apply **substitui** módulos e itens do rascunho (confirmação se o canvas não estiver vazio). Na lista principal, selecionar um modelo vincula o snapshot ao **criar** o rascunho.
 
 **Por bloco (genérico)**
 
 - Itens em lista (N linhas) com `section = module.id`
   - Descrição via **busca VHSYS** + via dupla cadastrar no VHSYS
+  - Item já adicionado no mesmo bloco **some** da lista de seleção (nome, case-insensitive)
   - Quantidade, valor unitário / total
   - Adicionar / remover linhas
+- **Simplificar** (check no card): oculta a listagem de linhas; mostra **Nome de Exibição** (`display_name`) + soma dos totais das linhas. Condições, pagamento, observações e faturado permanecem. Linhas continuam persistidas.
 - **`quote_templates` (modelos de itens) = legado** — API/tabela permanecem; **não montar** painel/apply/save de itens no wizard neste MVP
 - Forma de pagamento + desconto %↔R$ espelho (`líquido = subtotal − desconto`)
 - Mão de obra só se `show_labor` (default Mensalidade; herdado do bloco da Biblioteca se houver)
-- Campo **Faturado por** **por bloco** (busca VHSYS); **sem** Faturado por geral no wizard. Defaults da Biblioteca copiam para o módulo ao inserir e continuam editáveis no orçamento.
+- Campo **Faturado por** **por bloco** (busca VHSYS); ao selecionar, persistir **nome + CNPJ** (`billed_by_name`, `billed_by_cnpj`) e exibir o CNPJ na UI e no PDF. **Sem** Faturado por geral no wizard.
+- Condições do bloco: **sem** Categoria/Subcategoria VHSYS (filtro removido; catálogo busca global).
 
 #### PDF do orçamento
 - Spec detalhada: [`SPEC_PDF_ORCAMENTO.md`](./SPEC_PDF_ORCAMENTO.md)

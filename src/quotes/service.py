@@ -20,6 +20,9 @@ from src.quotes.schemas import (
     QuoteModuleTemplateRead,
     QuoteModuleTemplateUpdate,
     QuoteModuleTemplateWrite,
+    QuoteProposalTemplateRead,
+    QuoteProposalTemplateUpdate,
+    QuoteProposalTemplateWrite,
     QuoteRead,
     QuoteTemplateLine,
     QuoteTemplateRead,
@@ -352,7 +355,7 @@ class QuoteService:
 
     def create(self, data: QuoteWrite, *, created_by: int | None) -> QuoteRead:
         now = _utcnow_iso()
-        modules = list(data.modules or seed_default_modules())
+        modules = list(data.modules if data.modules is not None else seed_default_modules())
         modules = validate_modules_and_items(modules, data.items)
         flat = _legacy_flat_from_modules(modules)
         with self._db.connect() as conn:
@@ -819,6 +822,7 @@ class QuoteService:
             rows = conn.execute(
                 """
                 SELECT id, key, name, title, show_labor, notes, billed_by_name,
+                       billed_by_cnpj, simplified, display_name,
                        lines_json, created_at
                 FROM quote_module_templates
                 ORDER BY name, id
@@ -831,6 +835,7 @@ class QuoteService:
             row = conn.execute(
                 """
                 SELECT id, key, name, title, show_labor, notes, billed_by_name,
+                       billed_by_cnpj, simplified, display_name,
                        lines_json, created_at
                 FROM quote_module_templates
                 WHERE id = ?
@@ -858,8 +863,9 @@ class QuoteService:
                 """
                 INSERT INTO quote_module_templates
                     (key, name, title, show_labor, notes, billed_by_name,
+                     billed_by_cnpj, simplified, display_name,
                      lines_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     key,
@@ -868,6 +874,9 @@ class QuoteService:
                     1 if data.show_labor else 0,
                     data.notes,
                     data.billed_by_name,
+                    data.billed_by_cnpj,
+                    1 if data.simplified else 0,
+                    data.display_name,
                     json.dumps(lines, ensure_ascii=False),
                     now,
                 ),
@@ -890,6 +899,19 @@ class QuoteService:
             if "billed_by_name" in data.model_fields_set
             else current.billed_by_name
         )
+        billed_by_cnpj = (
+            data.billed_by_cnpj
+            if "billed_by_cnpj" in data.model_fields_set
+            else current.billed_by_cnpj
+        )
+        simplified = (
+            data.simplified if data.simplified is not None else current.simplified
+        )
+        display_name = (
+            data.display_name
+            if "display_name" in data.model_fields_set
+            else current.display_name
+        )
         if data.lines is not None:
             lines = self._normalize_template_lines(data.lines)
         else:
@@ -907,6 +929,7 @@ class QuoteService:
                 """
                 UPDATE quote_module_templates
                 SET name = ?, title = ?, show_labor = ?, notes = ?, billed_by_name = ?,
+                    billed_by_cnpj = ?, simplified = ?, display_name = ?,
                     lines_json = ?
                 WHERE id = ?
                 """,
@@ -916,6 +939,9 @@ class QuoteService:
                     1 if show_labor else 0,
                     notes,
                     billed_by_name,
+                    billed_by_cnpj,
+                    1 if simplified else 0,
+                    display_name,
                     json.dumps(lines, ensure_ascii=False),
                     template_id,
                 ),
@@ -962,6 +988,9 @@ class QuoteService:
             show_labor=bool(row["show_labor"]),
             notes=row["notes"],
             billed_by_name=row["billed_by_name"],
+            billed_by_cnpj=row["billed_by_cnpj"] if "billed_by_cnpj" in row.keys() else None,
+            simplified=bool(row["simplified"]) if "simplified" in row.keys() else False,
+            display_name=row["display_name"] if "display_name" in row.keys() else None,
             lines=lines,
             created_at=str(row["created_at"]),
         )
@@ -1014,6 +1043,111 @@ class QuoteService:
                     return candidate
                 candidate = f"{prefix}_{n}"[:80]
                 n += 1
+
+    def list_proposal_templates(self) -> list[QuoteProposalTemplateRead]:
+        with self._db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, name, modules_json, items_json, created_at, updated_at
+                FROM quote_proposal_templates
+                ORDER BY name, id
+                """
+            ).fetchall()
+        return [self._row_to_proposal_template(row) for row in rows]
+
+    def get_proposal_template(self, template_id: int) -> QuoteProposalTemplateRead:
+        with self._db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, name, modules_json, items_json, created_at, updated_at
+                FROM quote_proposal_templates
+                WHERE id = ?
+                """,
+                (template_id,),
+            ).fetchone()
+        if row is None:
+            raise QuoteNotFoundError(f"Modelo de orçamento {template_id} não encontrado.")
+        return self._row_to_proposal_template(row)
+
+    def create_proposal_template(
+        self, data: QuoteProposalTemplateWrite
+    ) -> QuoteProposalTemplateRead:
+        now = _utcnow_iso()
+        modules_json = json.dumps(
+            [m.model_dump() for m in data.modules], ensure_ascii=False
+        )
+        items_json = json.dumps(
+            [i.model_dump() for i in data.items], ensure_ascii=False
+        )
+        with self._db.connect() as conn:
+            cur = conn.execute(
+                """
+                INSERT INTO quote_proposal_templates
+                    (name, modules_json, items_json, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (data.name, modules_json, items_json, now, now),
+            )
+            template_id = int(cur.lastrowid)
+        return self.get_proposal_template(template_id)
+
+    def update_proposal_template(
+        self, template_id: int, data: QuoteProposalTemplateUpdate
+    ) -> QuoteProposalTemplateRead:
+        current = self.get_proposal_template(template_id)
+        name = data.name if data.name is not None else current.name
+        modules = data.modules if data.modules is not None else current.modules
+        items = data.items if data.items is not None else current.items
+        if data.modules is not None:
+            items = data.items if data.items is not None else []
+            modules = validate_modules_and_items(modules, items)
+        now = _utcnow_iso()
+        with self._db.connect() as conn:
+            cur = conn.execute(
+                """
+                UPDATE quote_proposal_templates
+                SET name = ?, modules_json = ?, items_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    name,
+                    json.dumps([m.model_dump() for m in modules], ensure_ascii=False),
+                    json.dumps([i.model_dump() for i in items], ensure_ascii=False),
+                    now,
+                    template_id,
+                ),
+            )
+            if cur.rowcount == 0:
+                raise QuoteNotFoundError(
+                    f"Modelo de orçamento {template_id} não encontrado."
+                )
+        return self.get_proposal_template(template_id)
+
+    def delete_proposal_template(self, template_id: int) -> None:
+        with self._db.connect() as conn:
+            cur = conn.execute(
+                "DELETE FROM quote_proposal_templates WHERE id = ?",
+                (template_id,),
+            )
+            if cur.rowcount == 0:
+                raise QuoteNotFoundError(
+                    f"Modelo de orçamento {template_id} não encontrado."
+                )
+
+    @staticmethod
+    def _row_to_proposal_template(row: sqlite3.Row) -> QuoteProposalTemplateRead:
+        modules_raw = json.loads(str(row["modules_json"]))
+        items_raw = json.loads(str(row["items_json"]))
+        modules = [QuoteModule.model_validate(m) for m in modules_raw]
+        items = [QuoteItemWrite.model_validate(i) for i in items_raw]
+        return QuoteProposalTemplateRead(
+            id=int(row["id"]),
+            name=str(row["name"]),
+            modules=modules,
+            items=items,
+            created_at=str(row["created_at"]),
+            updated_at=str(row["updated_at"]),
+        )
 
     def _pdf_root(self) -> Path:
         root = Path(get_settings().hub_pdf_dir).expanduser().resolve()

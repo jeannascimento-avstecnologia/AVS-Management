@@ -79,8 +79,9 @@ class Settings(BaseSettings):
     )
     quote_issuer_phone: str = "(19) 3243-9559"
     quote_issuer_mobile: str = "(19) 99656-6524"
-    quote_issuer_email: str = "contato@avstecnologia.com.br"
-    quote_issuer_site: str = "www.avstecnologia.com.br"
+    quote_issuer_ie: str = "795.275.950.117"
+    quote_issuer_email: str = "comercial@avstecnologia.cloud"
+    quote_issuer_site: str = "https://avstecnologia.cloud/"
 
     @field_validator(
         "tiflux_api_token",

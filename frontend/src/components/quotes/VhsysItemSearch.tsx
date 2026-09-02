@@ -18,6 +18,7 @@ type Props = {
   subcategoryId?: number | null
   onChange: (value: string) => void
   onSelect: (item: VhsysCatalogItem) => void
+  excludeNames?: string[]
 }
 
 function money(value: number): string {
@@ -47,6 +48,7 @@ export function VhsysItemSearch({
   subcategoryId = null,
   onChange,
   onSelect,
+  excludeNames = [],
 }: Props) {
   const listId = useId()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -120,10 +122,21 @@ export function VhsysItemSearch({
     },
   })
 
+  const excludeSet = useMemo(
+    () => new Set(excludeNames.map((n) => n.trim().toLocaleLowerCase('pt-BR')).filter(Boolean)),
+    [excludeNames],
+  )
+
   const allItems = catalog.data?.items ?? []
   const items = useMemo(
-    () => allItems.filter((item) => matchesCatalog(item, debounced)),
-    [allItems, debounced],
+    () =>
+      allItems.filter((item) => {
+        if (!matchesCatalog(item, debounced)) return false
+        const key = item.name.trim().toLocaleLowerCase('pt-BR')
+        if (excludeSet.has(key) && key !== value.trim().toLocaleLowerCase('pt-BR')) return false
+        return true
+      }),
+    [allItems, debounced, excludeSet, value],
   )
   const total = catalog.data?.count ?? allItems.length
   const exact = useMemo(() => exactNameMatch(allItems, debounced), [allItems, debounced])

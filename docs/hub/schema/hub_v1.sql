@@ -104,8 +104,25 @@ CREATE TABLE quote_module_templates (
                 CHECK (show_labor IN (0, 1)),
     notes           TEXT,
     billed_by_name  TEXT,
+    billed_by_cnpj  TEXT,
+    simplified      INTEGER NOT NULL DEFAULT 0
+                    CHECK (simplified IN (0, 1)),
+    display_name    TEXT,
     lines_json  TEXT    NOT NULL,
     created_at  TEXT    NOT NULL
+);
+
+-- =============================================================================
+-- 3c. quote_proposal_templates
+-- Modelos de orçamento (snapshot do canvas passo 2; sem cliente).
+-- =============================================================================
+CREATE TABLE quote_proposal_templates (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    name          TEXT    NOT NULL,
+    modules_json  TEXT    NOT NULL,
+    items_json    TEXT    NOT NULL,
+    created_at    TEXT    NOT NULL,
+    updated_at    TEXT    NOT NULL
 );
 
 -- =============================================================================

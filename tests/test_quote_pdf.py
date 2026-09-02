@@ -51,8 +51,9 @@ def _issuer() -> QuotePdfIssuer:
         address_line="Rua Teste, 70 Parque - Campinas - SP CEP: 13.087-240",
         phone="(19) 3243-9559",
         mobile="(19) 99656-6524",
-        email="contato@avstecnologia.com.br",
-        site="www.avstecnologia.com.br",
+        email="comercial@avstecnologia.cloud",
+        site="https://avstecnologia.cloud/",
+        ie="795.275.950.117",
     )
 
 
@@ -114,6 +115,7 @@ def _sample_quote(*, quote_id: int = 2353) -> QuoteRead:
                 payment_plan="a_vista",
                 notes="Condicao implant",
                 billed_by_name="Fornecedor Modulo",
+                billed_by_cnpj="08354533000183",
                 sort_order=0,
             ),
             QuoteModule(
@@ -338,7 +340,12 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "Ordem de servi" not in text.lower()
     assert "AVS TECNOLOGIA" in text
     assert "08.354.533/0001-83" in text
-    assert "DADOS DO CLIENTE" in text
+    assert "DADOS DO CLIENTE" not in text
+    assert "Os valores podem sofrer alteracao sem previo aviso" in text
+    assert "Ticket no." in text
+    assert "comercial@avstecnologia.cloud" in text
+    assert "avstecnologia.cloud" in text
+    assert "795.275.950.117" in text
     assert "IMPLANTACAO" in text
     assert "MENSALIDADE" in text
     assert "Assinatura do Prestador" in text
@@ -371,6 +378,43 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     from pypdf import PdfReader
 
     assert len(PdfReader(str(dest)).pages) == 1
+
+
+def test_pdf_simplified_module_hides_line_names(tmp_path: Path) -> None:
+    dest = tmp_path / "simple.pdf"
+    quote = _sample_quote().model_copy(
+        update={
+            "modules": [
+                QuoteModule(
+                    id="licencas",
+                    title="Licenças",
+                    simplified=True,
+                    display_name="Pacote Office",
+                    sort_order=0,
+                )
+            ]
+        }
+    )
+    quote = quote.model_copy(
+        update={
+            "items": [
+                QuoteItemRead(
+                    id=1,
+                    quote_id=quote.id,
+                    section="licencas",
+                    name="Item Secreto XYZ",
+                    qty=1,
+                    unit_value=100,
+                    total_value=100,
+                    sort_order=0,
+                )
+            ]
+        }
+    )
+    render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
+    text = _pdf_text(dest)
+    assert "Pacote Office" in text
+    assert "Item Secreto XYZ" not in text
 
 
 def test_pdf_payment_block_not_split_across_pages(tmp_path: Path) -> None:
@@ -491,5 +535,6 @@ def test_pdf_legacy_without_modules_synthesizes_seed(tmp_path: Path) -> None:
         ),
     )
     text = _pdf_text(dest)
-    assert "IMPLANTACAO" in text
-    assert "MENSALIDADE" in text
+    assert "IMPLANTACAO" not in text
+    assert "MENSALIDADE" not in text
+    assert "Ticket no." in text

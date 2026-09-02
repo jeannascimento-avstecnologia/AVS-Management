@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -12,6 +12,7 @@ import {
   Mail,
   MoreHorizontal,
   Plus,
+  Search,
   Send,
   StickyNote,
   Thermometer,
@@ -19,6 +20,7 @@ import {
   ChevronUp,
   ChevronDown,
   Boxes,
+  FileText,
   Pencil,
   UserPlus,
   UserRound,
@@ -37,6 +39,7 @@ import {
   type QuoteItemWrite,
   type QuoteModule,
   type QuoteModuleTemplateRead,
+  type QuoteProposalTemplateRead,
   type QuoteRead,
   type QuoteSection,
   type QuoteTemplateLine,
@@ -48,9 +51,9 @@ import {
   type QuoteClientLink,
 } from '@/components/quotes/QuoteClientRegisterDialog'
 import { QuoteModuleTemplatesPanel } from '@/components/quotes/QuoteModuleTemplatesPanel'
+import { QuoteProposalTemplatesPanel } from '@/components/quotes/QuoteProposalTemplatesPanel'
 import { localId } from '@/lib/localId'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
-import { VhsysCategoryFields } from '@/components/quotes/VhsysCategoryFields'
 import { VhsysItemSearch } from '@/components/quotes/VhsysItemSearch'
 import { moduleTitleFromTemplate } from '@/lib/quoteModuleTemplates'
 import { VhsysPartySearch } from '@/components/quotes/VhsysPartySearch'
@@ -63,6 +66,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Dialog,
@@ -135,6 +139,9 @@ type DraftModule = {
   labor_hourly_rate: string
   notes: string
   billed_by_name: string
+  billed_by_cnpj: string
+  simplified: boolean
+  display_name: string
   sort_order: number
 }
 
@@ -169,6 +176,9 @@ const PRESET_IMPLANT: DraftModule = {
   labor_hourly_rate: '',
   notes: '',
   billed_by_name: '',
+  billed_by_cnpj: '',
+  simplified: false,
+  display_name: '',
   sort_order: 0,
 }
 
@@ -184,6 +194,9 @@ const PRESET_MONTHLY: DraftModule = {
   labor_hourly_rate: '',
   notes: '',
   billed_by_name: '',
+  billed_by_cnpj: '',
+  simplified: false,
+  display_name: '',
   sort_order: 1,
 }
 
@@ -200,43 +213,17 @@ function moduleFromApi(mod: QuoteModule): DraftModule {
     labor_hourly_rate: mod.labor_hourly_rate != null ? String(mod.labor_hourly_rate) : '',
     notes: mod.notes ?? '',
     billed_by_name: mod.billed_by_name ?? '',
+    billed_by_cnpj: mod.billed_by_cnpj ?? '',
+    simplified: Boolean(mod.simplified),
+    display_name: mod.display_name ?? '',
     sort_order: mod.sort_order,
   }
 }
 
 function modulesFromQuote(quote: QuoteRead): DraftModule[] {
-  if (quote.modules && quote.modules.length > 0) {
-    return [...quote.modules]
-      .sort((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id))
-      .map(moduleFromApi)
-  }
-  // Legado sem modules_json
-  return [
-    {
-      ...PRESET_IMPLANT,
-      payment_plan: quote.implant_payment_plan ?? '',
-      discount_pct:
-        quote.implant_discount_pct != null ? String(quote.implant_discount_pct) : '',
-      discount_value:
-        quote.implant_discount_value != null ? String(quote.implant_discount_value) : '',
-      sort_order: 0,
-    },
-    {
-      ...PRESET_MONTHLY,
-      payment_plan: quote.monthly_payment_plan ?? '',
-      discount_pct:
-        quote.monthly_discount_pct != null ? String(quote.monthly_discount_pct) : '',
-      discount_value:
-        quote.monthly_discount_value != null ? String(quote.monthly_discount_value) : '',
-      labor_hours:
-        quote.monthly_labor_hours != null ? String(quote.monthly_labor_hours) : '',
-      labor_hourly_rate:
-        quote.monthly_labor_hourly_rate != null
-          ? String(quote.monthly_labor_hourly_rate)
-          : '',
-      sort_order: 1,
-    },
-  ]
+  return [...(quote.modules ?? [])]
+    .sort((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id))
+    .map(moduleFromApi)
 }
 
 function slugifyModuleId(title: string): string {
@@ -264,6 +251,9 @@ function draftModuleToApi(mod: DraftModule, index: number): QuoteModule {
     labor_hourly_rate: mod.show_labor ? parseOptionalNumber(mod.labor_hourly_rate) : null,
     notes: mod.notes.trim() || null,
     billed_by_name: mod.billed_by_name.trim() || null,
+    billed_by_cnpj: digitsOnly(mod.billed_by_cnpj) || null,
+    simplified: mod.simplified,
+    display_name: mod.display_name.trim() || null,
     sort_order: index,
   }
 }
@@ -510,13 +500,13 @@ export function QuoteWizardPage() {
   const [pdfPending, setPdfPending] = useState(false)
   const [extraEmailDraft, setExtraEmailDraft] = useState('')
   const [tifluxSearch, setTifluxSearch] = useState('')
-  const [categoryByModule, setCategoryByModule] = useState<Record<string, number | null>>({})
-  const [subcategoryByModule, setSubcategoryByModule] = useState<
-    Record<string, number | null>
-  >({})
   const [addModuleOpen, setAddModuleOpen] = useState(false)
+  const [insertBlockSearch, setInsertBlockSearch] = useState('')
   const [customModuleTitle, setCustomModuleTitle] = useState('')
   const [manageModuleTemplatesOpen, setManageModuleTemplatesOpen] = useState(false)
+  const [proposalLibraryOpen, setProposalLibraryOpen] = useState(false)
+  const [saveProposalOpen, setSaveProposalOpen] = useState(false)
+  const [saveProposalName, setSaveProposalName] = useState('')
   const emailPrefillDone = useRef(false)
   const discountSourceByModule = useRef<Record<string, 'pct' | 'value' | null>>({})
 
@@ -538,6 +528,14 @@ export function QuoteWizardPage() {
   const quote = quoteQuery.data
   const canEdit = quote?.status === 'draft'
   const moduleTemplates = moduleTemplatesQuery.data?.templates ?? []
+  const filteredInsertTemplates = useMemo(() => {
+    const q = insertBlockSearch.trim().toLocaleLowerCase('pt-BR')
+    if (!q) return moduleTemplates
+    return moduleTemplates.filter((tpl) => {
+      const title = moduleTitleFromTemplate(tpl).toLocaleLowerCase('pt-BR')
+      return title.includes(q) || tpl.name.toLocaleLowerCase('pt-BR').includes(q)
+    })
+  }, [moduleTemplates, insertBlockSearch])
 
   useEffect(() => {
     if (!quote) return
@@ -674,6 +672,20 @@ export function QuoteWizardPage() {
     },
   })
 
+  const saveProposalMutation = useMutation({
+    mutationFn: (payload: { name: string; modules: QuoteModule[]; items: QuoteItemWrite[] }) =>
+      api.createQuoteProposalTemplate(payload),
+    onSuccess: (created) => {
+      toast.success(`Modelo “${created.name}” salvo`)
+      setSaveProposalOpen(false)
+      setSaveProposalName('')
+      void queryClient.invalidateQueries({ queryKey: ['quote-proposal-templates'] })
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || 'Erro ao salvar modelo')
+    },
+  })
+
   const persist = useCallback(() => {
     const current = formRef.current
     if (!current || !canEdit) return
@@ -805,6 +817,9 @@ export function QuoteWizardPage() {
           labor_hourly_rate: '',
           notes: '',
           billed_by_name: '',
+          billed_by_cnpj: '',
+          simplified: false,
+          display_name: '',
           sort_order: prev.modules.length,
         },
       ]
@@ -837,6 +852,9 @@ export function QuoteWizardPage() {
           labor_hourly_rate: '',
           notes: template.notes ?? '',
           billed_by_name: template.billed_by_name ?? '',
+          billed_by_cnpj: template.billed_by_cnpj ?? '',
+          simplified: Boolean(template.simplified),
+          display_name: template.display_name ?? '',
           sort_order: prev.modules.length,
         },
       ]
@@ -856,6 +874,45 @@ export function QuoteWizardPage() {
     })
     setAddModuleOpen(false)
     toast.success(`Bloco “${title}” inserido`)
+  }
+
+  function applyProposalTemplate(template: QuoteProposalTemplateRead) {
+    if (!canEdit) return
+    if (form && form.modules.length > 0) {
+      if (
+        !window.confirm(
+          'Substituir os blocos atuais por este modelo? Itens e condições do canvas serão trocados.',
+        )
+      ) {
+        return
+      }
+    }
+    const idMap = new Map<string, string>()
+    const modules: DraftModule[] = [...template.modules]
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((mod, idx) => {
+        const nextId =
+          mod.legacy_kind === 'implantacao' || mod.legacy_kind === 'mensalidade'
+            ? mod.id
+            : `custom_${localId()}`
+        idMap.set(mod.id, nextId)
+        return {
+          ...moduleFromApi(mod),
+          id: nextId,
+          sort_order: idx,
+        }
+      })
+    const items: DraftItem[] = template.items.map((item) => ({
+      localKey: newLocalKey(),
+      section: idMap.get(item.section) ?? item.section,
+      name: item.name,
+      qty: String(item.qty),
+      unit_value: String(item.unit_value),
+      template_key: item.template_key ?? null,
+    }))
+    patchForm((prev) => ({ ...prev, modules, items }))
+    setProposalLibraryOpen(false)
+    toast.success(`Modelo “${template.name}” aplicado`)
   }
 
   function handleManualSave() {
@@ -1294,7 +1351,7 @@ export function QuoteWizardPage() {
         <div className="space-y-4 hub-panel-enter">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-xl text-sm text-muted-foreground">
-              Blocos viram seções do PDF. Use a Biblioteca para reutilizar blocos salvos.
+              Blocos viram seções do PDF. Bibliotecas reutilizam blocos e modelos de orçamento.
             </p>
             {canEdit && (
               <div className="flex flex-wrap gap-2">
@@ -1314,7 +1371,16 @@ export function QuoteWizardPage() {
                   onClick={() => setManageModuleTemplatesOpen(true)}
                 >
                   <Boxes className="h-4 w-4" />
-                  Biblioteca
+                  Biblioteca de Blocos
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className={btnSecondaryClass}
+                  onClick={() => setProposalLibraryOpen(true)}
+                >
+                  <FileText className="h-4 w-4" />
+                  Biblioteca de Orçamentos
                 </Button>
               </div>
             )}
@@ -1323,8 +1389,7 @@ export function QuoteWizardPage() {
           {orderedModules.length === 0 ? (
             <Card className="border-aurora-border bg-aurora-surface shadow-sm">
               <CardContent className="py-8 text-center text-sm text-muted-foreground">
-                Nenhum bloco. Use <strong>Inserir bloco</strong> ou restaure Implantação /
-                Mensalidade.
+                Nenhum bloco. Use <strong>Inserir bloco</strong> ou a Biblioteca de Orçamentos.
               </CardContent>
             </Card>
           ) : (
@@ -1338,15 +1403,6 @@ export function QuoteWizardPage() {
                   section={mod.id}
                   items={items}
                   canEdit={canEdit}
-                  categoryId={categoryByModule[mod.id] ?? null}
-                  subcategoryId={subcategoryByModule[mod.id] ?? null}
-                  onCategoryId={(id) => {
-                    setCategoryByModule((prev) => ({ ...prev, [mod.id]: id }))
-                    setSubcategoryByModule((prev) => ({ ...prev, [mod.id]: null }))
-                  }}
-                  onSubcategoryId={(id) =>
-                    setSubcategoryByModule((prev) => ({ ...prev, [mod.id]: id }))
-                  }
                   paymentPlan={mod.payment_plan}
                   discountPct={mod.discount_pct}
                   discountValue={mod.discount_value}
@@ -1381,14 +1437,37 @@ export function QuoteWizardPage() {
                   onLaborRate={(v) => patchModule(mod.id, { labor_hourly_rate: v })}
                   notes={mod.notes}
                   billedByName={mod.billed_by_name}
+                  billedByCnpj={mod.billed_by_cnpj}
+                  simplified={mod.simplified}
+                  displayName={mod.display_name}
                   onNotes={(v) => patchModule(mod.id, { notes: v })}
                   onBilledByName={(v) => patchModule(mod.id, { billed_by_name: v })}
+                  onBilledByCnpj={(v) => patchModule(mod.id, { billed_by_cnpj: v })}
+                  onSimplified={(v) => patchModule(mod.id, { simplified: v })}
+                  onDisplayName={(v) => patchModule(mod.id, { display_name: v })}
                   onAdd={() => addItem(mod.id)}
                   onRemove={removeItem}
                   onUpdate={updateItem}
                 />
               )
             })
+          )}
+
+          {canEdit && (
+            <div className="flex justify-end">
+              <Button
+                type="button"
+                size="sm"
+                className={btnSecondaryClass}
+                onClick={() => {
+                  setSaveProposalName('')
+                  setSaveProposalOpen(true)
+                }}
+              >
+                <FileText className="h-4 w-4" />
+                Salvar modelo de orçamento
+              </Button>
+            </div>
           )}
 
           <Dialog open={addModuleOpen} onOpenChange={setAddModuleOpen}>
@@ -1400,6 +1479,16 @@ export function QuoteWizardPage() {
                 </DialogDescription>
               </DialogHeader>
               <div className="max-h-[min(70vh,36rem)] space-y-4 overflow-y-auto pr-1">
+                <div className="relative">
+                  <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={insertBlockSearch}
+                    onChange={(e) => setInsertBlockSearch(e.target.value)}
+                    placeholder="Pesquisar blocos…"
+                    className="pl-8"
+                    aria-label="Pesquisar blocos da biblioteca"
+                  />
+                </div>
                 {moduleTemplatesQuery.isPending && (
                   <p className="text-xs text-muted-foreground">Carregando biblioteca…</p>
                 )}
@@ -1422,9 +1511,9 @@ export function QuoteWizardPage() {
                     </Button>
                   </div>
                 )}
-                {moduleTemplates.length > 0 && (
+                {filteredInsertTemplates.length > 0 && (
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {moduleTemplates.map((tpl) => {
+                    {filteredInsertTemplates.map((tpl) => {
                       const importTitle = moduleTitleFromTemplate(tpl)
                       const itemCount = tpl.lines.length
                       return (
@@ -1525,12 +1614,80 @@ export function QuoteWizardPage() {
           >
             <DialogContent className="max-w-3xl">
               <DialogHeader>
-                <DialogTitle>Biblioteca de blocos</DialogTitle>
+                <DialogTitle>Biblioteca de Blocos</DialogTitle>
                 <DialogDescription>
                   CRUD de blocos reutilizáveis. Implantação e Mensalidade não entram aqui.
                 </DialogDescription>
               </DialogHeader>
               <QuoteModuleTemplatesPanel embedded />
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={proposalLibraryOpen} onOpenChange={setProposalLibraryOpen}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>Biblioteca de Orçamentos</DialogTitle>
+                <DialogDescription>
+                  Selecione um modelo para substituir os blocos deste rascunho.
+                </DialogDescription>
+              </DialogHeader>
+              <QuoteProposalTemplatesPanel embedded onSelect={applyProposalTemplate} />
+            </DialogContent>
+          </Dialog>
+
+          <Dialog open={saveProposalOpen} onOpenChange={setSaveProposalOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Salvar modelo de orçamento</DialogTitle>
+                <DialogDescription>
+                  Grava os blocos, itens e condições atuais (sem dados do cliente).
+                </DialogDescription>
+              </DialogHeader>
+              <form
+                className="space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  const name = saveProposalName.trim()
+                  if (!name) {
+                    toast.error('Informe o nome do modelo.')
+                    return
+                  }
+                  if (!form) return
+                  const payload = formToUpdate(form)
+                  saveProposalMutation.mutate({
+                    name,
+                    modules: payload.modules ?? [],
+                    items: payload.items ?? [],
+                  })
+                }}
+              >
+                <div className="space-y-1.5">
+                  <Label htmlFor="proposal-template-name">Nome</Label>
+                  <Input
+                    id="proposal-template-name"
+                    value={saveProposalName}
+                    onChange={(e) => setSaveProposalName(e.target.value)}
+                    maxLength={200}
+                    placeholder="Ex.: Pacote M365 padrão"
+                  />
+                </div>
+                <DialogFooter>
+                  <Button
+                    type="button"
+                    className={btnSecondaryClass}
+                    onClick={() => setSaveProposalOpen(false)}
+                  >
+                    Cancelar
+                  </Button>
+                  <Button
+                    type="submit"
+                    className={btnAccentClass}
+                    disabled={saveProposalMutation.isPending}
+                  >
+                    {saveProposalMutation.isPending ? 'Salvando…' : 'Salvar'}
+                  </Button>
+                </DialogFooter>
+              </form>
             </DialogContent>
           </Dialog>
         </div>
@@ -1789,7 +1946,7 @@ export function QuoteWizardPage() {
               <Alert>
                 <AlertDescription>
                   {isQuoteSubmittable(quote.status)
-                    ? 'Enviar grava outbox (quote.submit) com os destinatários acima. Com HUB_DRY_RUN=true não há POST externo.'
+                    ? 'Enviar registra o orçamento e dispara o envio aos destinatários acima.'
                     : isQuoteMarkSentEligible(quote.status)
                       ? 'Orçamento submetido. Opcional: marcar como enviado ao cliente (quote.sent).'
                       : 'PDF local disponível abaixo. Envio só a partir de rascunho.'}
@@ -1978,10 +2135,6 @@ function ItemsSection({
   section,
   items,
   canEdit,
-  categoryId,
-  subcategoryId,
-  onCategoryId,
-  onSubcategoryId,
   paymentPlan,
   discountPct,
   discountValue,
@@ -2002,8 +2155,14 @@ function ItemsSection({
   onLaborRate,
   notes,
   billedByName,
+  billedByCnpj,
+  simplified,
+  displayName,
   onNotes,
   onBilledByName,
+  onBilledByCnpj,
+  onSimplified,
+  onDisplayName,
   onAdd,
   onRemove,
   onUpdate,
@@ -2012,10 +2171,6 @@ function ItemsSection({
   section: QuoteSection
   items: DraftItem[]
   canEdit: boolean
-  categoryId: number | null
-  subcategoryId: number | null
-  onCategoryId: (id: number | null) => void
-  onSubcategoryId: (id: number | null) => void
   paymentPlan: string
   discountPct: string
   discountValue: string
@@ -2036,8 +2191,14 @@ function ItemsSection({
   onLaborRate: (v: string) => void
   notes: string
   billedByName: string
+  billedByCnpj: string
+  simplified: boolean
+  displayName: string
   onNotes: (v: string) => void
   onBilledByName: (v: string) => void
+  onBilledByCnpj: (v: string) => void
+  onSimplified: (v: boolean) => void
+  onDisplayName: (v: string) => void
   onAdd: () => void
   onRemove: (localKey: string) => void
   onUpdate: (localKey: string, patch: Partial<DraftItem>) => void
@@ -2059,13 +2220,7 @@ function ItemsSection({
     : section === 'mensalidade'
       ? 'border-l-4 border-l-aurora-brand-red'
       : 'border-l-4 border-l-aurora-info'
-  const categoriesQuery = useQuery({
-    queryKey: ['vhsys-categories'],
-    queryFn: () => api.listVhsysCategories(),
-    staleTime: 10 * 60_000,
-    enabled: canEdit || items.length > 0,
-  })
-  const categories = categoriesQuery.data?.categories ?? []
+  const usedItemNames = items.map((i) => i.name)
 
   const saveAsModuleMutation = useMutation({
     mutationFn: (payload: {
@@ -2074,6 +2229,9 @@ function ItemsSection({
       show_labor: boolean
       notes: string | null
       billed_by_name: string | null
+      billed_by_cnpj: string | null
+      simplified: boolean
+      display_name: string | null
       lines: QuoteTemplateLine[]
     }) => api.createQuoteModuleTemplate(payload),
     onSuccess: (created) => {
@@ -2113,6 +2271,9 @@ function ItemsSection({
       show_labor: showLabor,
       notes: notes.trim() || null,
       billed_by_name: billedByName.trim() || null,
+      billed_by_cnpj: digitsOnly(billedByCnpj) || null,
+      simplified,
+      display_name: displayName.trim() || null,
       lines,
     })
   }
@@ -2158,6 +2319,15 @@ function ItemsSection({
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
               ) : null}
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={simplified}
+                  disabled={!canEdit}
+                  onCheckedChange={(v) => onSimplified(v === true)}
+                  aria-label="Simplificar bloco"
+                />
+                Simplificar
+              </label>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -2183,10 +2353,12 @@ function ItemsSection({
                 >
                   <ChevronDown className="h-4 w-4" />
                 </Button>
-                <Button type="button" size="sm" className={btnSecondaryClass} onClick={onAdd}>
-                  <Plus className="h-4 w-4" />
-                  Item
-                </Button>
+                {!simplified && (
+                  <Button type="button" size="sm" className={btnSecondaryClass} onClick={onAdd}>
+                    <Plus className="h-4 w-4" />
+                    Item
+                  </Button>
+                )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -2221,7 +2393,23 @@ function ItemsSection({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        {items.length === 0 ? (
+        {simplified ? (
+          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+            <div className="space-y-1">
+              <Label>Nome de Exibição</Label>
+              <Input
+                value={displayName}
+                disabled={!canEdit}
+                placeholder={title}
+                onChange={(e) => onDisplayName(e.target.value)}
+              />
+            </div>
+            <div className="flex flex-col justify-end">
+              <span className="text-xs text-muted-foreground">Valor somado</span>
+              <span className="text-sm font-semibold tabular-nums">{money(subtotal)}</span>
+            </div>
+          </div>
+        ) : items.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nenhum item neste bloco.</p>
         ) : (
           <ul className="space-y-3">
@@ -2235,8 +2423,7 @@ function ItemsSection({
                   <VhsysItemSearch
                     value={item.name}
                     disabled={!canEdit}
-                    categoryId={categoryId}
-                    subcategoryId={subcategoryId}
+                    excludeNames={usedItemNames}
                     unitValue={parseNonNegativeNumber(item.unit_value)}
                     onChange={(name) => onUpdate(item.localKey, { name })}
                     onSelect={(catalog) =>
@@ -2291,29 +2478,9 @@ function ItemsSection({
         <Accordion type="single" collapsible className="rounded-lg border border-aurora-border/80 px-3">
           <AccordionItem value="conditions" className="border-0">
             <AccordionTrigger className="py-3 text-sm hover:no-underline">
-              Condições (categoria, subcategoria, desconto, pagamento
-              {showLabor ? ', mão de obra' : ''})
+              Condições (desconto, pagamento{showLabor ? ', mão de obra' : ''})
             </AccordionTrigger>
             <AccordionContent className="space-y-4 pb-3">
-              <VhsysCategoryFields
-                categories={categories}
-                categoryId={categoryId}
-                subcategoryId={subcategoryId}
-                onCategoryId={onCategoryId}
-                onSubcategoryId={onSubcategoryId}
-                disabled={!canEdit}
-                loading={categoriesQuery.isFetching}
-                error={
-                  categoriesQuery.isError
-                    ? categoriesQuery.error instanceof Error
-                      ? categoriesQuery.error.message
-                      : 'Falha ao carregar categorias VHSYS'
-                    : null
-                }
-                categoryAriaLabel={`Categoria VHSYS ${title}`}
-                subcategoryAriaLabel={`Subcategoria VHSYS ${title}`}
-              />
-
               {showLabor ? (
                 <div className="rounded-lg border border-aurora-border/60 p-3">
                   <p className="mb-2 text-sm font-medium">Mão de obra</p>
@@ -2417,9 +2584,18 @@ function ItemsSection({
               value={billedByName}
               disabled={!canEdit}
               placeholder="Buscar distribuidor/fornecedor no VHSYS…"
-              onChange={onBilledByName}
-              onSelect={(party) => onBilledByName(party.fantasy_name || party.name)}
+              onChange={(v) => {
+                onBilledByName(v)
+                if (!v.trim()) onBilledByCnpj('')
+              }}
+              onSelect={(party) => {
+                onBilledByName(party.fantasy_name || party.name)
+                onBilledByCnpj(party.cnpj ? digitsOnly(party.cnpj) : '')
+              }}
             />
+            {billedByCnpj ? (
+              <p className="text-xs text-muted-foreground">CNPJ: {formatCnpj(billedByCnpj)}</p>
+            ) : null}
           </div>
         </div>
 

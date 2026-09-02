@@ -24,6 +24,7 @@ class QuotePdfIssuer:
     mobile: str
     email: str
     site: str
+    ie: str = ""
 
 
 @dataclass(frozen=True)
@@ -109,6 +110,7 @@ def issuer_from_settings(settings: Settings | None = None) -> QuotePdfIssuer:
         mobile=s.quote_issuer_mobile.strip(),
         email=s.quote_issuer_email.strip(),
         site=s.quote_issuer_site.strip(),
+        ie=(s.quote_issuer_ie or "").strip(),
     )
 
 
@@ -144,43 +146,8 @@ async def _load_tiflux_party(
 
 
 async def resolve_issuer(settings: Settings | None = None) -> QuotePdfIssuer:
-    """Emitente: TiFlux (issuer client / CNPJ) → merge com Settings fallback."""
-    s = settings or get_settings()
-    base = issuer_from_settings(s)
-    if not s.tiflux_api_token:
-        return base
-
-    tiflux = TifluxClient(s)
-    try:
-        client_id = int(s.tiflux_issuer_client_id or 0)
-        if client_id <= 0:
-            found = await tiflux.find_by_cnpj(normalize_cnpj(s.quote_issuer_cnpj))
-            if found and found.get("id") is not None:
-                client_id = int(found["id"])
-        if client_id <= 0:
-            return base
-        loaded = await _load_tiflux_party(tiflux, client_id)
-        if not loaded:
-            return base
-        detail, addresses, contacts = loaded
-    except (TifluxApiError, OSError, ValueError, TypeError) as exc:
-        logger.warning("PDF emitente TiFlux indisponível; usando Settings. (%s)", exc)
-        return base
-
-    name = str(detail.get("name") or detail.get("social") or "").strip() or base.name
-    cnpj_digits = normalize_cnpj(str(detail.get("social_revenue") or s.quote_issuer_cnpj))
-    address_line = _format_address_row(addresses[0]) if addresses else ""
-    phone, mobile = _pick_phones(contacts)
-    email = _pick_email(contacts, base.email)
-    return QuotePdfIssuer(
-        name=name,
-        cnpj=format_cnpj(cnpj_digits) or base.cnpj,
-        address_line=address_line or base.address_line,
-        phone=phone or base.phone,
-        mobile=mobile or base.mobile,
-        email=email or base.email,
-        site=base.site,
-    )
+    """Emitente comercial: sempre Settings/AVS (SPEC_PDF_ORCAMENTO)."""
+    return issuer_from_settings(settings)
 
 
 async def resolve_client(quote: QuoteRead, settings: Settings | None = None) -> QuotePdfClient:

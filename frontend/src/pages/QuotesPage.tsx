@@ -9,16 +9,27 @@ import {
   downloadBinaryBlob,
   isQuoteSubmittable,
   type LeadTemperature,
+  type QuoteItemWrite,
+  type QuoteModule,
+  type QuoteProposalTemplateRead,
   type QuoteRead,
   type QuoteStatus,
 } from '@/api/client'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { QuoteLeadPipelinePanel } from '@/components/quotes/QuoteLeadPipelinePanel'
+import { QuoteProposalTemplatesPanel } from '@/components/quotes/QuoteProposalTemplatesPanel'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import {
   Select,
   SelectContent,
@@ -87,6 +98,12 @@ export function QuotesPage() {
   const [tifluxClientId, setTifluxClientId] = useState<number | null>(null)
   const [leadTemperature, setLeadTemperature] = useState<LeadTemperature | null>(null)
   const [pdfId, setPdfId] = useState<number | null>(null)
+  const [proposalLibraryOpen, setProposalLibraryOpen] = useState(false)
+  const [pendingProposal, setPendingProposal] = useState<{
+    name: string
+    modules: QuoteModule[]
+    items: QuoteItemWrite[]
+  } | null>(null)
 
   function resetCreateForm() {
     setCnpj('')
@@ -125,11 +142,13 @@ export function QuotesPage() {
         client_name: clientName.trim() || null,
         tiflux_client_id: tifluxClientId,
         lead_temperature: leadTemperature,
-        items: [],
+        items: pendingProposal?.items ?? [],
+        modules: pendingProposal?.modules ?? [],
       }),
     onSuccess: (created) => {
       toast.success('Rascunho criado')
       resetCreateForm()
+      setPendingProposal(null)
       setShowCreate(false)
       void queryClient.invalidateQueries({ queryKey: ['quotes'] })
       navigate(`/orcamentos/${created.id}`, { state: { initialStep: 2 } })
@@ -274,6 +293,14 @@ export function QuotesPage() {
             </Select>
             <Button
               type="button"
+              className={btnSecondaryClass}
+              onClick={() => setProposalLibraryOpen(true)}
+            >
+              <FileText className="h-4 w-4" />
+              Biblioteca de Orçamentos
+            </Button>
+            <Button
+              type="button"
               className={btnGreenClass}
               onClick={() => setShowCreate((v) => !v)}
             >
@@ -289,6 +316,9 @@ export function QuotesPage() {
             <CardTitle className="text-base">Novo rascunho</CardTitle>
             <p className="text-xs text-muted-foreground">
               Busca TiFlux (CNPJ ou nome). Lead opcional no mesmo bloco.
+              {pendingProposal
+                ? ` Modelo vinculado: ${pendingProposal.name}.`
+                : ''}
             </p>
           </CardHeader>
           <CardContent>
@@ -524,6 +554,30 @@ export function QuotesPage() {
           ))}
         </ul>
       )}
+
+      <Dialog open={proposalLibraryOpen} onOpenChange={setProposalLibraryOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Biblioteca de Orçamentos</DialogTitle>
+            <DialogDescription>
+              Escolha um modelo; ele será aplicado ao criar o próximo rascunho (após selecionar o cliente).
+            </DialogDescription>
+          </DialogHeader>
+          <QuoteProposalTemplatesPanel
+            embedded
+            onSelect={(template: QuoteProposalTemplateRead) => {
+              setPendingProposal({
+                name: template.name,
+                modules: template.modules,
+                items: template.items,
+              })
+              setProposalLibraryOpen(false)
+              setShowCreate(true)
+              toast.success(`Modelo “${template.name}” vinculado ao novo rascunho`)
+            }}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
