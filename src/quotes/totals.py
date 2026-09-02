@@ -55,7 +55,7 @@ def format_payment_plan_label(value: str | None) -> str:
     """Rótulo legível do plano (PDF / UI)."""
     raw = (value or "").strip().lower()
     if not raw:
-        return "—"
+        return ""
     if raw in {"a_vista", "avista", "à vista"}:
         return "À vista"
     if raw in {"recorrente_anual", "recorrente-anual", "anual"}:
@@ -74,4 +74,4 @@ def format_payment_plan_label(value: str | None) -> str:
         n = raw.removeprefix("parcelado_")
         if n.endswith("x") and n[:-1].isdigit():
             return f"Parcelado {n}"
-    return value.strip() if value else "—"
+    return (value or "").strip()

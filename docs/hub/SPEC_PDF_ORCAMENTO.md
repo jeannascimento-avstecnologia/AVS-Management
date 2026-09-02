@@ -13,22 +13,26 @@
 
 ## Layout
 
-1. **Cabeçalho (emitente fixo AVS)** — logo à esquerda; à direita título + data; abaixo:
+1. **Cabeçalho (emitente fixo AVS)** — logo à esquerda; mesma linha: título `Orçamento : M{id}` à esquerda da área de texto e **data do orçamento na extrema direita** (alinhada à margem útil). Abaixo, só identificação fiscal:
 
 ```
 AVS TECNOLOGIA - CNPJ: 08.354.533/0001-83 | Insc Estadual: 795.275.950.117
-Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13087-240
-(ícone tel) (19) 3243-9559 | (ícone e-mail) comercial@avstecnologia.cloud | (ícone site) https://avstecnologia.cloud/
 ```
 
-   Cabeçalho **não** segue o tenant/parte de Faturado por.
+   **Rodapé (todas as páginas):** endereço + telefone/e-mail/site (ícones). Cabeçalho/rodapé **não** seguem o tenant/parte de Faturado por.
+
+```
+Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.087-240
+(ícone tel) (19) 3243-9559 | (ícone e-mail) comercial@avstecnologia.cloud | (ícone site) https://avstecnologia.cloud/
+```
 
 2. **Sem bloco DADOS DO CLIENTE.** Cliente permanece só no wizard (passos 1 e 3).
 
 3. **Módulos (N seções)** — ordem `sort_order` de `quotes.modules_json`:
    - Título = `module.title` (tipografia negrito + regra cinza; **sem** banda vermelha/azul).
-   - Se `module.simplified`: uma linha `display_name` (fallback `title`) + valor somado das linhas; **não** imprimir a grade de itens.
-   - Senão: tabela item / qtde / v. unit. / v. total (`quote_items.section = module.id`).
+   - Tabela **sempre** com cabeçalho `ITEM` / `QTDE.` / `V. UNIT.` / `V. TOTAL`.
+   - Se `module.simplified`: uma linha de dados com `display_name` (fallback `title`); qtde `1`; v. unit. = v. total = soma das linhas. **Não** imprimir nomes das linhas originais.
+   - Senão: uma linha por item (`quote_items.section = module.id`).
    - Mão de obra só se `module.show_labor` e horas×taxa > 0.
    - Por módulo: desconto, forma de pagamento, total líquido.
    - Opcionais: `module.notes`; `module.billed_by_name` + `module.billed_by_cnpj` (Faturado por). **Não** imprimir Faturado por global.

@@ -199,6 +199,8 @@ def test_format_payment_plan_label_recorrente_anual() -> None:
     assert format_payment_plan_label("recorrente_12x") == "Anual - Recorrente Mensal 12x"
     assert format_payment_plan_label("a_vista") == "À vista"
     assert format_payment_plan_label("12x") == "Parcelado 12x"
+    assert format_payment_plan_label(None) == ""
+    assert format_payment_plan_label("") == ""
 
 
 def test_estimate_section_height_scales_with_items() -> None:
@@ -337,6 +339,7 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
 
     text = _pdf_text(dest)
     assert "Orcamento : M2353" in text
+    assert "Data:" in text
     assert "Ordem de servi" not in text.lower()
     assert "AVS TECNOLOGIA" in text
     assert "08.354.533/0001-83" in text
@@ -344,6 +347,9 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "Os valores podem sofrer alteracao sem previo aviso" in text
     assert "Ticket no." in text
     assert "comercial@avstecnologia.cloud" in text
+    assert "Rua Teste, 70 Parque" in text
+    assert " |?" not in text
+    assert "?|" not in text
     assert "avstecnologia.cloud" in text
     assert "795.275.950.117" in text
     assert "IMPLANTACAO" in text
@@ -415,6 +421,10 @@ def test_pdf_simplified_module_hides_line_names(tmp_path: Path) -> None:
     text = _pdf_text(dest)
     assert "Pacote Office" in text
     assert "Item Secreto XYZ" not in text
+    assert "ITEM" in text
+    assert "QTDE." in text
+    assert "V. UNIT." in text
+    assert "V. TOTAL" in text
 
 
 def test_pdf_payment_block_not_split_across_pages(tmp_path: Path) -> None:
