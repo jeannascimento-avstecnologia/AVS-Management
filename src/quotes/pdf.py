@@ -39,6 +39,10 @@ _HEADER_FILL = (241, 245, 249)
 _BOX_LINE = 0.3
 
 _LOGO_PATH = Path(__file__).resolve().parents[1] / "cropped-AVS-SemArco-Colorido_2024.png"
+_ICON_DIR = Path(__file__).resolve().parent / "pdf_icons"
+_ICON_PHONE = _ICON_DIR / "phone.png"
+_ICON_MAIL = _ICON_DIR / "mail.png"
+_ICON_GLOBE = _ICON_DIR / "globe.png"
 # Grade tipográfica / geometria (tudo alinhado à mesma largura útil)
 _CONTENT_W = 188.0
 _FS_TITLE = 13.0
@@ -422,27 +426,34 @@ def _write_header(pdf: _QuotePdf, quote: QuoteRead, issuer: QuotePdfIssuer) -> N
     contact_y = pdf.get_y()
     x = text_x
     pdf.set_text_color(*_INK)
+    pdf.set_font("Helvetica", "", _FS_SMALL)
+    icon_h = 3.2
 
-    contact_bits: list[str] = []
+    def _contact_item(icon: Path, label: str) -> None:
+        nonlocal x
+        iy = contact_y + 0.1
+        if icon.is_file():
+            pdf.image(str(icon), x=x, y=iy, h=icon_h)
+            x += icon_h + 1.0
+        pdf.set_xy(x, contact_y)
+        pdf.cell(pdf.get_string_width(label) + 1.2, 3.4, label)
+        x += pdf.get_string_width(label) + 1.2
+
+    items: list[tuple[Path, str]] = []
     if issuer.phone:
-        contact_bits.append(f"Tel. {_safe(issuer.phone)}")
+        items.append((_ICON_PHONE, _safe(issuer.phone)))
     if issuer.email:
-        contact_bits.append(f"E-mail {_safe(issuer.email)}")
+        items.append((_ICON_MAIL, _safe(issuer.email)))
     if issuer.site:
-        contact_bits.append(_safe(issuer.site))
-    if contact_bits:
-        pdf.set_xy(text_x, contact_y)
-        pdf.set_font("Helvetica", "", _FS_SMALL)
-        pdf.multi_cell(pdf.w - pdf.r_margin - text_x, 3.4, "  |  ".join(contact_bits))
-        x = pdf.get_x()
-    # #region agent log
-    try:
-        import json, time
-        with open("/Users/jean.nascimento/Projetos/AVS-Management-1/.cursor/debug-cb0cec.log", "a", encoding="utf-8") as _df:
-            _df.write(json.dumps({"sessionId":"cb0cec","runId":"post-fix","hypothesisId":"H1","location":"pdf.py:_write_header","message":"contact icons","data":{"icon_impl":"text_labels","n_entries":len(contact_bits),"final_x":x,"page_w":pdf.w,"r_margin":pdf.r_margin},"timestamp":int(time.time()*1000)}) + "\n")
-    except OSError:
-        pass
-    # #endregion
+        items.append((_ICON_GLOBE, _safe(issuer.site)))
+    for i, (icon, label) in enumerate(items):
+        _contact_item(icon, label)
+        if i < len(items) - 1:
+            pdf.set_xy(x, contact_y)
+            pdf.cell(3.5, 3.4, "|")
+            x += 3.5
+    if items:
+        pdf.set_y(contact_y + 3.8)
 
     pdf.set_text_color(*_INK)
     content_y = max(pdf.get_y(), top_y + logo_h)
@@ -815,14 +826,6 @@ def _write_disclaimer_and_ticket(pdf: _QuotePdf, quote: QuoteRead) -> None:
     ticket = (quote.tiflux_ticket_number or "").strip()
     line = f"Ticket no.: {ticket}" if ticket else "Ticket no.:"
     pdf.set_x(pdf.l_margin)
-    # #region agent log
-    try:
-        import json, time
-        with open("/Users/jean.nascimento/Projetos/AVS-Management-1/.cursor/debug-cb0cec.log", "a", encoding="utf-8") as _df:
-            _df.write(json.dumps({"sessionId":"cb0cec","runId":"post-fix","hypothesisId":"H3","location":"pdf.py:_write_disclaimer_and_ticket","message":"ticket cell before","data":{"x":pdf.get_x(),"y":pdf.get_y(),"l_margin":pdf.l_margin,"cell_w":_CONTENT_W,"align":"L"},"timestamp":int(time.time()*1000)}) + "\n")
-    except OSError:
-        pass
-    # #endregion
     pdf.cell(_CONTENT_W, 4.5, _safe(line), align="L", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(_GAP)
 
@@ -834,14 +837,6 @@ def _write_signatures(pdf: _QuotePdf) -> None:
     blank = 22.0
     y_start = pdf.get_y()
     y_line = y_start + blank
-    # #region agent log
-    try:
-        import json, time
-        with open("/Users/jean.nascimento/Projetos/AVS-Management-1/.cursor/debug-cb0cec.log", "a", encoding="utf-8") as _df:
-            _df.write(json.dumps({"sessionId":"cb0cec","runId":"post-fix","hypothesisId":"H4","location":"pdf.py:_write_signatures","message":"signature layout","data":{"y_line":y_line,"blank_above_line_mm":blank,"est_h":_estimate_signatures_height(),"page_h":pdf.h},"timestamp":int(time.time()*1000)}) + "\n")
-    except OSError:
-        pass
-    # #endregion
     pdf.set_draw_color(*_NAVY)
     pdf.set_line_width(0.3)
     for i in range(3):

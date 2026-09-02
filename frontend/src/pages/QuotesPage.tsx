@@ -255,9 +255,6 @@ export function QuotesPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-            {/* #region agent log */}
-            {(() => { fetch('http://127.0.0.1:7498/ingest/30ad15c1-c7b0-4774-9a80-dadc1d901feb',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'cb0cec'},body:JSON.stringify({sessionId:'cb0cec',runId:'post-fix',hypothesisId:'H5',location:'QuotesPage.tsx:toolbar',message:'list header buttons',data:{hasBlocos:true,hasOrcamentos:true,novoInSameWrapAsLibraries:false},timestamp:Date.now()})}).catch(()=>{}); return null })()}
-            {/* #endregion */}
             <Select
               value={leadFilter}
               onValueChange={(v) => {
