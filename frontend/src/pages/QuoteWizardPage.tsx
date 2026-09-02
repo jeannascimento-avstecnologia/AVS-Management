@@ -116,7 +116,7 @@ const BILLED_LABELS: Record<BilledByType, string> = {
 
 const NONE = '__none__'
 const AUTOSAVE_MS = 800
-const INSTALLMENT_OPTIONS = Array.from({ length: 24 }, (_, i) => i + 1)
+const INSTALLMENT_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1)
 
 type DraftItem = {
   localKey: string
@@ -137,10 +137,12 @@ type DraftModule = {
   discount_value: string
   labor_hours: string
   labor_hourly_rate: string
+  notes: string
+  billed_by_name: string
   sort_order: number
 }
 
-type PaymentMode = 'a_vista' | 'parcelado' | ''
+type PaymentMode = 'a_vista' | 'parcelado' | 'recorrente_anual' | ''
 
 type DraftForm = {
   cnpj: string
@@ -169,6 +171,8 @@ const PRESET_IMPLANT: DraftModule = {
   discount_value: '',
   labor_hours: '',
   labor_hourly_rate: '',
+  notes: '',
+  billed_by_name: '',
   sort_order: 0,
 }
 
@@ -182,6 +186,8 @@ const PRESET_MONTHLY: DraftModule = {
   discount_value: '',
   labor_hours: '',
   labor_hourly_rate: '',
+  notes: '',
+  billed_by_name: '',
   sort_order: 1,
 }
 
@@ -196,6 +202,8 @@ function moduleFromApi(mod: QuoteModule): DraftModule {
     discount_value: mod.discount_value != null ? String(mod.discount_value) : '',
     labor_hours: mod.labor_hours != null ? String(mod.labor_hours) : '',
     labor_hourly_rate: mod.labor_hourly_rate != null ? String(mod.labor_hourly_rate) : '',
+    notes: mod.notes ?? '',
+    billed_by_name: mod.billed_by_name ?? '',
     sort_order: mod.sort_order,
   }
 }
@@ -258,6 +266,8 @@ function draftModuleToApi(mod: DraftModule, index: number): QuoteModule {
     discount_value: parseOptionalNumber(mod.discount_value),
     labor_hours: mod.show_labor ? parseOptionalNumber(mod.labor_hours) : null,
     labor_hourly_rate: mod.show_labor ? parseOptionalNumber(mod.labor_hourly_rate) : null,
+    notes: mod.notes.trim() || null,
+    billed_by_name: mod.billed_by_name.trim() || null,
     sort_order: index,
   }
 }
@@ -351,10 +361,18 @@ function mirrorDiscountFromValue(
 function parsePaymentPlan(value: string): { mode: PaymentMode; installments: number | null } {
   const raw = value.trim()
   if (!raw || raw === 'a_vista') return { mode: raw ? 'a_vista' : '', installments: null }
+  if (raw === 'recorrente_anual' || raw === 'recorrente-anual' || raw === 'anual') {
+    return { mode: 'recorrente_anual', installments: null }
+  }
+  const parcelado = raw.match(/^parcelado_(\d+)x?$/i)
+  if (parcelado) {
+    const n = Number(parcelado[1])
+    if (n >= 1) return { mode: 'parcelado', installments: Math.min(n, 12) }
+  }
   const legacy = raw.match(/^(\d+)x(?:_sem_juros)?$/i)
   if (legacy) {
     const n = Number(legacy[1])
-    if (n >= 1 && n <= 24) return { mode: 'parcelado', installments: n }
+    if (n >= 1) return { mode: 'parcelado', installments: Math.min(n, 12) }
   }
   if (raw === 'personalizado') return { mode: 'parcelado', installments: 2 }
   return { mode: 'parcelado', installments: 2 }
@@ -362,8 +380,9 @@ function parsePaymentPlan(value: string): { mode: PaymentMode; installments: num
 
 function buildPaymentPlan(mode: PaymentMode, installments: number | null): string {
   if (mode === 'a_vista') return 'a_vista'
+  if (mode === 'recorrente_anual') return 'recorrente_anual'
   if (mode === 'parcelado') {
-    const n = installments && installments >= 1 && installments <= 24 ? installments : 2
+    const n = installments && installments >= 1 && installments <= 12 ? installments : 2
     return `${n}x`
   }
   return ''
@@ -455,6 +474,7 @@ function paymentLabel(value: string): string {
   if (!value) return '—'
   const { mode, installments } = parsePaymentPlan(value)
   if (mode === 'a_vista') return 'À vista'
+  if (mode === 'recorrente_anual') return 'Recorrente anual'
   if (mode === 'parcelado' && installments) return `Parcelado ${installments}x`
   return value
 }
@@ -772,6 +792,8 @@ export function QuoteWizardPage() {
           discount_value: '',
           labor_hours: '',
           labor_hourly_rate: '',
+          notes: '',
+          billed_by_name: '',
           sort_order: prev.modules.length,
         },
       ]
@@ -802,6 +824,8 @@ export function QuoteWizardPage() {
           discount_value: '',
           labor_hours: '',
           labor_hourly_rate: '',
+          notes: '',
+          billed_by_name: '',
           sort_order: prev.modules.length,
         },
       ]
@@ -1339,6 +1363,10 @@ export function QuoteWizardPage() {
                   }}
                   onLaborHours={(v) => patchModule(mod.id, { labor_hours: v })}
                   onLaborRate={(v) => patchModule(mod.id, { labor_hourly_rate: v })}
+                  notes={mod.notes}
+                  billedByName={mod.billed_by_name}
+                  onNotes={(v) => patchModule(mod.id, { notes: v })}
+                  onBilledByName={(v) => patchModule(mod.id, { billed_by_name: v })}
                   onAdd={() => addItem(mod.id)}
                   onRemove={removeItem}
                   onUpdate={updateItem}
@@ -1658,6 +1686,8 @@ export function QuoteWizardPage() {
               showLabor={mod.show_labor}
               laborHours={mod.labor_hours}
               laborRate={mod.labor_hourly_rate}
+              notes={mod.notes}
+              billedByName={mod.billed_by_name}
               subtotal={sub}
             />
           ))}
@@ -2026,6 +2056,10 @@ function ItemsSection({
   onDiscountValue,
   onLaborHours,
   onLaborRate,
+  notes,
+  billedByName,
+  onNotes,
+  onBilledByName,
   onAdd,
   onRemove,
   onUpdate,
@@ -2054,6 +2088,10 @@ function ItemsSection({
   onDiscountValue: (v: string) => void
   onLaborHours: (v: string) => void
   onLaborRate: (v: string) => void
+  notes: string
+  billedByName: string
+  onNotes: (v: string) => void
+  onBilledByName: (v: string) => void
   onAdd: () => void
   onRemove: (localKey: string) => void
   onUpdate: (localKey: string, patch: Partial<DraftItem>) => void
@@ -2411,6 +2449,52 @@ function ItemsSection({
           </AccordionItem>
         </Accordion>
 
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Label htmlFor={`mod-notes-${section}`}>Observações</Label>
+              <Badge
+                variant="outline"
+                className="border-aurora-accent/40 bg-aurora-accent-muted text-aurora-accent"
+              >
+                Opcional
+              </Badge>
+            </div>
+            <textarea
+              id={`mod-notes-${section}`}
+              rows={3}
+              maxLength={4000}
+              disabled={!canEdit}
+              value={notes}
+              placeholder="Condições deste bloco…"
+              className={cn(inputClass, 'min-h-[72px] resize-y py-2.5')}
+              onChange={(e) => onNotes(e.target.value)}
+            />
+            <p className="text-right text-[11px] text-muted-foreground tabular-nums">
+              {notes.length}/4000
+            </p>
+          </div>
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <Label htmlFor={`mod-billed-${section}`}>Faturado por</Label>
+              <Badge
+                variant="outline"
+                className="border-aurora-info/40 bg-aurora-info/15 text-aurora-info"
+              >
+                Opcional
+              </Badge>
+            </div>
+            <Input
+              id={`mod-billed-${section}`}
+              disabled={!canEdit}
+              value={billedByName}
+              maxLength={300}
+              placeholder="Lista VHSYS em breve"
+              onChange={(e) => onBilledByName(e.target.value)}
+            />
+          </div>
+        </div>
+
         {(() => {
           const { discount, net } = applySectionDiscount(subtotal, discountPct, discountValue)
           return (
@@ -2504,6 +2588,10 @@ function PaymentPlanFields({
               onPaymentPlan('a_vista')
               return
             }
+            if (v === 'recorrente_anual') {
+              onPaymentPlan('recorrente_anual')
+              return
+            }
             onPaymentPlan(buildPaymentPlan('parcelado', installments ?? 2))
           }}
         >
@@ -2514,6 +2602,7 @@ function PaymentPlanFields({
             <SelectItem value={NONE}>Não informado</SelectItem>
             <SelectItem value="a_vista">À vista</SelectItem>
             <SelectItem value="parcelado">Parcelado</SelectItem>
+            <SelectItem value="recorrente_anual">Recorrente anual</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -2552,6 +2641,8 @@ function ReviewBlock({
   showLabor,
   laborHours,
   laborRate,
+  notes,
+  billedByName,
   subtotal,
 }: {
   title: string
@@ -2563,6 +2654,8 @@ function ReviewBlock({
   showLabor: boolean
   laborHours: string
   laborRate: string
+  notes: string
+  billedByName: string
   subtotal: number
 }) {
   const { discount, net } = applySectionDiscount(subtotal, discountPct, discountValue)
@@ -2635,6 +2728,14 @@ function ReviewBlock({
             {discountPct ? ` · Desc. ${discountPct}%` : ''}
             {discountValue ? ` · Desc. ${money(Number(discountValue) || 0)}` : ''}
           </p>
+          {billedByName.trim() ? (
+            <p className="text-xs text-muted-foreground">Faturado por: {billedByName.trim()}</p>
+          ) : null}
+          {notes.trim() ? (
+            <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+              Observações: {notes.trim()}
+            </p>
+          ) : null}
           <p className="tabular-nums text-muted-foreground">Subtotal {money(subtotal)}</p>
           {discount > 0 ? (
             <p className="tabular-nums text-muted-foreground">Desconto −{money(discount)}</p>

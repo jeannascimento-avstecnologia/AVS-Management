@@ -74,6 +74,8 @@ class QuoteModule(BaseModel):
     discount_value: float | None = None
     labor_hours: float | None = None
     labor_hourly_rate: float | None = None
+    notes: str | None = None
+    billed_by_name: str | None = Field(default=None, max_length=300)
     sort_order: int = Field(default=0, ge=0)
 
     @field_validator("id")
@@ -88,6 +90,16 @@ class QuoteModule(BaseModel):
         if not cleaned:
             raise ValueError("Título do módulo é obrigatório.")
         return cleaned
+
+    @field_validator("notes")
+    @classmethod
+    def _normalize_module_notes(cls, value: str | None) -> str | None:
+        return _normalize_optional_notes(value)
+
+    @field_validator("billed_by_name")
+    @classmethod
+    def _normalize_module_billed_by(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=300, label="Faturado por")
 
     @model_validator(mode="after")
     def _legacy_kind_matches_id(self) -> QuoteModule:

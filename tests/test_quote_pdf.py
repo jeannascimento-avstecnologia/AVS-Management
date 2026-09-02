@@ -19,6 +19,7 @@ from src.quotes.pdf import (
 )
 from src.quotes.pdf_parties import QuotePdfClient, QuotePdfIssuer
 from src.quotes.schemas import QuoteItemRead, QuoteModule, QuoteRead
+from src.quotes.totals import format_payment_plan_label
 
 
 def _pdf_text(path: Path) -> str:
@@ -111,6 +112,8 @@ def _sample_quote(*, quote_id: int = 2353) -> QuoteRead:
                 legacy_kind="implantacao",
                 show_labor=False,
                 payment_plan="a_vista",
+                notes="Condicao implant",
+                billed_by_name="Fornecedor Modulo",
                 sort_order=0,
             ),
             QuoteModule(
@@ -118,7 +121,7 @@ def _sample_quote(*, quote_id: int = 2353) -> QuoteRead:
                 title="Mensalidade",
                 legacy_kind="mensalidade",
                 show_labor=True,
-                payment_plan="parcelado_3x",
+                payment_plan="recorrente_anual",
                 labor_hours=2.0,
                 labor_hourly_rate=80.0,
                 sort_order=1,
@@ -189,6 +192,12 @@ def test_quote_display_id_prefix_m() -> None:
     assert quote_display_id(1) == "M1"
 
 
+def test_format_payment_plan_label_recorrente_anual() -> None:
+    assert format_payment_plan_label("recorrente_anual") == "Recorrente anual"
+    assert format_payment_plan_label("a_vista") == "À vista"
+    assert format_payment_plan_label("12x") == "Parcelado 12x"
+
+
 def test_estimate_section_height_scales_with_items() -> None:
     empty = _estimate_section_height(
         [],
@@ -242,6 +251,17 @@ def test_estimate_section_height_scales_with_items() -> None:
     )
     assert abs(many - (one + 4 * _ROW_H)) < 1e-9
     assert many > _BAND_H + 5 * _ROW_H
+    with_meta = _estimate_section_height(
+        [],
+        discount_pct=None,
+        discount_value=None,
+        labor_hours=None,
+        labor_rate=None,
+        include_labor=False,
+        notes="Obs bloco",
+        billed_by_name="Parceiro",
+    )
+    assert with_meta > empty
 
 
 def test_estimate_payment_summary_height_grows_with_modules() -> None:
@@ -337,6 +357,10 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "VALOR TOTAL DO ORCAMENTO" in text
     assert "OBSERVACOES" in text
     assert "Forma de Pagamento Servicos" in text
+    assert "Observacoes" in text
+    assert "Condicao implant" in text
+    assert "Faturado por: Fornecedor Modulo" in text
+    assert "Recorrente anual" in text
     assert "1.500,00" in text or "1500,00" in text
     assert "459,90" in text
     assert "1.959,90" in text or "1959,90" in text

@@ -58,6 +58,8 @@ def format_payment_plan_label(value: str | None) -> str:
         return "—"
     if raw in {"a_vista", "avista", "à vista"}:
         return "À vista"
+    if raw in {"recorrente_anual", "recorrente-anual", "anual"}:
+        return "Recorrente anual"
     if raw in {"3x_sem_juros", "3x"}:
         return "Parcelado 3x"
     if raw in {"6x_sem_juros", "6x"}:

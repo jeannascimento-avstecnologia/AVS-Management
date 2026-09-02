@@ -326,11 +326,12 @@ Orçamento **não** emite boleto mensal; só define o que depois será cobrado.
 - [x] Técnico auto + produtos lista múltipla  
 - [x] Modelos pré-preenchidos  
 - [x] Seção “Implantação” (não “serviços” genérico)  
-- [x] Pagamento implantação + desconto %/valor + parcelado 1x–24x  
-- [x] Seção “Mensalidade” recorrente  
-- [x] Add/remove campos  
-- [x] Busca CNPJ/nome + modal cadastro sem perder dados  
-- [x] Faturado por (distribuidor/fornecedor + busca clientes VHSYS)  
+- [x] Pagamento implantação + desconto %/valor + parcelado 1x–12x + recorrente anual
+- [x] Seção “Mensalidade” recorrente
+- [x] Add/remove campos
+- [x] Busca CNPJ/nome + modal cadastro sem perder dados
+- [x] Faturado por (distribuidor/fornecedor + busca clientes VHSYS) — global; por bloco: texto opcional (lista VHSYS fast-follow)
+- [x] Observações globais (passo 3) + Observações por bloco (opcional)
 - [x] Descrição de item via catálogo VHSYS (`/produtos`)
 - [x] Via dupla: cadastrar no VHSYS item digitado inexistente (`POST /produtos`)  
 - [x] Salvar orçamento  

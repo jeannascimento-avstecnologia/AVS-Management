@@ -21,7 +21,8 @@
    - Título da banda = `module.title` (não o `id`).
    - Tabela item / qtde / v. unit. / v. total filtrada por `quote_items.section = module.id`.
    - Mão de obra só se `module.show_labor` e horas×taxa > 0 (default: só Mensalidade seedada).
-   - Por módulo: desconto (%↔R$ espelho), forma de pagamento, total líquido.
+   - Por módulo: desconto (%↔R$ espelho), forma de pagamento (`a_vista` | `Nx` 1–12 | `recorrente_anual`), total líquido.
+   - Por módulo, opcionais: `module.notes` (Observações) e `module.billed_by_name` (Faturado por) — campos sempre no wizard; PDF imprime só se preenchidos (após o total líquido da seção).
    - Seed no create: Implantação + Mensalidade; **removíveis/reordenáveis** — PDF segue a ordem do canvas; se ausentes, **não** imprimir banda.
 4. Divisórias entre módulos quando houver mais de um.
 5. **Dados de pagamento / resumo**:
@@ -31,8 +32,13 @@
      - `TOTAL DE PRODUTOS` / `VALOR TOTAL DOS PRODUTOS` ← módulo `legacy_kind=mensalidade`
    - Se um dos legados foi removido, omitir o par correspondente.
    - `VALOR TOTAL DO ORCAMENTO` = soma dos líquidos de **todos** os módulos presentes.
-6. **OBSERVACOES** — texto livre (`quotes.notes`), editável no wizard **passo 3 (Revisão)**; opcional; PDF imprime o bloco mesmo se vazio (`-`).
+6. **OBSERVACOES** — texto livre (`quotes.notes`), editável no wizard **passo 3 (Revisão)**; opcional; PDF imprime o bloco mesmo se vazio (`-`). Independente das observações por módulo.
 7. **Assinaturas** (3 colunas): data do aceite · Assinatura do Prestador · Assinatura do Sacado.
+
+## Fundo
+
+- Página A4 com fill liso (`_PAGE`) + barras de marca no header/footer.
+- **Sem** padrão de circuitos/PCB (padrão F do sketch `sketch-pdf-fundo-tech.html` é histórico, não implementação).
 
 ## Formatação / paginação
 
@@ -46,7 +52,7 @@ Quebras **somente entre blocos lógicos** — nunca no meio de um bloco (ex.: ca
 
 **Blocos** (unidades indivisíveis preferenciais):
 
-1. Cada seção de módulo (`_write_section` — banda + tabela + MO + desconto/pagamento + totais).
+1. Cada seção de módulo (`_write_section` — banda + tabela + MO + desconto/pagamento + totais + obs/faturado do módulo se houver).
 2. `DADOS DE PAGAMENTO` (banda + pares/linhas + `VALOR TOTAL DO ORCAMENTO`).
 3. `OBSERVACOES` (banda + caixa de texto).
 4. Assinaturas (linha + 3 colunas).

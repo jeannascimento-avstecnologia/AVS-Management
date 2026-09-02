@@ -29,12 +29,11 @@ _BRAND_RED_DARK = (185, 28, 28)  # fills de seção (melhor em grayscale)
 _INK = (30, 41, 59)
 _MUTED = (100, 116, 139)
 _RULE = (148, 163, 184)  # divisores
-_BOX_BORDER = (71, 85, 105)  # slate-600 — bordas de caixas (contraste c/ PCB)
+_BOX_BORDER = (71, 85, 105)  # slate-600 — bordas de caixas
 _ROW_ALT = (241, 245, 249)
 _PANEL = (255, 255, 255)  # branco sólido — destaca do fundo
 _PAGE = (252, 253, 255)
 _WHITE = (255, 255, 255)
-_PCB_TRACE = (148, 163, 184)  # slate-400 — leve no colorido e no P&B
 _BOX_LINE = 0.4
 
 _LOGO_PATH = Path(__file__).resolve().parents[1] / "cropped-AVS-SemArco-Colorido_2024.png"
@@ -53,82 +52,6 @@ _COL_QTY = 24.0
 _COL_UNIT = 33.0
 _COL_TOTAL = 33.0  # 98+24+33+33 = 188
 _LABEL_W = _CONTENT_W - _COL_TOTAL
-
-# Padrão F densificado (~1.8× trilhas; ainda bem abaixo da ref. densa)
-_PCB_F_TRACES: tuple[tuple[tuple[float, float], ...], ...] = (
-    # bus superior esquerdo
-    ((30, 50), (90, 50), (120, 80), (180, 80)),
-    ((30, 58), (85, 58), (112, 85), (170, 85)),
-    ((30, 66), (80, 66), (105, 91), (160, 91)),
-    ((20, 40), (70, 40), (95, 65)),
-    # bus superior direito
-    ((240, 40), (240, 90), (270, 120), (340, 120)),
-    ((248, 40), (248, 85), (275, 112), (350, 112)),
-    ((256, 40), (256, 80), (280, 104), (355, 104)),
-    ((200, 30), (230, 30), (230, 55)),
-    # centro-esquerda
-    ((50, 160), (110, 160), (150, 200), (230, 200)),
-    ((50, 168), (105, 168), (142, 205), (220, 205)),
-    ((50, 176), (100, 176), (135, 211), (210, 211)),
-    ((20, 120), (60, 120), (90, 150)),
-    ((20, 128), (55, 128), (82, 155)),
-    ((40, 100), (100, 100), (130, 130)),
-    # centro-direita / baixo
-    ((300, 160), (340, 200), (340, 250)),
-    ((308, 160), (345, 197), (345, 250)),
-    ((316, 160), (350, 194), (350, 255)),
-    ((100, 250), (180, 250), (210, 220), (280, 220)),
-    ((100, 258), (175, 258), (205, 228), (275, 228)),
-    ((360, 60), (400, 60)),
-    ((360, 68), (400, 68)),
-    ((380, 100), (380, 160), (400, 180)),
-    ((388, 100), (388, 155), (405, 172)),
-    # ramos extras preenchendo vazios
-    ((150, 40), (150, 70), (180, 100)),
-    ((190, 140), (240, 140), (270, 170), (320, 170)),
-    ((190, 148), (235, 148), (262, 175), (315, 175)),
-    ((70, 220), (70, 270), (120, 270)),
-    ((280, 60), (320, 60), (350, 90)),
-    ((10, 200), (40, 200), (70, 230)),
-    ((200, 260), (260, 260), (290, 290)),
-    ((400, 200), (400, 240), (370, 270)),
-)
-_PCB_F_VIAS: tuple[tuple[float, float], ...] = (
-    (180, 80),
-    (170, 85),
-    (160, 91),
-    (95, 65),
-    (340, 120),
-    (350, 112),
-    (355, 104),
-    (230, 55),
-    (230, 200),
-    (220, 205),
-    (210, 211),
-    (90, 150),
-    (82, 155),
-    (130, 130),
-    (340, 250),
-    (345, 250),
-    (350, 255),
-    (280, 220),
-    (275, 228),
-    (400, 60),
-    (400, 68),
-    (400, 180),
-    (405, 172),
-    (30, 50),
-    (240, 40),
-    (180, 100),
-    (320, 170),
-    (315, 175),
-    (120, 270),
-    (350, 90),
-    (70, 230),
-    (290, 290),
-    (370, 270),
-)
-_PCB_F_ACCENT_VIA = (180.0, 80.0)
 
 
 def quote_display_id(quote_id: int) -> str:
@@ -171,7 +94,7 @@ def _fmt_date(iso: str | None) -> str:
 
 
 def _set_box_stroke(pdf: FPDF) -> None:
-    """Borda evidente para células/painéis sobre o fundo PCB."""
+    """Borda evidente para células/painéis."""
     pdf.set_draw_color(*_BOX_BORDER)
     pdf.set_line_width(_BOX_LINE)
 
@@ -228,46 +151,13 @@ def _ordered_modules(quote: QuoteRead) -> list[QuoteModule]:
     return out
 
 
-def _draw_pcb_pattern_f(pdf: FPDF) -> None:
-    """Fundo padrão F: trilhas PCB esparsas + vias (docs/hub/sketch-pdf-fundo-tech.html)."""
-    sx = pdf.w / 420.0
-    sy = pdf.h / 296.0
-
-    def _xy(x: float, y: float) -> tuple[float, float]:
-        return x * sx, y * sy
-
-    pdf.set_draw_color(*_PCB_TRACE)
-    pdf.set_line_width(0.28)
-    for trace in _PCB_F_TRACES:
-        for i in range(len(trace) - 1):
-            x0, y0 = _xy(*trace[i])
-            x1, y1 = _xy(*trace[i + 1])
-            pdf.line(x0, y0, x1, y1)
-
-    pdf.set_fill_color(*_PCB_TRACE)
-    via_r = 0.65
-    for vx, vy in _PCB_F_VIAS:
-        x, y = _xy(vx, vy)
-        pdf.ellipse(x - via_r, y - via_r, via_r * 2, via_r * 2, style="F")
-
-    # Via de destaque (vermelho logo, bem sutil)
-    ax, ay = _xy(*_PCB_F_ACCENT_VIA)
-    ring = 1.4
-    pdf.set_draw_color(*_BRAND_RED)
-    pdf.set_line_width(0.22)
-    pdf.ellipse(ax - ring, ay - ring, ring * 2, ring * 2, style="D")
-
-
 class _QuotePdf(FPDF):
-    """A4 com fundo PCB (padrão F), barras de marca e rodapé tipográfico."""
+    """A4 com fundo liso, barras de marca e rodapé tipográfico."""
 
     def header(self) -> None:
         # Fundo suave (papel)
         self.set_fill_color(*_PAGE)
         self.rect(0, 0, self.w, self.h, style="F")
-
-        # Padrão F — PCB esparso (não cobre o texto)
-        _draw_pcb_pattern_f(self)
 
         # Barra superior marca (navy + accent)
         self.set_fill_color(*_NAVY)
@@ -349,6 +239,19 @@ def _divider_height() -> float:
     return _GAP + (_GAP * 2)
 
 
+def _module_meta_height(notes: str | None, billed_by_name: str | None) -> float:
+    """Altura extra de observações / faturado por no módulo (só se preenchidos)."""
+    h = 0.0
+    notes_clean = (notes or "").strip()
+    billed_clean = (billed_by_name or "").strip()
+    if notes_clean:
+        lines = max(1, (len(notes_clean) + 89) // 90)
+        h += _GAP + 3.6 + lines * 4.0
+    if billed_clean:
+        h += _GAP + 4.0
+    return h
+
+
 def _estimate_section_height(
     items: list[QuoteItemRead],
     *,
@@ -357,6 +260,8 @@ def _estimate_section_height(
     labor_hours: float | None,
     labor_rate: float | None,
     include_labor: bool,
+    notes: str | None = None,
+    billed_by_name: str | None = None,
 ) -> float:
     """Altura estimada de `_write_section` (banda → total líquido + gap final)."""
     h = _BAND_H + _GAP  # section band
@@ -378,6 +283,7 @@ def _estimate_section_height(
     if discount > 0:
         h += _ROW_H
     h += (_ROW_H + 0.6) + _GAP  # TOTAL LIQUIDO + ln
+    h += _module_meta_height(notes, billed_by_name)
     return h
 
 
@@ -456,6 +362,8 @@ def render_quote_pdf(
             labor_hours=mod.labor_hours if include_labor else None,
             labor_rate=mod.labor_hourly_rate if include_labor else None,
             include_labor=include_labor,
+            notes=mod.notes,
+            billed_by_name=mod.billed_by_name,
         )
         if idx > 0:
             section_h += _divider_height()
@@ -473,6 +381,8 @@ def render_quote_pdf(
             labor_hours=mod.labor_hours if include_labor else None,
             labor_rate=mod.labor_hourly_rate if include_labor else None,
             include_labor=include_labor,
+            notes=mod.notes,
+            billed_by_name=mod.billed_by_name,
         )
         net = _section_net_total(
             mod_items,
@@ -675,6 +585,8 @@ def _write_section(
     labor_hours: float | None,
     labor_rate: float | None,
     include_labor: bool,
+    notes: str | None = None,
+    billed_by_name: str | None = None,
 ) -> None:
     _section_band(pdf, title, accent)
 
@@ -757,7 +669,7 @@ def _write_section(
     pdf.cell(
         w4,
         _ROW_H,
-        _safe(format_payment_plan_label(payment_plan))[:22],
+        _safe(format_payment_plan_label(payment_plan))[:40],
         border=1,
         fill=True,
         new_x="LMARGIN",
@@ -786,6 +698,22 @@ def _write_section(
     pdf.cell(_COL_TOTAL, _ROW_H + 0.6, _brl(net), border=1, align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(*_INK)
     pdf.set_draw_color(0, 0, 0)
+
+    notes_clean = (notes or "").strip()
+    billed_clean = (billed_by_name or "").strip()
+    if notes_clean:
+        pdf.ln(_GAP)
+        pdf.set_font("Helvetica", "B", _FS_BODY)
+        pdf.cell(0, 3.6, "Observacoes", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", _FS_BODY)
+        pdf.multi_cell(_CONTENT_W, 4.0, _safe(notes_clean))
+    if billed_clean:
+        pdf.ln(_GAP if not notes_clean else 0.4)
+        pdf.set_font("Helvetica", "", _FS_BODY)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(0, 4, f"Faturado por: {_safe(billed_clean)}", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*_INK)
+
     pdf.ln(_GAP)
 
 

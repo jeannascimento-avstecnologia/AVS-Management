@@ -70,6 +70,8 @@ export type QuoteModule = {
   discount_value: number | null
   labor_hours: number | null
   labor_hourly_rate: number | null
+  notes: string | null
+  billed_by_name: string | null
   sort_order: number
 }
 

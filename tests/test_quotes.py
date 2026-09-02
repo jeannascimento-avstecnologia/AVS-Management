@@ -774,6 +774,56 @@ def test_create_seeds_implant_and_mensalidade_modules(quotes_client: TestClient)
     assert mods[1]["id"] == "mensalidade"
     assert mods[1]["legacy_kind"] == "mensalidade"
     assert mods[1]["show_labor"] is True
+    assert mods[0]["notes"] is None
+    assert mods[0]["billed_by_name"] is None
+
+
+def test_module_notes_billed_by_and_recorrente_anual_persist(
+    quotes_client: TestClient,
+) -> None:
+    created = quotes_client.post("/orcamentos", json=QUOTE_PAYLOAD)
+    quote_id = created.json()["id"]
+    updated = quotes_client.put(
+        f"/orcamentos/{quote_id}",
+        json={
+            **QUOTE_PAYLOAD,
+            "modules": [
+                {
+                    "id": "implantacao",
+                    "title": "Implantação",
+                    "legacy_kind": "implantacao",
+                    "show_labor": False,
+                    "payment_plan": "recorrente_anual",
+                    "discount_pct": None,
+                    "discount_value": None,
+                    "labor_hours": None,
+                    "labor_hourly_rate": None,
+                    "notes": "Boleto anual",
+                    "billed_by_name": "Parceiro Bloco",
+                    "sort_order": 0,
+                },
+                {
+                    "id": "mensalidade",
+                    "title": "Mensalidade",
+                    "legacy_kind": "mensalidade",
+                    "show_labor": True,
+                    "payment_plan": "12x",
+                    "discount_pct": None,
+                    "discount_value": None,
+                    "labor_hours": None,
+                    "labor_hourly_rate": None,
+                    "notes": None,
+                    "billed_by_name": None,
+                    "sort_order": 1,
+                },
+            ],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    implant = next(m for m in updated.json()["modules"] if m["id"] == "implantacao")
+    assert implant["payment_plan"] == "recorrente_anual"
+    assert implant["notes"] == "Boleto anual"
+    assert implant["billed_by_name"] == "Parceiro Bloco"
 
 
 def test_remove_implantacao_clears_flat_and_allows_custom(
