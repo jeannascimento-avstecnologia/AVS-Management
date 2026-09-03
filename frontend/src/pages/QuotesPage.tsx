@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { FileDown, FileText, Plus, Send, Trash2, AlertCircle, Loader2, Boxes } from 'lucide-react'
@@ -38,7 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Input } from '@/components/ui/input'
 import { digitsOnly, formatCnpj, formatDate } from '@/lib/format'
 import { TEMP_LABELS } from '@/lib/quoteLead'
 import { btnDangerClass, btnGreenClass, btnSecondaryClass } from '@/lib/ui-classes'
@@ -92,6 +92,14 @@ export function QuotesPage() {
   const queryClient = useQueryClient()
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | 'all'>('all')
   const [leadFilter, setLeadFilter] = useState<LeadTemperature | 'all'>('all')
+  const [clientFilter, setClientFilter] = useState('')
+  const [numberFilter, setNumberFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [qFilter, setQFilter] = useState('')
+  const [debouncedClient, setDebouncedClient] = useState('')
+  const [debouncedNumber, setDebouncedNumber] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [cnpj, setCnpj] = useState('')
   const [clientName, setClientName] = useState('')
@@ -106,6 +114,15 @@ export function QuotesPage() {
     modules: QuoteModule[]
     items: QuoteItemWrite[]
   } | null>(null)
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebouncedClient(clientFilter)
+      setDebouncedNumber(numberFilter)
+      setDebouncedQ(qFilter)
+    }, 300)
+    return () => window.clearTimeout(t)
+  }, [clientFilter, numberFilter, qFilter])
 
   function resetCreateForm() {
     setCnpj('')
@@ -122,11 +139,25 @@ export function QuotesPage() {
   }
 
   const listQuery = useQuery({
-    queryKey: ['quotes', statusFilter, leadFilter],
+    queryKey: [
+      'quotes',
+      statusFilter,
+      leadFilter,
+      debouncedClient,
+      debouncedNumber,
+      dateFrom,
+      dateTo,
+      debouncedQ,
+    ],
     queryFn: () =>
       api.listQuotes({
         status: statusFilter === 'all' ? undefined : statusFilter,
         lead_temperature: leadFilter === 'all' ? undefined : leadFilter,
+        client: debouncedClient.trim() || undefined,
+        number: debouncedNumber.trim() || undefined,
+        date_from: dateFrom || undefined,
+        date_to: dateTo || undefined,
+        q: debouncedQ.trim() || undefined,
         limit: 100,
         offset: 0,
       }),
@@ -322,6 +353,69 @@ export function QuotesPage() {
         </Button>
       </div>
 
+      <Card className="border-aurora-border bg-aurora-surface shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="text-base">Pesquisa</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground" htmlFor="quote-filter-client">
+              Cliente
+            </label>
+            <Input
+              id="quote-filter-client"
+              value={clientFilter}
+              placeholder="Nome ou CNPJ"
+              onChange={(e) => setClientFilter(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground" htmlFor="quote-filter-number">
+              Número
+            </label>
+            <Input
+              id="quote-filter-number"
+              value={numberFilter}
+              placeholder="M123"
+              onChange={(e) => setNumberFilter(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground" htmlFor="quote-filter-from">
+              Data de
+            </label>
+            <Input
+              id="quote-filter-from"
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-xs text-muted-foreground" htmlFor="quote-filter-to">
+              Data até
+            </label>
+            <Input
+              id="quote-filter-to"
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1 sm:col-span-2 lg:col-span-4">
+            <label className="text-xs text-muted-foreground" htmlFor="quote-filter-q">
+              Texto livre
+            </label>
+            <Input
+              id="quote-filter-q"
+              value={qFilter}
+              placeholder="Nome, CNPJ, M123, item ou valor (ex.: 1.866,60)"
+              onChange={(e) => setQFilter(e.target.value)}
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       {showCreate && (
         <Card className="border-aurora-green/30 bg-aurora-surface shadow-sm hub-panel-enter">
           <CardHeader className="pb-3">
@@ -489,6 +583,9 @@ export function QuotesPage() {
                         <Badge variant="outline">{TEMP_LABELS[quote.lead_temperature]}</Badge>
                       ) : null}
                       <span className="text-xs text-muted-foreground">#{quote.id}</span>
+                      {quote.title ? (
+                        <span className="truncate text-xs text-muted-foreground">{quote.title}</span>
+                      ) : null}
                     </div>
                     <p className="truncate text-sm text-aurora-fg">
                       {quote.client_name || 'Cliente não informado'}

@@ -243,6 +243,33 @@ class VhsysClient:
                 raise VhsysApiError(str(message), int(code), response.text)
         return _extract_vhsys_list(data)
 
+    async def get_product(self, product_id: int) -> dict | None:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.get(
+                f"{self._base}/produtos/{int(product_id)}",
+                headers=self._auth_headers(),
+            )
+        if response.status_code == 401:
+            raise VhsysApiError("Tokens VHSYS inválidos.", 401, response.text)
+        if _is_not_found_response(response) or response.status_code == 404:
+            return None
+        if response.status_code >= 400:
+            raise VhsysApiError(
+                f"Erro ao consultar produto VHSYS: {response.status_code}.",
+                response.status_code,
+                response.text,
+            )
+        parsed = self._parse_response(response)
+        data = parsed.get("data")
+        row: dict | None = None
+        if isinstance(data, dict):
+            row = data
+        elif isinstance(data, list) and data and isinstance(data[0], dict):
+            row = data[0]
+        if row is None:
+            return None
+        return _normalize_catalog_product(row)
+
     async def list_categories(
         self,
         *,
@@ -811,6 +838,20 @@ def _normalize_catalog_product(row: dict) -> dict | None:
         return None
     code = str(row.get("cod_produto") or "").strip() or None
     unit_value = _parse_vhsys_money(row.get("valor_produto"))
+    raw_cost = row.get("valor_custo_produto")
+    cost_value: float | None
+    if raw_cost is None or str(raw_cost).strip() in {"", "-"}:
+        cost_value = None
+    else:
+        cost_value = _parse_vhsys_money(raw_cost)
+    supplier_name = str(row.get("fornecedor_produto") or "").strip() or None
+    supplier_id: int | None = None
+    raw_sup = row.get("fornecedor_produto_id")
+    if raw_sup is not None and str(raw_sup).strip() not in {"", "0"}:
+        try:
+            supplier_id = int(raw_sup)
+        except (TypeError, ValueError):
+            supplier_id = None
     category_id: int | None = None
     raw_cat = row.get("id_categoria")
     if raw_cat is not None and str(raw_cat).strip() not in {"", "0"}:
@@ -824,6 +865,9 @@ def _normalize_catalog_product(row: dict) -> dict | None:
         "name": name,
         "code": code,
         "unit_value": unit_value,
+        "cost_value": cost_value,
+        "supplier_name": supplier_name,
+        "supplier_id": supplier_id,
         "category_id": category_id,
         "subcategory_ids": _product_subcategory_ids(row),
     }

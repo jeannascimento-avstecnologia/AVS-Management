@@ -185,6 +185,37 @@ def test_list_filter_by_lead_excludes_approved(quotes_client: TestClient) -> Non
     assert bad_status.status_code == 422
 
 
+def test_list_search_filters_and_title(quotes_client: TestClient) -> None:
+    created = quotes_client.post(
+        "/orcamentos",
+        json={**QUOTE_PAYLOAD, "client_name": "Cliente Filtro SA", "title": "Proposta Alpha"},
+    )
+    assert created.status_code == 201, created.text
+    qid = created.json()["id"]
+    assert created.json()["title"] == "Proposta Alpha"
+
+    by_client = quotes_client.get("/orcamentos", params={"client": "Filtro"})
+    assert by_client.status_code == 200
+    assert {q["id"] for q in by_client.json()["quotes"]} == {qid}
+
+    by_number = quotes_client.get("/orcamentos", params={"number": f"M{qid}"})
+    assert by_number.status_code == 200
+    assert {q["id"] for q in by_number.json()["quotes"]} == {qid}
+
+    by_q_title = quotes_client.get("/orcamentos", params={"q": "Alpha"})
+    assert {q["id"] for q in by_q_title.json()["quotes"]} == {qid}
+
+    by_q_value = quotes_client.get("/orcamentos", params={"q": "1.500,00"})
+    assert {q["id"] for q in by_q_value.json()["quotes"]} == {qid}
+
+    miss = quotes_client.get("/orcamentos", params={"q": "zzzz-inexistente"})
+    assert miss.json()["quotes"] == []
+
+    patched = quotes_client.put(f"/orcamentos/{qid}", json={"title": "Nome interno"})
+    assert patched.status_code == 200
+    assert patched.json()["title"] == "Nome interno"
+
+
 def test_list_templates_empty(quotes_client: TestClient) -> None:
     res = quotes_client.get("/orcamentos/templates")
     assert res.status_code == 200

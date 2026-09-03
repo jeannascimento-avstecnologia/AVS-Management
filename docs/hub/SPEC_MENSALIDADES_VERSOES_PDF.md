@@ -81,12 +81,13 @@ O snapshot deve ser suficiente para que o PDF renderize exatamente como estava n
 
 ### 6.1 UI — botão de mensalidades
 - No passo 3, adicionar um botão **"Mensalidades"**.
-- A modal deve permitir:
-  - selecionar linhas de itens de **quaisquer blocos** (a linha desce para uma tabela)
-  - em **cada** linha selecionada, preencher **Fornecedor** e **Intermediador** (nome + valor)
+- A modal deve permitir selecionar linhas de itens de **quaisquer blocos** (linha inteira).
+- Ao marcar a linha, **puxar automaticamente do VHSYS** (custo = fornecedor; venda−custo = intermediador AVS). Sem digitação obrigatória.
+- Override manual só se o usuário clicar “Editar manualmente” (custo ausente no cadastro).
 
 ### 6.2 Regra dinâmica de valor
 - Por linha: `fornecedor_amount + intermediador_amount == total daquela linha`.
+- Fonte default: `valor_custo_produto * qty` + margem.
 - Não validar contra o total do orçamento nem contra a soma de todas as linhas juntas.
 
 ### 6.3 Validação

@@ -424,4 +424,58 @@ def test_normalize_catalog_category_and_product() -> None:
     assert prod["category_id"] == 9
     assert prod["unit_value"] == 99.9
     assert prod["subcategory_ids"] == [21]
+    assert prod.get("cost_value") is None
     assert _product_subcategory_ids({"id_subcategoria": 7, "subcategoria": [7, 8]}) == [7, 8]
+
+
+def test_mensalidades_sugerir_from_vhsys(
+    quotes_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("VHSYS_ACCESS_TOKEN", "tok")
+    monkeypatch.setenv("VHSYS_SECRET_ACCESS_TOKEN", "sec")
+    clear_settings_cache()
+
+    created = quotes_client.post(
+        "/orcamentos",
+        json={
+            "cnpj": "11222333000181",
+            "client_name": "Cliente Mensal",
+            "items": [
+                {
+                    "section": "mensalidade",
+                    "name": "M365 Backup",
+                    "qty": 2,
+                    "unit_value": 100.0,
+                    "vhsys_product_id": 88,
+                    "sort_order": 0,
+                }
+            ],
+        },
+    )
+    assert created.status_code == 201, created.text
+    quote_id = created.json()["id"]
+    item_id = created.json()["items"][0]["id"]
+    assert created.json()["items"][0]["vhsys_product_id"] == 88
+
+    product = {
+        "id": 88,
+        "name": "M365 Backup",
+        "unit_value": 100.0,
+        "cost_value": 40.0,
+        "supplier_name": "Microsoft",
+    }
+    with patch(
+        "src.quotes.router.VhsysClient.get_product",
+        new=AsyncMock(return_value=product),
+    ):
+        res = quotes_client.post(
+            f"/orcamentos/{quote_id}/mensalidades/sugerir",
+            json={"item_ids": [item_id]},
+        )
+    assert res.status_code == 200, res.text
+    alloc = res.json()["allocations"][0]
+    assert alloc["fornecedor_name"] == "Microsoft"
+    assert alloc["fornecedor_amount"] == 80.0
+    assert alloc["intermediador_amount"] == 120.0
+    assert alloc["source"] == "vhsys"
+    clear_settings_cache()

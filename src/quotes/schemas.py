@@ -224,6 +224,7 @@ class QuoteItemWrite(BaseModel):
     qty: float = Field(default=1.0, gt=0)
     unit_value: float = Field(default=0.0, ge=0)
     template_key: str | None = None
+    vhsys_product_id: int | None = Field(default=None, ge=1)
     sort_order: int = Field(default=0, ge=0)
 
     @field_validator("section")
@@ -263,6 +264,7 @@ class QuoteItemRead(BaseModel):
     unit_value: float
     total_value: float
     template_key: str | None = None
+    vhsys_product_id: int | None = None
     sort_order: int = 0
 
 
@@ -313,6 +315,7 @@ class QuoteWrite(BaseModel):
     extra_recipients: list[str] = Field(default_factory=list)
     monthly_draft_json: str | None = None
     notes: str | None = None
+    title: str | None = None
     items: list[QuoteItemWrite] = Field(default_factory=list)
 
     @field_validator("cnpj")
@@ -352,6 +355,11 @@ class QuoteWrite(BaseModel):
     @classmethod
     def _normalize_notes(cls, value: str | None) -> str | None:
         return _normalize_optional_notes(value)
+
+    @field_validator("title")
+    @classmethod
+    def _normalize_title(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=120, label="Nome do orçamento")
 
     @model_validator(mode="after")
     def _validate_modules(self) -> QuoteWrite:
@@ -425,6 +433,7 @@ class QuoteUpdate(BaseModel):
     client_email: str | None = None
     extra_recipients: list[str] | None = None
     notes: str | None = None
+    title: str | None = None
     items: list[QuoteItemWrite] | None = None
 
     @field_validator("cnpj")
@@ -468,6 +477,11 @@ class QuoteUpdate(BaseModel):
     @classmethod
     def _normalize_notes(cls, value: str | None) -> str | None:
         return _normalize_optional_notes(value)
+
+    @field_validator("title")
+    @classmethod
+    def _normalize_title(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=120, label="Nome do orçamento")
 
     @model_validator(mode="after")
     def _at_least_one_field(self) -> QuoteUpdate:
@@ -516,6 +530,7 @@ class QuoteRead(BaseModel):
     extra_recipients: list[str] = Field(default_factory=list)
     monthly_draft_json: str | None = None
     notes: str | None = None
+    title: str | None = None
     tiflux_ticket_number: str | None
     vhsys_os_id: str | None
     pdf_path: str | None
@@ -552,6 +567,9 @@ class QuoteMonthlyAllocationWrite(BaseModel):
     fornecedor_amount: float = Field(ge=0)
     intermediador_name: str = Field(default="Intermediador", max_length=200)
     intermediador_amount: float = Field(ge=0)
+    vhsys_product_id: int | None = Field(default=None, ge=1)
+    source: Literal["vhsys", "manual"] = "manual"
+    warning: str | None = None
 
     @field_validator("fornecedor_name", "intermediador_name")
     @classmethod
@@ -560,6 +578,17 @@ class QuoteMonthlyAllocationWrite(BaseModel):
         if not cleaned:
             raise ValueError("Nome da parte da mensalidade é obrigatório.")
         return cleaned
+
+
+class QuoteMonthlySuggestBody(BaseModel):
+    item_ids: list[int] = Field(min_length=1)
+
+    @field_validator("item_ids")
+    @classmethod
+    def _unique_ids(cls, value: list[int]) -> list[int]:
+        if len(value) != len(set(value)):
+            raise ValueError("item_ids não deve conter duplicados.")
+        return value
 
 
 class QuoteMonthlyDraftWrite(BaseModel):

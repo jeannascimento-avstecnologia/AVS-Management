@@ -73,6 +73,7 @@ class HubDatabase:
                 conn.executescript(sql)
             self._migrate_quotes_columns(conn)
             self._migrate_relax_section_checks(conn)
+            self._migrate_quote_items_columns(conn)
             self._migrate_quote_module_templates(conn)
             self._migrate_quote_module_template_columns(conn)
             self._migrate_quote_proposal_templates(conn)
@@ -97,10 +98,19 @@ class HubDatabase:
             ("client_email", "TEXT"),
             ("extra_recipients", "TEXT"),
             ("notes", "TEXT"),
+            ("title", "TEXT"),
         )
         for name, col_type in additions:
             if name not in existing:
                 conn.execute(f"ALTER TABLE quotes ADD COLUMN {name} {col_type}")
+
+    def _migrate_quote_items_columns(self, conn: sqlite3.Connection) -> None:
+        existing = {
+            str(row[1])
+            for row in conn.execute("PRAGMA table_info(quote_items)").fetchall()
+        }
+        if "vhsys_product_id" not in existing:
+            conn.execute("ALTER TABLE quote_items ADD COLUMN vhsys_product_id INTEGER")
 
     def _migrate_quote_versions(self, conn: sqlite3.Connection) -> None:
         """Cria quote_versions em DBs já bootstrapados (idempotente)."""

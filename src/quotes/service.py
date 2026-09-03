@@ -23,6 +23,7 @@ from src.quotes.schemas import (
     QuoteProposalTemplateUpdate,
     QuoteProposalTemplateWrite,
     QuoteRead,
+    QuoteMonthlyAllocationWrite,
     QuoteMonthlyDraftWrite,
     QuoteVersionRead,
     QuoteTemplateLine,
@@ -68,6 +69,7 @@ _QUOTE_COLUMNS = (
     "extra_recipients",
     "monthly_draft_json",
     "notes",
+    "title",
     "tiflux_ticket_number",
     "vhsys_os_id",
     "pdf_path",
@@ -137,7 +139,123 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
 
 
+def _optional_int(row: sqlite3.Row, key: str) -> int | None:
+    if key not in row.keys():
+        return None
+    raw = row[key]
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _optional_float(row: sqlite3.Row, key: str) -> float | None:
+    try:
+        raw = row[key]
+    except (KeyError, IndexError):
+        return None
+    if raw is None:
+        return None
+    return float(raw)
+
+
+def _optional_title(row: sqlite3.Row) -> str | None:
+    if "title" not in row.keys():
+        return None
+    raw = row["title"]
+    if raw is None:
+        return None
+    cleaned = str(raw).strip()
+    return cleaned or None
+
+
+def parse_quote_search_money(raw: str) -> float | None:
+    cleaned = raw.strip().replace("R$", "").replace(" ", "")
+    if not cleaned:
+        return None
+    if "," in cleaned and "." in cleaned:
+        cleaned = cleaned.replace(".", "").replace(",", ".")
+    elif "," in cleaned:
+        cleaned = cleaned.replace(",", ".")
+    try:
+        return round(float(cleaned), 2)
+    except ValueError:
+        return None
+
+
+def parse_quote_number(raw: str | None) -> int | None:
+    if raw is None:
+        return None
+    cleaned = raw.strip().upper().replace(" ", "")
+    if cleaned.startswith("M"):
+        cleaned = cleaned[1:]
+    if not cleaned.isdigit():
+        return None
+    return int(cleaned)
+
+
+def build_monthly_suggestion(
+    item: QuoteItemRead,
+    product: dict[str, Any] | None,
+    *,
+    intermediador_name: str,
+) -> QuoteMonthlyAllocationWrite:
+    """Custo VHSYS = fornecedor; margem = intermediador. Soma = total da linha."""
+    from src.quotes.totals import round_money
+
+    line_total = round_money(float(item.total_value))
+    qty = float(item.qty)
+    warning: str | None = None
+    source: str = "manual"
+    supplier = "Fornecedor"
+    cost_unit: float | None = None
+    product_id = item.vhsys_product_id
+    if product:
+        source = "vhsys"
+        raw_cost = product.get("cost_value")
+        if raw_cost is not None:
+            try:
+                cost_unit = float(raw_cost)
+            except (TypeError, ValueError):
+                cost_unit = None
+        name = str(product.get("supplier_name") or "").strip()
+        if name:
+            supplier = name
+        pid = product.get("id")
+        if pid is not None:
+            try:
+                product_id = int(pid)
+            except (TypeError, ValueError):
+                pass
+    if cost_unit is None:
+        warning = "Custo VHSYS ausente; ajuste manual se necessário."
+        fornecedor_amount = 0.0
+        intermediador_amount = line_total
+        if product is None:
+            warning = "Produto VHSYS não encontrado; preencha manualmente."
+            source = "manual"
+    else:
+        raw_forn = round_money(max(0.0, cost_unit * qty))
+        if raw_forn > line_total:
+            warning = "Custo VHSYS maior que o total da linha; fornecedor limitado ao total."
+            fornecedor_amount = line_total
+            intermediador_amount = 0.0
+        else:
+            fornecedor_amount = raw_forn
+            intermediador_amount = round_money(line_total - fornecedor_amount)
+    inter_name = (intermediador_name or "").strip() or "AVS TECNOLOGIA"
+    return QuoteMonthlyAllocationWrite(
+        item_id=int(item.id),
+        fornecedor_name=supplier,
+        fornecedor_amount=fornecedor_amount,
+        intermediador_name=inter_name,
+        intermediador_amount=intermediador_amount,
+        vhsys_product_id=product_id,
+        source=source if source in ("vhsys", "manual") else "manual",
+        warning=warning,
+    )
     try:
         raw = row[key]
     except (KeyError, IndexError):
@@ -278,6 +396,7 @@ def _row_to_item(row: sqlite3.Row) -> QuoteItemRead:
         unit_value=float(row["unit_value"]),
         total_value=float(row["total_value"]),
         template_key=row["template_key"],
+        vhsys_product_id=_optional_int(row, "vhsys_product_id"),
         sort_order=int(row["sort_order"]),
     )
 
@@ -321,6 +440,7 @@ def _row_to_quote(row: sqlite3.Row, items: list[QuoteItemRead]) -> QuoteRead:
         ),
         monthly_draft_json=(str(row["monthly_draft_json"]) if "monthly_draft_json" in row.keys() else None),
         notes=_optional_notes(row),
+        title=_optional_title(row),
         tiflux_ticket_number=row["tiflux_ticket_number"],
         vhsys_os_id=row["vhsys_os_id"],
         pdf_path=row["pdf_path"],
@@ -338,7 +458,7 @@ def _fetch_items(conn: sqlite3.Connection, quote_id: int) -> list[QuoteItemRead]
     rows = conn.execute(
         """
         SELECT id, quote_id, section, name, qty, unit_value, total_value,
-               template_key, sort_order
+               template_key, vhsys_product_id, sort_order
         FROM quote_items
         WHERE quote_id = ?
         ORDER BY section, sort_order, id
@@ -354,8 +474,8 @@ def _insert_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteItem
             """
             INSERT INTO quote_items (
                 quote_id, section, name, qty, unit_value, total_value,
-                template_key, sort_order
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                template_key, vhsys_product_id, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 quote_id,
@@ -365,6 +485,7 @@ def _insert_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteItem
                 item.unit_value,
                 item.computed_total(),
                 item.template_key,
+                item.vhsys_product_id,
                 item.sort_order,
             ),
         )
@@ -387,7 +508,7 @@ def _replace_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteIte
                 """
                 UPDATE quote_items
                 SET section = ?, name = ?, qty = ?, unit_value = ?, total_value = ?,
-                    template_key = ?, sort_order = ?
+                    template_key = ?, vhsys_product_id = ?, sort_order = ?
                 WHERE id = ? AND quote_id = ?
                 """,
                 (
@@ -397,6 +518,7 @@ def _replace_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteIte
                     item.unit_value,
                     total,
                     item.template_key,
+                    item.vhsys_product_id,
                     item.sort_order,
                     item.id,
                     quote_id,
@@ -408,8 +530,8 @@ def _replace_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteIte
                 """
                 INSERT INTO quote_items (
                     quote_id, section, name, qty, unit_value, total_value,
-                    template_key, sort_order
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    template_key, vhsys_product_id, sort_order
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     quote_id,
@@ -419,6 +541,7 @@ def _replace_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteIte
                     item.unit_value,
                     total,
                     item.template_key,
+                    item.vhsys_product_id,
                     item.sort_order,
                 ),
             )
@@ -458,7 +581,7 @@ class QuoteService:
                     monthly_payment_plan, monthly_discount_pct, monthly_discount_value,
                     monthly_labor_hours, monthly_labor_hourly_rate,
                     modules_json,
-                    client_email, extra_recipients, notes,
+                    client_email, extra_recipients, notes, title,
                     created_by, created_at, updated_at
                 ) VALUES (
                     ?, ?, ?, ?,
@@ -468,7 +591,7 @@ class QuoteService:
                     ?, ?, ?,
                     ?, ?,
                     ?,
-                    ?, ?, ?,
+                    ?, ?, ?, ?,
                     ?, ?, ?
                 )
                 """,
@@ -494,6 +617,7 @@ class QuoteService:
                     data.client_email,
                     _dump_extra_recipients(data.extra_recipients),
                     seed_quote_notes(data.notes, ticket=None),
+                    data.title,
                     created_by,
                     now,
                     now,
@@ -510,6 +634,11 @@ class QuoteService:
         *,
         status: str | None = None,
         lead_temperature: str | None = None,
+        client: str | None = None,
+        number: str | None = None,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        q: str | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[QuoteRead]:
@@ -527,6 +656,67 @@ class QuoteService:
             params.append(lead_temperature)
             # Filtro de lead = pipeline aberto (ainda não aprovados / contratados).
             where.append("q.status NOT IN ('approved', 'contracted')")
+        if client:
+            term = client.strip()
+            digits = re.sub(r"\D", "", term)
+            like = f"%{term}%"
+            if digits:
+                where.append(
+                    "(LOWER(IFNULL(q.client_name, '')) LIKE LOWER(?) OR q.cnpj LIKE ?)"
+                )
+                params.extend([like, f"%{digits}%"])
+            else:
+                where.append("LOWER(IFNULL(q.client_name, '')) LIKE LOWER(?)")
+                params.append(like)
+        quote_id = parse_quote_number(number)
+        if quote_id is not None:
+            where.append("q.id = ?")
+            params.append(quote_id)
+        if date_from:
+            where.append("substr(q.created_at, 1, 10) >= ?")
+            params.append(date_from.strip()[:10])
+        if date_to:
+            where.append("substr(q.created_at, 1, 10) <= ?")
+            params.append(date_to.strip()[:10])
+        if q:
+            term = q.strip()
+            like = f"%{term}%"
+            or_parts = [
+                "LOWER(IFNULL(q.client_name, '')) LIKE LOWER(?)",
+                "LOWER(IFNULL(q.title, '')) LIKE LOWER(?)",
+                "CAST(q.id AS TEXT) LIKE ?",
+                "('M' || CAST(q.id AS TEXT)) LIKE UPPER(?)",
+                """EXISTS (
+                    SELECT 1 FROM quote_items qi
+                    WHERE qi.quote_id = q.id AND LOWER(qi.name) LIKE LOWER(?)
+                )""",
+            ]
+            q_params: list[Any] = [like, like, like, like, like]
+            digits = re.sub(r"\D", "", term)
+            if digits:
+                or_parts.append("q.cnpj LIKE ?")
+                q_params.append(f"%{digits}%")
+            money = parse_quote_search_money(term)
+            if money is not None:
+                or_parts.append(
+                    """EXISTS (
+                        SELECT 1 FROM quote_items qi
+                        WHERE qi.quote_id = q.id AND ROUND(qi.total_value, 2) = ?
+                    )"""
+                )
+                or_parts.append(
+                    """(
+                        SELECT ROUND(SUM(qi.total_value), 2) FROM quote_items qi
+                        WHERE qi.quote_id = q.id
+                    ) = ?"""
+                )
+                q_params.extend([money, money])
+            qid = parse_quote_number(term)
+            if qid is not None:
+                or_parts.append("q.id = ?")
+                q_params.append(qid)
+            where.append("(" + " OR ".join(or_parts) + ")")
+            params.extend(q_params)
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += " ORDER BY q.updated_at DESC, q.id DESC LIMIT ? OFFSET ?"
@@ -584,6 +774,7 @@ class QuoteService:
                         qty=i.qty,
                         unit_value=i.unit_value,
                         template_key=i.template_key,
+                        vhsys_product_id=i.vhsys_product_id,
                         sort_order=i.sort_order,
                     )
                     for i in _fetch_items(conn, quote_id)
@@ -1457,6 +1648,7 @@ class QuoteService:
         client: QuotePdfClient | None = None,
         version_id: int | None = None,
         from_live: bool = False,
+        technician_name: str | None = None,
     ) -> tuple[QuoteRead, Path]:
         """Gera PDF da versão pedida (default: ativa) e salva UUID sob HUB_PDF_DIR."""
         quote = self.get(quote_id)
@@ -1544,6 +1736,7 @@ class QuoteService:
             client=client,
             version_number=version_number,
             monthly_draft_json=snapshot_monthly_json,
+            technician_name=technician_name,
         )
 
         now = _utcnow_iso()

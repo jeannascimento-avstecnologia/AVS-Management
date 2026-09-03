@@ -27,9 +27,15 @@ from src.quotes.schemas import (
     QuoteUpdate,
     QuoteWrite,
     QuoteMonthlyDraftWrite,
+    QuoteMonthlySuggestBody,
     VhsysCatalogCreateBody,
 )
-from src.quotes.service import QuoteConflictError, QuoteNotFoundError, QuoteService
+from src.quotes.service import (
+    QuoteConflictError,
+    QuoteNotFoundError,
+    QuoteService,
+    build_monthly_suggestion,
+)
 
 
 def _user_id(user: dict[str, Any]) -> int | None:
@@ -44,6 +50,21 @@ def _user_id(user: dict[str, Any]) -> int | None:
 
 def _service() -> QuoteService:
     return QuoteService(get_hub_db())
+
+
+def _technician_name(quote: Any, user: dict[str, Any]) -> str:
+    created_by = getattr(quote, "created_by", None)
+    if created_by is not None:
+        try:
+            from src.auth.store import get_auth_db
+
+            db_user = get_auth_db().get_user_by_id(int(created_by))
+            if db_user and (db_user.name or "").strip():
+                return db_user.name.strip()
+        except Exception:
+            pass
+    name = str(user.get("name") or "").strip()
+    return name or "-"
 
 
 def _normalize_tiflux_quote_client(row: dict) -> dict[str, Any] | None:
@@ -475,6 +496,11 @@ def build_quotes_router() -> APIRouter:
     async def list_quotes(
         status: QuoteStatus | None = Query(default=None),
         lead_temperature: LeadTemperature | None = Query(default=None),
+        client: str | None = Query(default=None, max_length=300),
+        number: str | None = Query(default=None, max_length=32),
+        date_from: str | None = Query(default=None, max_length=10),
+        date_to: str | None = Query(default=None, max_length=10),
+        q: str | None = Query(default=None, max_length=200),
         limit: int = Query(default=100, ge=1, le=500),
         offset: int = Query(default=0, ge=0),
         _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
@@ -482,6 +508,11 @@ def build_quotes_router() -> APIRouter:
         quotes = _service().list(
             status=status,
             lead_temperature=lead_temperature,
+            client=client,
+            number=number,
+            date_from=date_from,
+            date_to=date_to,
+            q=q,
             limit=limit,
             offset=offset,
         )
@@ -652,6 +683,52 @@ def build_quotes_router() -> APIRouter:
         payload["outbox_status"] = final_status
         return payload
 
+    @router.post("/{quote_id}/mensalidades/sugerir")
+    async def suggest_quote_monthly(
+        quote_id: int,
+        body: QuoteMonthlySuggestBody,
+        _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        if not settings.vhsys_access_token or not settings.vhsys_secret_access_token:
+            raise HTTPException(status_code=503, detail="Credenciais VHSYS não configuradas.")
+        try:
+            quote = _service().get(quote_id)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        wanted = set(body.item_ids)
+        items = [i for i in quote.items if i.id in wanted]
+        if len(items) != len(wanted):
+            raise HTTPException(
+                status_code=404,
+                detail="Mensalidades: alguns quote_items não pertencem ao orçamento.",
+            )
+        issuer_name = (settings.quote_issuer_name or "AVS TECNOLOGIA").strip() or "AVS TECNOLOGIA"
+        vhsys = VhsysClient(settings)
+        allocations = []
+        try:
+            for item in items:
+                product = None
+                if item.vhsys_product_id:
+                    product = await vhsys.get_product(item.vhsys_product_id)
+                if product is None and (item.name or "").strip():
+                    found = await vhsys.search_catalog_items(item.name.strip(), limit=20)
+                    needle = item.name.strip().casefold()
+                    product = next(
+                        (p for p in found if str(p.get("name") or "").strip().casefold() == needle),
+                        None,
+                    )
+                alloc = build_monthly_suggestion(
+                    item, product, intermediador_name=issuer_name
+                )
+                allocations.append(alloc.model_dump())
+        except VhsysApiError as exc:
+            status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
+            if status == 401:
+                raise HTTPException(status_code=502, detail="Tokens VHSYS inválidos.") from exc
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
+        return {"allocations": allocations}
+
     @router.put("/{quote_id}/mensalidades", status_code=200)
     async def update_quote_monthly_draft(
         request: Request,
@@ -737,7 +814,11 @@ def build_quotes_router() -> APIRouter:
             quote = _service().get(quote_id)
             issuer, client = await resolve_pdf_parties(quote, get_settings())
             quote, path = _service().generate_pdf(
-                quote_id, issuer=issuer, client=client, from_live=True
+                quote_id,
+                issuer=issuer,
+                client=client,
+                from_live=True,
+                technician_name=_technician_name(quote, user),
             )
         except QuoteNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc

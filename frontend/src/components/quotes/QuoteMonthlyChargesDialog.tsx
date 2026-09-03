@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import type { QuoteMonthlyAllocationWrite, QuoteMonthlyDraftWrite } from '@/api/client'
+import { api, type QuoteMonthlyAllocationWrite, type QuoteMonthlyDraftWrite } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -29,6 +29,10 @@ type SplitDraft = {
   fornecedor: string
   intermediadorName: string
   intermediador: string
+  source: 'vhsys' | 'manual'
+  warning: string | null
+  vhsysProductId: number | null
+  locked: boolean
 }
 
 function money(value: number): string {
@@ -47,14 +51,32 @@ function emptySplit(): SplitDraft {
   return {
     fornecedorName: 'Fornecedor',
     fornecedor: '',
-    intermediadorName: 'Intermediador',
+    intermediadorName: 'AVS TECNOLOGIA',
     intermediador: '',
+    source: 'manual',
+    warning: null,
+    vhsysProductId: null,
+    locked: true,
+  }
+}
+
+function fromAllocation(a: QuoteMonthlyAllocationWrite): SplitDraft {
+  return {
+    fornecedorName: a.fornecedor_name || 'Fornecedor',
+    fornecedor: String(a.fornecedor_amount),
+    intermediadorName: a.intermediador_name || 'AVS TECNOLOGIA',
+    intermediador: String(a.intermediador_amount),
+    source: a.source ?? 'manual',
+    warning: a.warning ?? null,
+    vhsysProductId: a.vhsys_product_id ?? null,
+    locked: (a.source ?? 'manual') === 'vhsys',
   }
 }
 
 export function QuoteMonthlyChargesDialog({
   open,
   onOpenChange,
+  quoteId,
   lines,
   canEdit,
   initialDraft,
@@ -63,6 +85,7 @@ export function QuoteMonthlyChargesDialog({
 }: {
   open: boolean
   onOpenChange: (open: boolean) => void
+  quoteId: number
   lines: Line[]
   canEdit: boolean
   initialDraft: QuoteMonthlyDraftWrite | null
@@ -71,6 +94,7 @@ export function QuoteMonthlyChargesDialog({
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [splits, setSplits] = useState<Record<string, SplitDraft>>({})
+  const [suggesting, setSuggesting] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -81,12 +105,7 @@ export function QuoteMonthlyChargesDialog({
       const line = lines.find((l) => l.itemId != null && l.itemId === a.item_id)
       if (!line) continue
       selectedKeys.add(line.localKey)
-      nextSplits[line.localKey] = {
-        fornecedorName: a.fornecedor_name || 'Fornecedor',
-        fornecedor: String(a.fornecedor_amount),
-        intermediadorName: a.intermediador_name || 'Intermediador',
-        intermediador: String(a.intermediador_amount),
-      }
+      nextSplits[line.localKey] = fromAllocation(a)
     }
     setSplits(nextSplits)
     setSelected(selectedKeys)
@@ -108,31 +127,32 @@ export function QuoteMonthlyChargesDialog({
 
   const allBalanced = chosen.length === 0 || lineChecks.every((c) => c.ok)
 
-  // #region agent log
-  useEffect(() => {
-    if (!open) return
-    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ae8776' },
-      body: JSON.stringify({
-        sessionId: 'ae8776',
-        runId: 'post-fix',
-        hypothesisId: 'A',
-        location: 'QuoteMonthlyChargesDialog.tsx:totals',
-        message: 'per-line split totals',
-        data: {
-          selectedCount: selected.size,
-          model: 'per-line',
-          lineChecks,
-          allBalanced,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-  }, [open, selected.size, lineChecks, allBalanced])
-  // #endregion
+  async function applySuggestion(keys: string[]) {
+    const itemIds = keys
+      .map((k) => lines.find((l) => l.localKey === k)?.itemId)
+      .filter((id): id is number => id != null && id >= 1)
+    if (itemIds.length === 0) return
+    setSuggesting(true)
+    try {
+      const { allocations } = await api.suggestQuoteMonthly(quoteId, itemIds)
+      setSplits((prev) => {
+        const next = { ...prev }
+        for (const a of allocations) {
+          const line = lines.find((l) => l.itemId === a.item_id)
+          if (!line) continue
+          next[line.localKey] = fromAllocation(a)
+        }
+        return next
+      })
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Falha ao buscar mensalidades no VHSYS.')
+    } finally {
+      setSuggesting(false)
+    }
+  }
 
   function toggle(key: string) {
+    const line = lines.find((l) => l.localKey === key)
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(key)) {
@@ -145,6 +165,11 @@ export function QuoteMonthlyChargesDialog({
       } else {
         next.add(key)
         setSplits((s) => ({ ...s, [key]: s[key] ?? emptySplit() }))
+        if (line?.itemId) {
+          void applySuggestion([key])
+        } else {
+          toast.error('Salve os itens antes de marcar mensalidade.')
+        }
       }
       return next
     })
@@ -171,25 +196,13 @@ export function QuoteMonthlyChargesDialog({
         item_id: line.itemId ?? 0,
         fornecedor_name: s.fornecedorName.trim() || 'Fornecedor',
         fornecedor_amount: parseAmt(s.fornecedor),
-        intermediador_name: s.intermediadorName.trim() || 'Intermediador',
+        intermediador_name: s.intermediadorName.trim() || 'AVS TECNOLOGIA',
         intermediador_amount: parseAmt(s.intermediador),
+        vhsys_product_id: s.vhsysProductId,
+        source: s.source,
+        warning: s.warning,
       }
     })
-    // #region agent log
-    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ae8776' },
-      body: JSON.stringify({
-        sessionId: 'ae8776',
-        runId: 'post-fix',
-        hypothesisId: 'C',
-        location: 'QuoteMonthlyChargesDialog.tsx:handleSave',
-        message: 'payload per-line allocations',
-        data: { allocations, keys: chosen.map((l) => l.localKey) },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-    // #endregion
     await onSave({ allocations }, chosen.map((l) => l.localKey))
   }
 
@@ -199,8 +212,8 @@ export function QuoteMonthlyChargesDialog({
         <DialogHeader>
           <DialogTitle>Mensalidades</DialogTitle>
           <DialogDescription>
-            Selecione uma linha para ela descer à tabela. Em cada linha, Fornecedor + Intermediador deve
-            somar o total daquela linha. O PDF mostra o produto e, abaixo, as duas cobranças.
+            Marque a linha inteira. Valores de fornecedor (custo VHSYS) e intermediador (margem)
+            vêm do cadastro. PDF mostra o recorte também em Dados de pagamento.
           </DialogDescription>
         </DialogHeader>
 
@@ -220,7 +233,7 @@ export function QuoteMonthlyChargesDialog({
                   >
                     <Checkbox
                       checked={false}
-                      disabled={!canEdit}
+                      disabled={!canEdit || suggesting}
                       onCheckedChange={() => toggle(line.localKey)}
                     />
                     <span className="min-w-0 flex-1 text-sm">
@@ -245,6 +258,7 @@ export function QuoteMonthlyChargesDialog({
                 chosen.map((line) => {
                   const s = splits[line.localKey] ?? emptySplit()
                   const check = lineChecks.find((c) => c.key === line.localKey)
+                  const locked = s.locked && canEdit
                   return (
                     <div
                       key={line.localKey}
@@ -264,19 +278,48 @@ export function QuoteMonthlyChargesDialog({
                           {money(line.total)}
                         </span>
                       </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded bg-aurora-surface-2 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                          {s.source === 'vhsys' ? 'VHSYS' : 'Manual'}
+                        </span>
+                        {canEdit ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={suggesting || line.itemId == null}
+                              onClick={() => void applySuggestion([line.localKey])}
+                            >
+                              Recalcular
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => patchSplit(line.localKey, { locked: !s.locked, source: 'manual' })}
+                            >
+                              {s.locked ? 'Editar manualmente' : 'Travar'}
+                            </Button>
+                          </>
+                        ) : null}
+                      </div>
+                      {s.warning ? (
+                        <p className="text-xs text-amber-600">{s.warning}</p>
+                      ) : null}
                       <div className="grid gap-2 sm:grid-cols-2">
                         <div className="space-y-1">
                           <Label className="text-xs">Fornecedor</Label>
                           <div className="flex gap-2">
                             <Input
                               value={s.fornecedorName}
-                              disabled={!canEdit}
+                              disabled={!canEdit || locked}
                               onChange={(e) => patchSplit(line.localKey, { fornecedorName: e.target.value })}
                             />
                             <Input
                               className="w-28"
                               value={s.fornecedor}
-                              disabled={!canEdit}
+                              disabled={!canEdit || locked}
                               placeholder="0,00"
                               inputMode="decimal"
                               onChange={(e) => patchSplit(line.localKey, { fornecedor: e.target.value })}
@@ -288,7 +331,7 @@ export function QuoteMonthlyChargesDialog({
                           <div className="flex gap-2">
                             <Input
                               value={s.intermediadorName}
-                              disabled={!canEdit}
+                              disabled={!canEdit || locked}
                               onChange={(e) =>
                                 patchSplit(line.localKey, { intermediadorName: e.target.value })
                               }
@@ -296,7 +339,7 @@ export function QuoteMonthlyChargesDialog({
                             <Input
                               className="w-28"
                               value={s.intermediador}
-                              disabled={!canEdit}
+                              disabled={!canEdit || locked}
                               placeholder="0,00"
                               inputMode="decimal"
                               onChange={(e) => patchSplit(line.localKey, { intermediador: e.target.value })}
@@ -326,7 +369,11 @@ export function QuoteMonthlyChargesDialog({
             Fechar
           </Button>
           {canEdit ? (
-            <Button type="button" onClick={() => void handleSave()} disabled={saving || !allBalanced}>
+            <Button
+              type="button"
+              onClick={() => void handleSave()}
+              disabled={saving || suggesting || !allBalanced}
+            >
               {saving ? 'Salvando…' : 'Aplicar'}
             </Button>
           ) : null}

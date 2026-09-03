@@ -9,7 +9,8 @@
 - Título impresso: `Orçamento : M{id}` (ex.: `Orçamento : M2353`).
 - `{id}` = `quotes.id` (inteiro). Prefixo **sempre** `M`.
 - Versão ativa: `vX` ao lado do título, **fonte menor** (~75–80%).
-- Data do orçamento no cabeçalho (não há bloco Dados do Cliente).
+- Data do orçamento no cabeçalho.
+- `quotes.title` **nunca** é impresso.
 - Não usar “Ordem de serviço” / “OS” no título.
 
 ## Layout
@@ -20,14 +21,16 @@
 AVS TECNOLOGIA - CNPJ: 08.354.533/0001-83 | Insc Estadual: 795.275.950.117
 ```
 
-   **Rodapé (todas as páginas):** endereço + telefone/e-mail/site (ícones). Cabeçalho/rodapé **não** seguem o tenant/parte de Faturado por.
+   Abaixo do CNPJ/IE, no mesmo banner: endereço + telefone/e-mail/site (ícones). Cabeçalho **não** segue o tenant/parte de Faturado por.
 
 ```
 Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.087-240
 (ícone tel) (19) 3243-9559 | (ícone e-mail) comercial@avstecnologia.cloud | (ícone site) https://avstecnologia.cloud/
 ```
 
-2. **Sem bloco DADOS DO CLIENTE.** Cliente permanece só no wizard (passos 1 e 3).
+   **Rodapé (todas as páginas):** só paginação `Pagina X/{nb}`.
+
+2. **Primeiro bloco: DADOS DO CLIENTE** — Nome (`legal_name` / `client_name`), CNPJ, Técnico responsável (`quotes.created_by` → nome do usuário; fallback usuário logado).
 
 3. **Módulos (N seções)** — ordem `sort_order` de `quotes.modules_json`:
    - Título = `module.title` (tipografia negrito + regra cinza; **sem** banda vermelha/azul).
@@ -43,6 +46,7 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
 
 5. **Dados de pagamento / resumo**:
    - Uma linha (ou par) de resumo **por módulo presente** (qtde itens + total líquido), rótulo = título do módulo.
+   - Se o módulo tiver linhas marcadas como mensalidade: abaixo do total do grupo, em **fonte menor** (itálico muted), o valor mensal daquele grupo (fornecedor | intermediador).
    - Se ainda existirem módulos com `legacy_kind` `implantacao` / `mensalidade`, manter também os rótulos OS VHSYS:
      - `TOTAL DE HORAS/QTDE DE SERVICOS` / `VALOR TOTAL DOS SERVICOS` ← `implantacao`
      - `TOTAL DE PRODUTOS` / `VALOR TOTAL DOS PRODUTOS` ← `mensalidade`
@@ -61,6 +65,7 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
 ## Formatação / paginação
 
 - Meta: **1 página A4** para orçamento típico.
+- Respiro entre linhas: `_ROW_H` ≥ 5.8, `_GAP` ≥ 1.4, `line_h` ≥ 4.2 (não grudar rótulo/valor).
 - Quebras **somente entre blocos lógicos**. Assinaturas no keep-together (aviso+ticket vão nas Observações).
 
 ## Dados da empresa (emitente)

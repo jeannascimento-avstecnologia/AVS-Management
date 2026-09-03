@@ -42,6 +42,7 @@ CREATE TABLE quotes (
     client_email            TEXT,   -- e-mail principal (envio orçamento)
     extra_recipients        TEXT,   -- JSON array de e-mails extras (CC)
     notes                   TEXT,   -- observações do PDF / wizard passo 3
+    title                   TEXT,   -- nome interno (UI); NÃO vai ao PDF
     tiflux_ticket_number    TEXT,
     vhsys_os_id             TEXT,
     pdf_path                TEXT,   -- UUID filename; fora web root
@@ -73,6 +74,7 @@ CREATE TABLE quote_items (
     unit_value      REAL    NOT NULL DEFAULT 0,
     total_value     REAL    NOT NULL, -- qty * unit (app calcula; DB armazena)
     template_key    TEXT,
+    vhsys_product_id INTEGER,
     sort_order      INTEGER NOT NULL DEFAULT 0
 );
 

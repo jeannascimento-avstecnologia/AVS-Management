@@ -87,6 +87,7 @@ export type QuoteItemRead = {
   unit_value: number
   total_value: number
   template_key: string | null
+  vhsys_product_id?: number | null
   sort_order: number
 }
 
@@ -97,6 +98,7 @@ export type QuoteItemWrite = {
   qty: number
   unit_value: number
   template_key?: string | null
+  vhsys_product_id?: number | null
   sort_order?: number
 }
 
@@ -127,6 +129,7 @@ export type QuoteRead = {
   extra_recipients: string[]
   monthly_draft_json: string | null
   notes: string | null
+  title: string | null
   tiflux_ticket_number: string | null
   vhsys_os_id: string | null
   pdf_path: string | null
@@ -151,6 +154,9 @@ export type QuoteMonthlyAllocationWrite = {
   fornecedor_amount: number
   intermediador_name: string
   intermediador_amount: number
+  vhsys_product_id?: number | null
+  source?: 'vhsys' | 'manual'
+  warning?: string | null
 }
 
 export type QuoteMonthlyDraftWrite = {
@@ -189,6 +195,7 @@ export type QuoteWrite = {
   client_email?: string | null
   extra_recipients?: string[]
   notes?: string | null
+  title?: string | null
   items?: QuoteItemWrite[]
 }
 
@@ -298,6 +305,8 @@ export type VhsysCatalogItem = {
   name: string
   code: string | null
   unit_value: number
+  cost_value?: number | null
+  supplier_name?: string | null
   category_id?: number | null
   subcategory_ids?: number[]
 }
@@ -324,6 +333,11 @@ export type VhsysParty = {
 export type QuotesListParams = {
   status?: QuoteStatus
   lead_temperature?: LeadTemperature
+  client?: string
+  number?: string
+  date_from?: string
+  date_to?: string
+  q?: string
   limit?: number
   offset?: number
 }
@@ -901,6 +915,11 @@ export const api = {
     const qs = new URLSearchParams()
     if (params?.status) qs.set('status', params.status)
     if (params?.lead_temperature) qs.set('lead_temperature', params.lead_temperature)
+    if (params?.client) qs.set('client', params.client)
+    if (params?.number) qs.set('number', params.number)
+    if (params?.date_from) qs.set('date_from', params.date_from)
+    if (params?.date_to) qs.set('date_to', params.date_to)
+    if (params?.q) qs.set('q', params.q)
     if (params?.limit != null) qs.set('limit', String(params.limit))
     if (params?.offset != null) qs.set('offset', String(params.offset))
     const suffix = qs.toString() ? `?${qs}` : ''
@@ -1077,6 +1096,15 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
+
+  suggestQuoteMonthly: (id: number, itemIds: number[]) =>
+    request<{ allocations: QuoteMonthlyAllocationWrite[] }>(
+      `/orcamentos/${id}/mensalidades/sugerir`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ item_ids: itemIds }),
+      },
+    ),
 
   listQuoteVersions: (id: number) =>
     request<{ versions: QuoteVersionRead[] }>(`/orcamentos/${id}/versions`),

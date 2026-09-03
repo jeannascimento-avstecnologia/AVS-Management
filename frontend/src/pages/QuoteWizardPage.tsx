@@ -129,6 +129,7 @@ type DraftItem = {
   qty: string
   unit_value: string
   template_key: string | null
+  vhsys_product_id: number | null
 }
 
 type DraftModule = {
@@ -154,6 +155,7 @@ type PaymentMode = 'a_vista' | 'parcelado' | 'recorrente_anual' | ''
 type DraftForm = {
   cnpj: string
   client_name: string
+  title: string
   tiflux_client_id: number | null
   vhsys_client_id: number | null
   lead_temperature: LeadTemperature | null
@@ -439,6 +441,7 @@ function quoteToForm(quote: QuoteRead): DraftForm {
   return {
     cnpj: quote.cnpj,
     client_name: quote.client_name ?? '',
+    title: quote.title ?? '',
     tiflux_client_id: quote.tiflux_client_id,
     vhsys_client_id: quote.vhsys_client_id,
     lead_temperature: quote.lead_temperature,
@@ -456,6 +459,7 @@ function quoteToForm(quote: QuoteRead): DraftForm {
       qty: String(item.qty),
       unit_value: String(item.unit_value),
       template_key: item.template_key,
+      vhsys_product_id: item.vhsys_product_id ?? null,
     })),
   }
 }
@@ -469,6 +473,7 @@ function formToUpdate(form: DraftForm): QuoteUpdate {
     qty: parsePositiveNumber(item.qty, 1),
     unit_value: parseNonNegativeNumber(item.unit_value),
     template_key: item.template_key,
+    vhsys_product_id: item.vhsys_product_id,
     sort_order: index,
   }))
 
@@ -499,6 +504,7 @@ function formToUpdate(form: DraftForm): QuoteUpdate {
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
     notes: form.notes.trim() || null,
+    title: form.title.trim() || null,
     items,
   }
 }
@@ -789,6 +795,7 @@ export function QuoteWizardPage() {
           qty: '1',
           unit_value: '',
           template_key: null,
+          vhsys_product_id: null,
         },
       ],
     }))
@@ -931,6 +938,7 @@ export function QuoteWizardPage() {
         qty: String(line.qty),
         unit_value: String(line.unit_value),
         template_key: template.key,
+        vhsys_product_id: null,
       }))
       return {
         ...prev,
@@ -976,6 +984,7 @@ export function QuoteWizardPage() {
       qty: String(item.qty),
       unit_value: String(item.unit_value),
       template_key: item.template_key ?? null,
+      vhsys_product_id: item.vhsys_product_id ?? null,
     }))
     patchForm((prev) => ({ ...prev, modules, items }))
     setProposalLibraryOpen(false)
@@ -1274,13 +1283,24 @@ export function QuoteWizardPage() {
             <ArrowLeft className="h-4 w-4" />
             Lista
           </Button>
-          <h1 className="text-2xl font-semibold tracking-tight">
-            Orçamento M{quote.id}
-            {quote.current_version_number != null ? (
-              <span className="ml-2 text-base font-normal text-muted-foreground">
-                v{quote.current_version_number}
-              </span>
-            ) : null}
+          <h1 className="flex flex-wrap items-center gap-2 text-2xl font-semibold tracking-tight">
+            <span>
+              Orçamento M{quote.id}
+              {quote.current_version_number != null ? (
+                <span className="ml-2 text-base font-normal text-muted-foreground">
+                  v{quote.current_version_number}
+                </span>
+              ) : null}
+            </span>
+            <Input
+              className="h-8 max-w-xs text-sm font-normal"
+              placeholder="Nome do orçamento (não vai no PDF)"
+              disabled={!canEdit}
+              value={form.title}
+              maxLength={120}
+              onChange={(e) => patchForm((prev) => ({ ...prev, title: e.target.value }))}
+              aria-label="Nome do orçamento"
+            />
           </h1>
           <p className="text-sm text-muted-foreground">
             {formatCnpj(form.cnpj)}
@@ -2256,6 +2276,7 @@ export function QuoteWizardPage() {
       <QuoteMonthlyChargesDialog
         open={monthlyOpen}
         onOpenChange={setMonthlyOpen}
+        quoteId={quoteId}
         lines={monthlyLines}
         canEdit={canEdit}
         initialDraft={monthlyDraft}
@@ -2634,12 +2655,13 @@ function ItemsSection({
                     disabled={!canEdit}
                     excludeNames={usedItemNames}
                     unitValue={parseNonNegativeNumber(item.unit_value)}
-                    onChange={(name) => onUpdate(item.localKey, { name })}
+                    onChange={(name) => onUpdate(item.localKey, { name, vhsys_product_id: null })}
                     onSelect={(catalog) =>
                       onUpdate(item.localKey, {
                         name: catalog.name,
                         unit_value:
                           catalog.unit_value > 0 ? String(catalog.unit_value) : item.unit_value,
+                        vhsys_product_id: catalog.id,
                       })
                     }
                   />

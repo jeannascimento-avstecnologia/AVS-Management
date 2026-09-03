@@ -98,6 +98,7 @@ def _sample_quote(*, quote_id: int = 2353) -> QuoteRead:
         client_email="cliente@example.com",
         extra_recipients=[],
         notes="Forma de Pagamento Servicos: Boleto / Forma de Pagamento Produtos: Boleto Mensal",
+        title="NOME INTERNO NAO IMPRIMIR",
         tiflux_ticket_number=None,
         vhsys_os_id=None,
         pdf_path=None,
@@ -334,7 +335,7 @@ def test_ensure_space_allows_oversized_block() -> None:
 
 def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     dest = tmp_path / "quote.pdf"
-    render_quote_pdf(_sample_quote(), dest, issuer=_issuer(), client=_client())
+    render_quote_pdf(_sample_quote(), dest, issuer=_issuer(), client=_client(), technician_name="Jean Teste")
     assert dest.is_file()
     assert dest.read_bytes()[:4] == b"%PDF"
 
@@ -344,7 +345,10 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "Ordem de servi" not in text.lower()
     assert "AVS TECNOLOGIA" in text
     assert "08.354.533/0001-83" in text
-    assert "DADOS DO CLIENTE" not in text
+    assert "DADOS DO CLIENTE" in text
+    assert "Cliente PDF LTDA" in text
+    assert "Jean Teste" in text
+    assert "NOME INTERNO NAO IMPRIMIR" not in text
     assert "Os valores podem sofrer alteracao sem previo aviso" in text
     assert "Ticket no." in text
     assert "comercial@avstecnologia.cloud" in text
@@ -584,6 +588,7 @@ def test_pdf_header_version_and_monthly_outside_total(tmp_path: Path) -> None:
     assert "Fornecedor" in text
     assert "Intermediador" in text
     assert "VALOR TOTAL DO ORCAMENTO" in text
+    assert "Mensalidade:" in text
     assert "1.660,00" in text or "1660,00" in text
     assert "1.959,90" not in text and "1959,90" not in text
 
