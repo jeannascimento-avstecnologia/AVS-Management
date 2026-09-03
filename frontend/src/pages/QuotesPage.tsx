@@ -39,6 +39,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
 import { digitsOnly, formatCnpj, formatDate } from '@/lib/format'
 import { TEMP_LABELS } from '@/lib/quoteLead'
 import { btnDangerClass, btnGreenClass, btnSecondaryClass } from '@/lib/ui-classes'
