@@ -588,6 +588,33 @@ def test_pdf_header_version_and_monthly_outside_total(tmp_path: Path) -> None:
     assert "1.959,90" not in text and "1959,90" not in text
 
 
+def test_pdf_monthly_omits_zero_party_amount(tmp_path: Path) -> None:
+    dest = tmp_path / "monthly-zero.pdf"
+    quote = _sample_quote()
+    draft = {
+        "allocations": [
+            {
+                "item_id": 2,
+                "fornecedor_name": "Fornecedor",
+                "fornecedor_amount": 299.9,
+                "intermediador_name": "Intermediador",
+                "intermediador_amount": 0.0,
+            }
+        ],
+    }
+    render_quote_pdf(
+        quote,
+        dest,
+        issuer=_issuer(),
+        client=_client(),
+        monthly_draft_json=json.dumps(draft),
+    )
+    text = _pdf_text(dest)
+    assert "Plano mensal" in text
+    assert "Fornecedor" in text
+    assert "Intermediador" not in text
+
+
 def test_pdf_shows_discount_only_when_applied(tmp_path: Path) -> None:
     dest = tmp_path / "discount.pdf"
     quote = _sample_quote()

@@ -94,7 +94,7 @@ O snapshot deve ser suficiente para que o PDF renderize exatamente como estava n
 
 ### 6.4 PDF — seção exclusiva
 - O PDF deve renderizar uma seção **somente de MENSALIDADES**.
-- Para cada linha selecionada: nome do produto; abaixo, Fornecedor e Intermediador.
+- Para cada linha selecionada: nome do produto; abaixo, só as partes com valor **> 0** (Fornecedor e/ou Intermediador). Valor 0 não imprime.
 - Essa seção fica **fora do `VALOR TOTAL DO ORCAMENTO`**.
 - A implementação (Implantação + outros módulos de implementação) continua compondo o `VALOR TOTAL DO ORCAMENTO`.
 

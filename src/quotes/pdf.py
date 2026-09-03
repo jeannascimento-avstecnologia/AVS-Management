@@ -429,20 +429,16 @@ def render_quote_pdf(
                 product = (item.name if item else "") or f"Item {iid}"
                 line_total = float(item.total_value) if item else 0.0
                 monthly_rows.append({"role": "product", "name": product, "amount": line_total})
-                monthly_rows.append(
-                    {
-                        "role": "split",
-                        "name": str(a.get("fornecedor_name") or "Fornecedor"),
-                        "amount": float(a.get("fornecedor_amount") or 0.0),
-                    }
-                )
-                monthly_rows.append(
-                    {
-                        "role": "split",
-                        "name": str(a.get("intermediador_name") or "Intermediador"),
-                        "amount": float(a.get("intermediador_amount") or 0.0),
-                    }
-                )
+                for party_name, party_amt in (
+                    (str(a.get("fornecedor_name") or "Fornecedor"), float(a.get("fornecedor_amount") or 0.0)),
+                    (
+                        str(a.get("intermediador_name") or "Intermediador"),
+                        float(a.get("intermediador_amount") or 0.0),
+                    ),
+                ):
+                    if round_money(party_amt) <= 0:
+                        continue
+                    monthly_rows.append({"role": "split", "name": party_name, "amount": party_amt})
         else:
             license_item_ids = draft.get("license_item_ids") or []
             try:
@@ -454,7 +450,7 @@ def render_quote_pdf(
                 monthly_rows = [
                     {"role": "split", "name": str(c.get("name") or "-"), "amount": float(c.get("amount") or 0)}
                     for c in charges
-                    if isinstance(c, dict)
+                    if isinstance(c, dict) and round_money(float(c.get("amount") or 0)) > 0
                 ]
         if license_ids:
             monthly_exclude_total = round_money(
@@ -1039,6 +1035,7 @@ def _write_monthly_charges_section(
         {
             "roles": [str(r.get("role")) for r in rows],
             "names": [str(r.get("name") or "")[:40] for r in rows],
+            "amounts": [float(r.get("amount") or 0) for r in rows],
         },
     )
     # #endregion
