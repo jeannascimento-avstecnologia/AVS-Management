@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import type { QuoteMonthlyChargeWrite, QuoteMonthlyDraftWrite } from '@/api/client'
+import type { QuoteMonthlyAllocationWrite, QuoteMonthlyDraftWrite } from '@/api/client'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -25,10 +24,11 @@ type Line = {
   total: number
 }
 
-type ChargeDraft = {
-  key: string
-  name: string
-  amount: string
+type SplitDraft = {
+  fornecedorName: string
+  fornecedor: string
+  intermediadorName: string
+  intermediador: string
 }
 
 function money(value: number): string {
@@ -37,6 +37,19 @@ function money(value: number): string {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
+}
+
+function parseAmt(raw: string): number {
+  return Number.parseFloat(raw.replace(',', '.')) || 0
+}
+
+function emptySplit(): SplitDraft {
+  return {
+    fornecedorName: 'Fornecedor',
+    fornecedor: '',
+    intermediadorName: 'Intermediador',
+    intermediador: '',
+  }
 }
 
 export function QuoteMonthlyChargesDialog({
@@ -57,89 +70,127 @@ export function QuoteMonthlyChargesDialog({
   onSave: (draft: QuoteMonthlyDraftWrite, selectedLocalKeys: string[]) => Promise<void>
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [charges, setCharges] = useState<ChargeDraft[]>([])
+  const [splits, setSplits] = useState<Record<string, SplitDraft>>({})
 
   useEffect(() => {
     if (!open) return
-    const nextCharges =
-      initialDraft?.charges?.length
-        ? initialDraft.charges.map((c, i) => ({
-            key: `c-${i}`,
-            name: c.name,
-            amount: String(c.amount),
-          }))
-        : [
-            { key: 'c-0', name: 'Fornecedor', amount: '' },
-            { key: 'c-1', name: 'Intermediador', amount: '' },
-          ]
-    setCharges(nextCharges)
+    const nextSplits: Record<string, SplitDraft> = {}
     const selectedKeys = new Set<string>()
-    const ids = new Set(initialDraft?.license_item_ids ?? [])
-    if (ids.size) {
-      for (const line of lines) {
-        if (line.itemId != null && ids.has(line.itemId)) selectedKeys.add(line.localKey)
+    const allocs = initialDraft?.allocations ?? []
+    for (const a of allocs) {
+      const line = lines.find((l) => l.itemId != null && l.itemId === a.item_id)
+      if (!line) continue
+      selectedKeys.add(line.localKey)
+      nextSplits[line.localKey] = {
+        fornecedorName: a.fornecedor_name || 'Fornecedor',
+        fornecedor: String(a.fornecedor_amount),
+        intermediadorName: a.intermediador_name || 'Intermediador',
+        intermediador: String(a.intermediador_amount),
       }
     }
+    setSplits(nextSplits)
     setSelected(selectedKeys)
   }, [open, initialDraft, lines])
 
-  const licenseTotal = useMemo(
-    () => round2(lines.filter((l) => selected.has(l.localKey)).reduce((s, l) => s + l.total, 0)),
-    [lines, selected],
+  const available = lines.filter((l) => !selected.has(l.localKey))
+  const chosen = lines.filter((l) => selected.has(l.localKey))
+
+  const lineChecks = useMemo(
+    () =>
+      chosen.map((line) => {
+        const s = splits[line.localKey] ?? emptySplit()
+        const sum = round2(parseAmt(s.fornecedor) + parseAmt(s.intermediador))
+        const delta = round2(line.total - sum)
+        return { key: line.localKey, lineTotal: line.total, sum, delta, ok: Math.abs(delta) <= 0.01 }
+      }),
+    [chosen, splits],
   )
 
-  const chargesTotal = useMemo(
-    () => round2(charges.reduce((s, c) => s + (Number.parseFloat(c.amount.replace(',', '.')) || 0), 0)),
-    [charges],
-  )
+  const allBalanced = chosen.length === 0 || lineChecks.every((c) => c.ok)
 
-  const delta = round2(licenseTotal - chargesTotal)
-  const balanced = selected.size === 0 ? charges.every((c) => !c.amount.trim()) : Math.abs(delta) <= 0.01
+  // #region agent log
+  useEffect(() => {
+    if (!open) return
+    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ae8776' },
+      body: JSON.stringify({
+        sessionId: 'ae8776',
+        runId: 'post-fix',
+        hypothesisId: 'A',
+        location: 'QuoteMonthlyChargesDialog.tsx:totals',
+        message: 'per-line split totals',
+        data: {
+          selectedCount: selected.size,
+          model: 'per-line',
+          lineChecks,
+          allBalanced,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+  }, [open, selected.size, lineChecks, allBalanced])
+  // #endregion
 
   function toggle(key: string) {
     setSelected((prev) => {
       const next = new Set(prev)
-      if (next.has(key)) next.delete(key)
-      else next.add(key)
+      if (next.has(key)) {
+        next.delete(key)
+        setSplits((s) => {
+          const copy = { ...s }
+          delete copy[key]
+          return copy
+        })
+      } else {
+        next.add(key)
+        setSplits((s) => ({ ...s, [key]: s[key] ?? emptySplit() }))
+      }
       return next
     })
   }
 
+  function patchSplit(key: string, patch: Partial<SplitDraft>) {
+    setSplits((prev) => ({ ...prev, [key]: { ...(prev[key] ?? emptySplit()), ...patch } }))
+  }
+
   async function handleSave() {
     if (!canEdit) return
-    const selectedLines = lines.filter((l) => selected.has(l.localKey))
-    const parsed: QuoteMonthlyChargeWrite[] = charges
-      .map((c, i) => ({
-        name: c.name.trim(),
-        amount: Number.parseFloat(c.amount.replace(',', '.')) || 0,
-        sort_order: i,
-      }))
-      .filter((c) => c.name.length > 0)
-
-    if (selectedLines.length === 0) {
-      await onSave({ license_item_ids: [], charges: [] }, [])
+    if (chosen.length === 0) {
+      await onSave({ allocations: [] }, [])
       return
     }
-    if (parsed.length === 0) {
-      toast.error('Inclua ao menos uma mensalidade (ex.: fornecedor).')
+    const bad = lineChecks.find((c) => !c.ok)
+    if (bad) {
+      toast.error('Fornecedor + intermediador deve igualar o total de cada linha selecionada.')
       return
     }
-    if (Math.abs(delta) > 0.01) {
-      toast.error(
-        `Soma das mensalidades (${money(chargesTotal)}) deve ser igual ao total das linhas (${money(licenseTotal)}).`,
-      )
-      return
-    }
-    const ids = selectedLines
-      .map((l) => l.itemId)
-      .filter((id): id is number => id != null)
-    await onSave(
-      {
-        license_item_ids: ids,
-        charges: parsed,
-      },
-      selectedLines.map((l) => l.localKey),
-    )
+    const allocations: QuoteMonthlyAllocationWrite[] = chosen.map((line) => {
+      const s = splits[line.localKey] ?? emptySplit()
+      return {
+        item_id: line.itemId ?? 0,
+        fornecedor_name: s.fornecedorName.trim() || 'Fornecedor',
+        fornecedor_amount: parseAmt(s.fornecedor),
+        intermediador_name: s.intermediadorName.trim() || 'Intermediador',
+        intermediador_amount: parseAmt(s.intermediador),
+      }
+    })
+    // #region agent log
+    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'ae8776' },
+      body: JSON.stringify({
+        sessionId: 'ae8776',
+        runId: 'post-fix',
+        hypothesisId: 'C',
+        location: 'QuoteMonthlyChargesDialog.tsx:handleSave',
+        message: 'payload per-line allocations',
+        data: { allocations, keys: chosen.map((l) => l.localKey) },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+    // #endregion
+    await onSave({ allocations }, chosen.map((l) => l.localKey))
   }
 
   return (
@@ -148,96 +199,126 @@ export function QuoteMonthlyChargesDialog({
         <DialogHeader>
           <DialogTitle>Mensalidades</DialogTitle>
           <DialogDescription>
-            Selecione linhas de qualquer bloco. A soma das cobranças deve bater com o total das linhas.
-            As linhas continuam no bloco original e também entram na seção Mensalidades do PDF (fora do total).
+            Selecione uma linha para ela descer à tabela. Em cada linha, Fornecedor + Intermediador deve
+            somar o total daquela linha. O PDF mostra o produto e, abaixo, as duas cobranças.
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
-          <div className="max-h-56 space-y-2 overflow-y-auto rounded-lg border border-aurora-border p-2">
-            {lines.length === 0 ? (
-              <p className="px-2 py-3 text-sm text-muted-foreground">Nenhuma linha no canvas.</p>
-            ) : (
-              lines.map((line) => (
-                <label
-                  key={line.localKey}
-                  className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-aurora-surface-2/60"
-                >
-                  <Checkbox
-                    checked={selected.has(line.localKey)}
-                    disabled={!canEdit}
-                    onCheckedChange={() => toggle(line.localKey)}
-                  />
-                  <span className="min-w-0 flex-1 text-sm">
-                    <span className="block text-[11px] text-muted-foreground">{line.sectionTitle}</span>
-                    <span className="block truncate">{line.name || '(sem nome)'}</span>
-                  </span>
-                  <span className="shrink-0 text-sm tabular-nums">{money(line.total)}</span>
-                </label>
-              ))
-            )}
-          </div>
-
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label>Cobranças</Label>
-              {canEdit ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    setCharges((prev) => [...prev, { key: `c-${Date.now()}`, name: '', amount: '' }])
-                  }
-                >
-                  <Plus className="h-4 w-4" />
-                  Mensalidade
-                </Button>
-              ) : null}
-            </div>
-            {charges.map((c) => (
-              <div key={c.key} className="flex gap-2">
-                <Input
-                  value={c.name}
-                  disabled={!canEdit}
-                  placeholder="Fornecedor / Intermediador"
-                  onChange={(e) =>
-                    setCharges((prev) =>
-                      prev.map((x) => (x.key === c.key ? { ...x, name: e.target.value } : x)),
-                    )
-                  }
-                />
-                <Input
-                  className="w-36"
-                  value={c.amount}
-                  disabled={!canEdit}
-                  placeholder="0,00"
-                  inputMode="decimal"
-                  onChange={(e) =>
-                    setCharges((prev) =>
-                      prev.map((x) => (x.key === c.key ? { ...x, amount: e.target.value } : x)),
-                    )
-                  }
-                />
-                {canEdit ? (
-                  <Button
-                    type="button"
-                    size="icon"
-                    variant="ghost"
-                    aria-label="Remover cobrança"
-                    onClick={() => setCharges((prev) => prev.filter((x) => x.key !== c.key))}
+          <div>
+            <Label className="text-xs text-muted-foreground">Linhas do orçamento</Label>
+            <div className="mt-1.5 max-h-40 space-y-2 overflow-y-auto rounded-lg border border-aurora-border p-2">
+              {available.length === 0 ? (
+                <p className="px-2 py-3 text-sm text-muted-foreground">
+                  {lines.length === 0 ? 'Nenhuma linha no canvas.' : 'Todas as linhas estão na tabela abaixo.'}
+                </p>
+              ) : (
+                available.map((line) => (
+                  <label
+                    key={line.localKey}
+                    className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-aurora-surface-2/60"
                   >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                ) : null}
-              </div>
-            ))}
+                    <Checkbox
+                      checked={false}
+                      disabled={!canEdit}
+                      onCheckedChange={() => toggle(line.localKey)}
+                    />
+                    <span className="min-w-0 flex-1 text-sm">
+                      <span className="block text-[11px] text-muted-foreground">{line.sectionTitle}</span>
+                      <span className="block truncate">{line.name || '(sem nome)'}</span>
+                    </span>
+                    <span className="shrink-0 text-sm tabular-nums">{money(line.total)}</span>
+                  </label>
+                ))
+              )}
+            </div>
           </div>
 
-          <p className={cn('text-sm tabular-nums', balanced ? 'text-muted-foreground' : 'text-destructive')}>
-            Linhas {money(licenseTotal)} · Mensalidades {money(chargesTotal)}
-            {selected.size > 0 && !balanced ? ` · diferença ${money(delta)}` : ''}
-          </p>
+          <div>
+            <Label>Linhas selecionadas</Label>
+            <div className="mt-1.5 space-y-3">
+              {chosen.length === 0 ? (
+                <p className="rounded-lg border border-dashed border-aurora-border px-3 py-4 text-sm text-muted-foreground">
+                  Nenhuma linha selecionada.
+                </p>
+              ) : (
+                chosen.map((line) => {
+                  const s = splits[line.localKey] ?? emptySplit()
+                  const check = lineChecks.find((c) => c.key === line.localKey)
+                  return (
+                    <div
+                      key={line.localKey}
+                      className="space-y-2 rounded-lg border border-aurora-border p-3"
+                    >
+                      <div className="flex items-start gap-2">
+                        <Checkbox
+                          checked
+                          disabled={!canEdit}
+                          onCheckedChange={() => toggle(line.localKey)}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[11px] text-muted-foreground">{line.sectionTitle}</p>
+                          <p className="text-sm font-medium">{line.name || '(sem nome)'}</p>
+                        </div>
+                        <span className="shrink-0 text-sm font-semibold tabular-nums">
+                          {money(line.total)}
+                        </span>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label className="text-xs">Fornecedor</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              value={s.fornecedorName}
+                              disabled={!canEdit}
+                              onChange={(e) => patchSplit(line.localKey, { fornecedorName: e.target.value })}
+                            />
+                            <Input
+                              className="w-28"
+                              value={s.fornecedor}
+                              disabled={!canEdit}
+                              placeholder="0,00"
+                              inputMode="decimal"
+                              onChange={(e) => patchSplit(line.localKey, { fornecedor: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-xs">Intermediador</Label>
+                          <div className="flex gap-2">
+                            <Input
+                              value={s.intermediadorName}
+                              disabled={!canEdit}
+                              onChange={(e) =>
+                                patchSplit(line.localKey, { intermediadorName: e.target.value })
+                              }
+                            />
+                            <Input
+                              className="w-28"
+                              value={s.intermediador}
+                              disabled={!canEdit}
+                              placeholder="0,00"
+                              inputMode="decimal"
+                              onChange={(e) => patchSplit(line.localKey, { intermediador: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                      <p
+                        className={cn(
+                          'text-xs tabular-nums',
+                          check?.ok ? 'text-muted-foreground' : 'text-destructive',
+                        )}
+                      >
+                        Linha {money(line.total)} · partes {money(check?.sum ?? 0)}
+                        {check && !check.ok ? ` · diferença ${money(check.delta)}` : ''}
+                      </p>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          </div>
         </div>
 
         <DialogFooter>
@@ -245,7 +326,7 @@ export function QuoteMonthlyChargesDialog({
             Fechar
           </Button>
           {canEdit ? (
-            <Button type="button" onClick={() => void handleSave()} disabled={saving}>
+            <Button type="button" onClick={() => void handleSave()} disabled={saving || !allBalanced}>
               {saving ? 'Salvando…' : 'Aplicar'}
             </Button>
           ) : null}

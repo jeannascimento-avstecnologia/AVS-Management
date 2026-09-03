@@ -399,11 +399,8 @@ function parseMonthlyDraft(raw: string | null | undefined): QuoteMonthlyDraftWri
   if (!raw?.trim()) return null
   try {
     const data = JSON.parse(raw) as QuoteMonthlyDraftWrite
-    if (!Array.isArray(data.charges)) return null
-    return {
-      license_item_ids: Array.isArray(data.license_item_ids) ? data.license_item_ids : [],
-      charges: data.charges,
-    }
+    if (!Array.isArray(data.allocations)) return null
+    return { allocations: data.allocations }
   } catch {
     return null
   }
@@ -1031,24 +1028,22 @@ export function QuoteWizardPage() {
       formRef.current = synced
       setForm(synced)
       queryClient.setQueryData(['quote', quoteId], updated)
-      const ids = synced.items
-        .filter((i) => selectedLocalKeys.includes(i.localKey))
-        .map((i) => i.itemId)
-        .filter((id): id is number => id != null)
-      if (selectedLocalKeys.length > 0 && ids.length !== selectedLocalKeys.length) {
+      const idByKey = new Map(synced.items.map((i) => [i.localKey, i.itemId]))
+      const allocations = draft.allocations.map((a, index) => {
+        const fromKey = idByKey.get(selectedLocalKeys[index] ?? '')
+        return { ...a, item_id: fromKey ?? a.item_id }
+      })
+      if (selectedLocalKeys.length > 0 && allocations.some((a) => !a.item_id || a.item_id < 1)) {
         toast.error('Salve os itens antes de aplicar mensalidades.')
         return
       }
-      const next = await api.updateQuoteMonthlyDraft(quoteId, {
-        license_item_ids: ids,
-        charges: draft.charges,
-      })
+      const next = await api.updateQuoteMonthlyDraft(quoteId, { allocations })
       queryClient.setQueryData(['quote', quoteId], next)
       setLastSavedAt(next.updated_at)
       dirtyRef.current = false
       setSaveStatus('saved')
       setMonthlyOpen(false)
-      toast.success(ids.length ? 'Mensalidades aplicadas' : 'Mensalidades limpas')
+      toast.success(allocations.length ? 'Mensalidades aplicadas' : 'Mensalidades limpas')
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Falha ao salvar mensalidades')
     } finally {

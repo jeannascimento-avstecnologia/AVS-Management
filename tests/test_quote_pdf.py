@@ -371,7 +371,8 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "VALOR TOTAL DOS PRODUTOS" in text
     assert "VALOR TOTAL DO ORCAMENTO" in text
     assert "OBSERVACOES" in text
-    assert "QTDADE" in text
+    assert "QTDE" in text
+    assert "QTDADE" not in text
     assert "Desconto 0%" not in text
     assert "Forma de Pagamento Servicos" in text
     assert "Observacoes" in text
@@ -425,7 +426,8 @@ def test_pdf_simplified_module_hides_line_names(tmp_path: Path) -> None:
     assert "Pacote Office" in text
     assert "Item Secreto XYZ" not in text
     assert "ITEM" in text
-    assert "QTDADE" in text
+    assert "QTDE" in text
+    assert "QTDADE" not in text
     assert "V. UNIT." in text
     assert "V. TOTAL" in text
 
@@ -557,10 +559,14 @@ def test_pdf_header_version_and_monthly_outside_total(tmp_path: Path) -> None:
     dest = tmp_path / "monthly.pdf"
     quote = _sample_quote()
     draft = {
-        "license_item_ids": [2],
-        "charges": [
-            {"name": "Fornecedor", "amount": 200.0, "sort_order": 0},
-            {"name": "Intermediador", "amount": 99.9, "sort_order": 1},
+        "allocations": [
+            {
+                "item_id": 2,
+                "fornecedor_name": "Fornecedor",
+                "fornecedor_amount": 200.0,
+                "intermediador_name": "Intermediador",
+                "intermediador_amount": 99.9,
+            }
         ],
     }
     render_quote_pdf(
@@ -574,6 +580,7 @@ def test_pdf_header_version_and_monthly_outside_total(tmp_path: Path) -> None:
     text = _pdf_text(dest)
     assert "v3" in text
     assert "MENSALIDADES" in text
+    assert "Plano mensal" in text
     assert "Fornecedor" in text
     assert "Intermediador" in text
     assert "VALOR TOTAL DO ORCAMENTO" in text

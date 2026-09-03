@@ -736,7 +736,9 @@ def build_quotes_router() -> APIRouter:
         try:
             quote = _service().get(quote_id)
             issuer, client = await resolve_pdf_parties(quote, get_settings())
-            quote, path = _service().generate_pdf(quote_id, issuer=issuer, client=client)
+            quote, path = _service().generate_pdf(
+                quote_id, issuer=issuer, client=client, from_live=True
+            )
         except QuoteNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except QuoteConflictError as exc:

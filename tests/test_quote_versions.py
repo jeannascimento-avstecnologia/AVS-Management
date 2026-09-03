@@ -50,8 +50,15 @@ def test_create_versions_and_monthly_draft(quotes_client: TestClient) -> None:
     bad = quotes_client.put(
         f"/orcamentos/{quote_id}/mensalidades",
         json={
-            "license_item_ids": [monthly_id],
-            "charges": [{"name": "Fornecedor", "amount": 1.0, "sort_order": 0}],
+            "allocations": [
+                {
+                    "item_id": monthly_id,
+                    "fornecedor_name": "Fornecedor",
+                    "fornecedor_amount": 1.0,
+                    "intermediador_name": "Intermediador",
+                    "intermediador_amount": 0.0,
+                }
+            ],
         },
     )
     assert bad.status_code == 409, bad.text
@@ -59,17 +66,18 @@ def test_create_versions_and_monthly_draft(quotes_client: TestClient) -> None:
     monthly_total = next(
         float(i["total_value"]) for i in body["items"] if i["id"] == monthly_id
     )
+    half = round(monthly_total / 2, 2)
     ok = quotes_client.put(
         f"/orcamentos/{quote_id}/mensalidades",
         json={
-            "license_item_ids": [monthly_id],
-            "charges": [
-                {"name": "Fornecedor", "amount": round(monthly_total / 2, 2), "sort_order": 0},
+            "allocations": [
                 {
-                    "name": "Intermediador",
-                    "amount": round(monthly_total - round(monthly_total / 2, 2), 2),
-                    "sort_order": 1,
-                },
+                    "item_id": monthly_id,
+                    "fornecedor_name": "Fornecedor",
+                    "fornecedor_amount": half,
+                    "intermediador_name": "Intermediador",
+                    "intermediador_amount": round(monthly_total - half, 2),
+                }
             ],
         },
     )
@@ -109,3 +117,36 @@ def test_create_versions_and_monthly_draft(quotes_client: TestClient) -> None:
 
     listed2 = quotes_client.get(f"/orcamentos/{quote_id}/versions")
     assert len(listed2.json()["versions"]) == 2
+
+
+def test_post_pdf_uses_live_canvas_not_stale_snapshot(quotes_client: TestClient) -> None:
+    created = quotes_client.post("/orcamentos", json=QUOTE_PAYLOAD)
+    assert created.status_code == 201, created.text
+    quote_id = created.json()["id"]
+    v1 = quotes_client.post(f"/orcamentos/{quote_id}/versions")
+    assert v1.status_code == 201, v1.text
+
+    updated = quotes_client.put(
+        f"/orcamentos/{quote_id}",
+        json={
+            "items": [
+                {
+                    "section": "implantacao",
+                    "name": "UniqueLiveItemXYZ",
+                    "qty": 2,
+                    "unit_value": 80.0,
+                    "sort_order": 0,
+                }
+            ],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+
+    pdf = quotes_client.post(f"/orcamentos/{quote_id}/pdf")
+    assert pdf.status_code == 200, pdf.text
+    from pypdf import PdfReader
+    import io
+
+    text = "".join((p.extract_text() or "") for p in PdfReader(io.BytesIO(pdf.content)).pages)
+    assert "UniqueLiveItemXYZ" in text
+    assert "Setup inicial" not in text

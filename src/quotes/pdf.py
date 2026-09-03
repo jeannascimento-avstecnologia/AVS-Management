@@ -23,6 +23,29 @@ from src.quotes.totals import (
     round_money,
 )
 
+
+def _agent_dbg(hypothesis_id: str, location: str, message: str, data: dict[str, Any]) -> None:
+    # #region agent log
+    try:
+        import time
+
+        payload = {
+            "sessionId": "ae8776",
+            "runId": "pre-fix",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-ae8776.log")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    # #endregion
+
 # Aurora / AVS (RGB) — azul + vermelho da logo (sem roxo; P&B: fills escuros → cinza legível)
 _NAVY = (12, 30, 58)
 _BLUE = (26, 79, 140)
@@ -384,24 +407,59 @@ def render_quote_pdf(
     issuer = issuer or issuer_from_settings()
     _ = client or client_from_quote(quote)
     monthly_exclude_total = 0.0
-    monthly_charges: list[dict[str, Any]] = []
+    monthly_rows: list[dict[str, Any]] = []
     if monthly_draft_json:
         try:
             draft = json.loads(str(monthly_draft_json))
         except (ValueError, TypeError):
             draft = {}
-        license_item_ids = draft.get("license_item_ids") or []
-        try:
-            license_ids = {int(i) for i in license_item_ids}
-        except (TypeError, ValueError):
-            license_ids = set()
+        allocs = draft.get("allocations") or []
+        license_ids: set[int] = set()
+        if isinstance(allocs, list) and allocs:
+            by_item = {int(i.id): i for i in quote.items}
+            for a in allocs:
+                if not isinstance(a, dict):
+                    continue
+                try:
+                    iid = int(a.get("item_id"))
+                except (TypeError, ValueError):
+                    continue
+                license_ids.add(iid)
+                item = by_item.get(iid)
+                product = (item.name if item else "") or f"Item {iid}"
+                line_total = float(item.total_value) if item else 0.0
+                monthly_rows.append({"role": "product", "name": product, "amount": line_total})
+                monthly_rows.append(
+                    {
+                        "role": "split",
+                        "name": str(a.get("fornecedor_name") or "Fornecedor"),
+                        "amount": float(a.get("fornecedor_amount") or 0.0),
+                    }
+                )
+                monthly_rows.append(
+                    {
+                        "role": "split",
+                        "name": str(a.get("intermediador_name") or "Intermediador"),
+                        "amount": float(a.get("intermediador_amount") or 0.0),
+                    }
+                )
+        else:
+            license_item_ids = draft.get("license_item_ids") or []
+            try:
+                license_ids = {int(i) for i in license_item_ids}
+            except (TypeError, ValueError):
+                license_ids = set()
+            charges = draft.get("charges") or []
+            if isinstance(charges, list):
+                monthly_rows = [
+                    {"role": "split", "name": str(c.get("name") or "-"), "amount": float(c.get("amount") or 0)}
+                    for c in charges
+                    if isinstance(c, dict)
+                ]
         if license_ids:
             monthly_exclude_total = round_money(
                 sum(float(i.total_value) for i in quote.items if i.id in license_ids)
             )
-        charges = draft.get("charges") or []
-        if isinstance(charges, list):
-            monthly_charges = [c for c in charges if isinstance(c, dict)]
 
     pdf = _QuotePdf(format="A4", issuer=issuer)
     pdf.alias_nb_pages()
@@ -464,9 +522,9 @@ def render_quote_pdf(
     _ensure_space(pdf, _estimate_payment_summary_height(module_nets))
     _write_payment_summary(pdf, module_nets=module_nets, exclude_total=monthly_exclude_total)
 
-    if monthly_charges:
-        _ensure_space(pdf, _estimate_monthly_charges_height(monthly_charges))
-        _write_monthly_charges_section(pdf, charges=monthly_charges)
+    if monthly_rows:
+        _ensure_space(pdf, _estimate_monthly_charges_height(monthly_rows))
+        _write_monthly_charges_section(pdf, rows=monthly_rows)
 
     notes_for_pdf = _notes_with_disclaimer_and_ticket(quote)
     _ensure_space(pdf, _estimate_observations_height(notes_for_pdf))
@@ -704,7 +762,11 @@ def _write_section(
 
     items_total = sum(float(i.total_value) for i in items)
     pdf.cell(_COL_ITEM, _ROW_H, "ITEM", fill=True)
-    pdf.cell(_COL_QTY, _ROW_H, "QTDADE", align="C", fill=True)
+    qty_header = "QTDE"
+    # #region agent log
+    _agent_dbg("E", "pdf.py:_write_section", "qty column header", {"qty_header": qty_header})
+    # #endregion
+    pdf.cell(_COL_QTY, _ROW_H, qty_header, align="C", fill=True)
     pdf.cell(_COL_UNIT, _ROW_H, "V. UNIT.", align="R", fill=True)
     pdf.cell(_COL_TOTAL, _ROW_H, "V. TOTAL", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
     pdf.set_draw_color(*_RULE)
@@ -955,32 +1017,47 @@ def _write_payment_summary(
     pdf.ln(_GAP)
 
 
-def _estimate_monthly_charges_height(charges: list[dict[str, Any]]) -> float:
-    if not charges:
+def _estimate_monthly_charges_height(rows: list[dict[str, Any]]) -> float:
+    if not rows:
         return 0.0
-    # band + gap + (linhas) + gap final
-    return _GAP + _BAND_H + (_ROW_H * (len(charges) + 1)) + _GAP
+    return _GAP + _BAND_H + (_ROW_H * (len(rows) + 1)) + _GAP
 
 
 def _write_monthly_charges_section(
     pdf: _QuotePdf,
     *,
-    charges: list[dict[str, Any]],
+    rows: list[dict[str, Any]],
 ) -> float:
-    """Renderiza seção 'MENSALIDADES' (valores derivados do snapshot)."""
-    if not charges:
+    """Renderiza seção 'MENSALIDADES' (produto + fornecedor/intermediador)."""
+    if not rows:
         return 0.0
-    charges_sorted = sorted(charges, key=lambda c: int(c.get("sort_order") or 0))
+    # #region agent log
+    _agent_dbg(
+        "D",
+        "pdf.py:_write_monthly_charges_section",
+        "monthly section rows",
+        {
+            "roles": [str(r.get("role")) for r in rows],
+            "names": [str(r.get("name") or "")[:40] for r in rows],
+        },
+    )
+    # #endregion
     _section_band(pdf, "MENSALIDADES", _NAVY)
     total = 0.0
     pdf.set_text_color(*_INK)
-    pdf.set_font("Helvetica", "", _FS_BODY)
-    for c in charges_sorted:
-        name = (str(c.get("name") or "")).strip() or "-"
-        amount = float(c.get("amount") or 0.0)
-        total += amount
-        pdf.cell(_LABEL_W, _ROW_H, _safe(name)[:60], align="L")
-        pdf.cell(_COL_TOTAL, _ROW_H, _brl(amount), align="R", new_x="LMARGIN", new_y="NEXT")
+    for r in rows:
+        role = str(r.get("role") or "split")
+        name = (str(r.get("name") or "")).strip() or "-"
+        amount = float(r.get("amount") or 0.0)
+        if role == "product":
+            pdf.set_font("Helvetica", "B", _FS_BODY)
+            pdf.cell(_LABEL_W, _ROW_H, _safe(name)[:60], align="L")
+            pdf.cell(_COL_TOTAL, _ROW_H, _brl(amount), align="R", new_x="LMARGIN", new_y="NEXT")
+        else:
+            pdf.set_font("Helvetica", "", _FS_BODY)
+            pdf.cell(_LABEL_W, _ROW_H, _safe(f"  {name}")[:60], align="L")
+            pdf.cell(_COL_TOTAL, _ROW_H, _brl(amount), align="R", new_x="LMARGIN", new_y="NEXT")
+            total += amount
     pdf.set_font("Helvetica", "B", _FS_BODY)
     pdf.cell(_LABEL_W, _ROW_H, "TOTAL MENSALIDADES", align="L")
     pdf.cell(_COL_TOTAL, _ROW_H, _brl(round_money(total)), align="R", new_x="LMARGIN", new_y="NEXT")

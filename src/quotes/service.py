@@ -11,7 +11,6 @@ from typing import Any
 from src.config import Settings, get_settings
 from src.hub.models import HubDatabase
 from src.hub.outbox import OutboxConflictError, insert_pending
-from src.quotes.pdf import render_quote_pdf
 from src.quotes.pdf_parties import QuotePdfClient, QuotePdfIssuer
 from src.quotes.schemas import (
     QuoteItemRead,
@@ -1261,9 +1260,10 @@ class QuoteService:
         draft: QuoteMonthlyDraftWrite,
     ) -> QuoteRead:
         # valida e persiste rascunho; o snapshot da versão só é criado no clique em "Salvar orçamento"
-        license_ids = draft.license_item_ids
+        allocs = draft.allocations
         with self._db.connect() as conn:
-            if license_ids:
+            if allocs:
+                license_ids = [a.item_id for a in allocs]
                 placeholders = ",".join("?" for _ in license_ids)
                 rows = conn.execute(
                     f"""
@@ -1273,16 +1273,53 @@ class QuoteService:
                     """,
                     (quote_id, *license_ids),
                 ).fetchall()
-                if len(rows) != len(license_ids):
+                by_id = {int(r["id"]): float(r["total_value"]) for r in rows}
+                if len(by_id) != len(license_ids):
                     raise QuoteNotFoundError(
                         "Mensalidades: alguns quote_items selecionados não pertencem ao orçamento."
                     )
-                license_total = round(sum(float(r["total_value"]) for r in rows), 2)
-                charges_total = round(sum(float(c.amount) for c in draft.charges), 2)
-                if abs(license_total - charges_total) > 0.01:
-                    raise QuoteConflictError(
-                        f"Mensalidades inválidas: soma mensalidades ({charges_total}) deve bater com a licença ({license_total})."
+                per_item: list[dict[str, Any]] = []
+                for a in allocs:
+                    line_total = round(by_id[a.item_id], 2)
+                    split = round(float(a.fornecedor_amount) + float(a.intermediador_amount), 2)
+                    per_item.append(
+                        {
+                            "item_id": a.item_id,
+                            "line_total": line_total,
+                            "split": split,
+                            "ok": abs(line_total - split) <= 0.01,
+                        }
                     )
+                    if abs(line_total - split) > 0.01:
+                        raise QuoteConflictError(
+                            f"Mensalidades inválidas: fornecedor+intermediador ({split}) "
+                            f"deve bater com a linha {a.item_id} ({line_total})."
+                        )
+                # #region agent log
+                try:
+                    import time as _t
+
+                    _p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-ae8776.log")
+                    _p.parent.mkdir(parents=True, exist_ok=True)
+                    with _p.open("a", encoding="utf-8") as _fh:
+                        _fh.write(
+                            json.dumps(
+                                {
+                                    "sessionId": "ae8776",
+                                    "runId": "post-fix",
+                                    "hypothesisId": "C",
+                                    "location": "service.py:update_monthly_draft",
+                                    "message": "backend validates per-line split",
+                                    "data": {"per_item": per_item, "per_item_mode": True},
+                                    "timestamp": int(_t.time() * 1000),
+                                },
+                                ensure_ascii=False,
+                            )
+                            + "\n"
+                        )
+                except Exception:
+                    pass
+                # #endregion
                 monthly_json = json.dumps(draft.model_dump(), ensure_ascii=False)
             else:
                 monthly_json = None
@@ -1419,47 +1456,86 @@ class QuoteService:
         issuer: QuotePdfIssuer | None = None,
         client: QuotePdfClient | None = None,
         version_id: int | None = None,
+        from_live: bool = False,
     ) -> tuple[QuoteRead, Path]:
         """Gera PDF da versão pedida (default: ativa) e salva UUID sob HUB_PDF_DIR."""
         quote = self.get(quote_id)
-        target_version_id = version_id if version_id is not None else quote.active_quote_version_id
-        version_number: int | None = None
-        snapshot_monthly_json: str | None = quote.monthly_draft_json
-        old_version_pdf: str | None = None
-        if target_version_id is not None:
-            with self._db.connect() as conn:
-                v = conn.execute(
-                    """
-                    SELECT version_number, snapshot_modules_json, snapshot_items_json,
-                           snapshot_notes, snapshot_monthly_json, id, pdf_path
-                    FROM quote_versions
-                    WHERE id = ? AND quote_id = ?
-                    """,
-                    (target_version_id, quote_id),
-                ).fetchone()
-                if v is None:
-                    target_version_id = None
-                else:
-                    version_number = int(v["version_number"])
-                    snapshot_monthly_json = v["snapshot_monthly_json"]
-                    snapshot_notes = v["snapshot_notes"]
-                    old_version_pdf = v["pdf_path"]
-                    modules_raw = json.loads(str(v["snapshot_modules_json"] or "[]"))
-                    items_raw = json.loads(str(v["snapshot_items_json"] or "[]"))
-                    modules = [QuoteModule.model_validate(m) for m in modules_raw]
-                    items = [QuoteItemRead.model_validate(i) for i in items_raw]
-                    quote = quote.model_copy(
-                        update={
-                            "modules": modules,
-                            "items": items,
-                            "notes": snapshot_notes,
-                        }
-                    )
+        live_item_n = len(quote.items)
+        live_mod_ids = [m.id for m in quote.modules]
+        live_item_sections = [i.section for i in quote.items]
+        if from_live:
+            target_version_id = None
+            version_number = quote.current_version_number
+            snapshot_monthly_json = quote.monthly_draft_json
+            old_version_pdf = None
+            overlay_item_n = live_item_n
+            used = "live"
+        else:
+            target_version_id = version_id if version_id is not None else quote.active_quote_version_id
+            version_number = None
+            snapshot_monthly_json = quote.monthly_draft_json
+            old_version_pdf = None
+            overlay_item_n = -1
+            used = "snapshot"
+            if target_version_id is not None:
+                with self._db.connect() as conn:
+                    v = conn.execute(
+                        """
+                        SELECT version_number, snapshot_modules_json, snapshot_items_json,
+                               snapshot_notes, snapshot_monthly_json, id, pdf_path
+                        FROM quote_versions
+                        WHERE id = ? AND quote_id = ?
+                        """,
+                        (target_version_id, quote_id),
+                    ).fetchone()
+                    if v is None:
+                        target_version_id = None
+                    else:
+                        version_number = int(v["version_number"])
+                        snapshot_monthly_json = v["snapshot_monthly_json"]
+                        snapshot_notes = v["snapshot_notes"]
+                        old_version_pdf = v["pdf_path"]
+                        modules_raw = json.loads(str(v["snapshot_modules_json"] or "[]"))
+                        items_raw = json.loads(str(v["snapshot_items_json"] or "[]"))
+                        modules = [QuoteModule.model_validate(m) for m in modules_raw]
+                        items = [QuoteItemRead.model_validate(i) for i in items_raw]
+                        overlay_item_n = len(items)
+                        quote = quote.model_copy(
+                            update={
+                                "modules": modules,
+                                "items": items,
+                                "notes": snapshot_notes,
+                            }
+                        )
+            else:
+                overlay_item_n = live_item_n
+                used = "live-fallback"
         root = self._pdf_root()
         filename = f"{uuid.uuid4()}.pdf"
         dest = (root / filename).resolve()
         if not dest.is_relative_to(root):
             raise QuoteConflictError("Falha ao resolver path do PDF.")
+
+        from src.quotes.pdf import _agent_dbg, render_quote_pdf
+
+        # #region agent log
+        _agent_dbg(
+            "F",
+            "service.py:generate_pdf",
+            "pdf source live vs snapshot",
+            {
+                "from_live": from_live,
+                "used": used,
+                "live_item_n": live_item_n,
+                "overlay_item_n": overlay_item_n,
+                "render_item_n": len(quote.items),
+                "live_mod_ids": live_mod_ids,
+                "render_mod_ids": [m.id for m in quote.modules],
+                "live_item_sections": live_item_sections,
+                "render_item_sections": [i.section for i in quote.items],
+            },
+        )
+        # #endregion
 
         render_quote_pdf(
             quote,

@@ -529,7 +529,7 @@ class QuoteRead(BaseModel):
 
 
 class QuoteMonthlyChargeWrite(BaseModel):
-    """Uma cobrança mensal (ex.: fornecedor, intermediador)."""
+    """Uma cobrança mensal (legado; preferir allocations)."""
 
     name: str = Field(min_length=1, max_length=200)
     amount: float = Field(ge=0)
@@ -544,25 +544,37 @@ class QuoteMonthlyChargeWrite(BaseModel):
         return cleaned
 
 
+class QuoteMonthlyAllocationWrite(BaseModel):
+    """Fornecedor + intermediador de uma linha selecionada."""
+
+    item_id: int = Field(ge=1)
+    fornecedor_name: str = Field(default="Fornecedor", max_length=200)
+    fornecedor_amount: float = Field(ge=0)
+    intermediador_name: str = Field(default="Intermediador", max_length=200)
+    intermediador_amount: float = Field(ge=0)
+
+    @field_validator("fornecedor_name", "intermediador_name")
+    @classmethod
+    def _strip_party(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Nome da parte da mensalidade é obrigatório.")
+        return cleaned
+
+
 class QuoteMonthlyDraftWrite(BaseModel):
     """
-    Rascunho das mensalidades antes do clique em "Salvar orçamento".
-
-    - license_item_ids: ids de `quote_items` que compõem o total da(s) licença(s).
-    - charges: lista de mensalidades (a soma deve bater exatamente com o total da licença).
+    Rascunho das mensalidades: cada linha selecionada tem fornecedor+intermediador
+    cuja soma deve bater com o total daquela linha.
     """
 
-    license_item_ids: list[int] = Field(default_factory=list)
-    charges: list[QuoteMonthlyChargeWrite] = Field(default_factory=list)
+    allocations: list[QuoteMonthlyAllocationWrite] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def _validate_unique_license_items(self) -> "QuoteMonthlyDraftWrite":
-        if len(self.license_item_ids) != len(set(self.license_item_ids)):
-            raise ValueError("license_item_ids não deve conter itens duplicados.")
-        has_ids = bool(self.license_item_ids)
-        has_charges = bool(self.charges)
-        if has_ids != has_charges:
-            raise ValueError("Selecione linhas e cobrancas de mensalidade, ou deixe ambos vazios.")
+    def _unique_items(self) -> QuoteMonthlyDraftWrite:
+        ids = [a.item_id for a in self.allocations]
+        if len(ids) != len(set(ids)):
+            raise ValueError("allocations não deve conter itens duplicados.")
         return self
 
 

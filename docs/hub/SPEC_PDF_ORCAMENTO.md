@@ -31,7 +31,7 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
 
 3. **Módulos (N seções)** — ordem `sort_order` de `quotes.modules_json`:
    - Título = `module.title` (tipografia negrito + regra cinza; **sem** banda vermelha/azul).
-   - Tabela **sempre** com cabeçalho `ITEM` / `QTDADE` / `V. UNIT.` / `V. TOTAL`. Coluna `ITEM` mais larga, com quebra de linha (não truncar). Números alinhados ao header.
+   - Tabela **sempre** com cabeçalho `ITEM` / `QTDE` / `V. UNIT.` / `V. TOTAL`. Coluna `ITEM` mais larga, com quebra de linha (não truncar). Números alinhados ao header.
    - Se `module.simplified`: uma linha de dados com `display_name` (fallback `title`); qtde `1`; v. unit. = v. total = soma das linhas. **Não** imprimir nomes das linhas originais.
    - Senão: uma linha por item (`quote_items.section = module.id`).
    - Mão de obra só se `module.show_labor` e horas×taxa > 0.

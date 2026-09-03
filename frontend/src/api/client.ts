@@ -145,9 +145,16 @@ export type QuoteMonthlyChargeWrite = {
   sort_order?: number
 }
 
+export type QuoteMonthlyAllocationWrite = {
+  item_id: number
+  fornecedor_name: string
+  fornecedor_amount: number
+  intermediador_name: string
+  intermediador_amount: number
+}
+
 export type QuoteMonthlyDraftWrite = {
-  license_item_ids: number[]
-  charges: QuoteMonthlyChargeWrite[]
+  allocations: QuoteMonthlyAllocationWrite[]
 }
 
 export type QuoteVersionRead = {

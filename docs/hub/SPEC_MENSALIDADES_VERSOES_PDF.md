@@ -65,13 +65,13 @@ O snapshot deve ser suficiente para que o PDF renderize exatamente como estava n
   - `discount_pct != null` OU `discount_value != null`
   - e o desconto aplicado (calculado) for > 0 (quando ambos existirem, usar o cálculo já existente de desconto)
 
-## 5) Layout da tabela (ITEM/QTDADE/V. UNIT./V. TOTAL)
+## 5) Layout da tabela (ITEM/QTDE/V. UNIT./V. TOTAL)
 
 ### 5.1 Mudanças de layout
 - Aumentar espaço do texto do campo `ITEM`:
-  - reduzir um pouco as partes de `QTDADE`, `V. UNIT.` e `V. TOTAL`.
+  - reduzir um pouco as partes de `QTDE`, `V. UNIT.` e `V. TOTAL`.
 - Organizar alinhamento para melhorar legibilidade:
-  - `QTDADE` deve ficar melhor posicionado visualmente (preferência: número centralizado/abaixo do label).
+  - `QTDE` deve ficar melhor posicionado visualmente (preferência: número centralizado/abaixo do label).
   - Aplicar alinhamento coerente em todos os campos numéricos.
 
 ### 5.2 Quebra de linha
@@ -82,20 +82,19 @@ O snapshot deve ser suficiente para que o PDF renderize exatamente como estava n
 ### 6.1 UI — botão de mensalidades
 - No passo 3, adicionar um botão **"Mensalidades"**.
 - A modal deve permitir:
-  - selecionar linhas de itens de **quaisquer blocos** (não limitar à section `mensalidade`)
-  - criar **N mensalidades** (ex.: fornecedor + intermediador)
-  - mudar o valor cobrado em cada mensalidade
+  - selecionar linhas de itens de **quaisquer blocos** (a linha desce para uma tabela)
+  - em **cada** linha selecionada, preencher **Fornecedor** e **Intermediador** (nome + valor)
 
 ### 6.2 Regra dinâmica de valor
-- A soma dos valores das mensalidades criadas deve respeitar o total da(s) licença(s) selecionada(s).
-- Regra definida para este ciclo:
-  - `soma(mensalidades) == soma(total_licenca_selecionada)`
+- Por linha: `fornecedor_amount + intermediador_amount == total daquela linha`.
+- Não validar contra o total do orçamento nem contra a soma de todas as linhas juntas.
 
 ### 6.3 Validação
-- Se o usuário alterar um valor e a regra for quebrada, o UI deve impedir salvar/criar mensalidades ou ajustar automaticamente o último campo (com mensagem visível).
+- Se a soma das partes de uma linha não bater, o UI impede Aplicar (diferença visível na linha).
 
 ### 6.4 PDF — seção exclusiva
 - O PDF deve renderizar uma seção **somente de MENSALIDADES**.
+- Para cada linha selecionada: nome do produto; abaixo, Fornecedor e Intermediador.
 - Essa seção fica **fora do `VALOR TOTAL DO ORCAMENTO`**.
 - A implementação (Implantação + outros módulos de implementação) continua compondo o `VALOR TOTAL DO ORCAMENTO`.
 
