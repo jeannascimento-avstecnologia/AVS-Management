@@ -8,6 +8,7 @@
 
 - Título impresso: `Orçamento : M{id}` (ex.: `Orçamento : M2353`).
 - `{id}` = `quotes.id` (inteiro). Prefixo **sempre** `M`.
+- Versão ativa: `vX` ao lado do título, **fonte menor** (~75–80%).
 - Data do orçamento no cabeçalho (não há bloco Dados do Cliente).
 - Não usar “Ordem de serviço” / “OS” no título.
 
@@ -30,11 +31,11 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
 
 3. **Módulos (N seções)** — ordem `sort_order` de `quotes.modules_json`:
    - Título = `module.title` (tipografia negrito + regra cinza; **sem** banda vermelha/azul).
-   - Tabela **sempre** com cabeçalho `ITEM` / `QTDE.` / `V. UNIT.` / `V. TOTAL`.
+   - Tabela **sempre** com cabeçalho `ITEM` / `QTDADE` / `V. UNIT.` / `V. TOTAL`. Coluna `ITEM` mais larga, com quebra de linha (não truncar). Números alinhados ao header.
    - Se `module.simplified`: uma linha de dados com `display_name` (fallback `title`); qtde `1`; v. unit. = v. total = soma das linhas. **Não** imprimir nomes das linhas originais.
    - Senão: uma linha por item (`quote_items.section = module.id`).
    - Mão de obra só se `module.show_labor` e horas×taxa > 0.
-   - Por módulo: desconto, forma de pagamento, total líquido.
+   - Por módulo: desconto **somente se o aplicado for > 0**; forma de pagamento; total líquido.
    - Opcionais: `module.notes`; `module.billed_by_name` + `module.billed_by_cnpj` (Faturado por). **Não** imprimir Faturado por global.
    - Create inicia canvas **vazio**; PDF só lista módulos presentes.
 
@@ -45,20 +46,12 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
    - Se ainda existirem módulos com `legacy_kind` `implantacao` / `mensalidade`, manter também os rótulos OS VHSYS:
      - `TOTAL DE HORAS/QTDE DE SERVICOS` / `VALOR TOTAL DOS SERVICOS` ← `implantacao`
      - `TOTAL DE PRODUTOS` / `VALOR TOTAL DOS PRODUTOS` ← `mensalidade`
-   - `VALOR TOTAL DO ORCAMENTO` = soma dos líquidos de **todos** os módulos presentes.
+   - `VALOR TOTAL DO ORCAMENTO` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver).
+   - Seção **`MENSALIDADES`** (cobranças) **depois** do valor total: fora do `VALOR TOTAL DO ORCAMENTO`. Linhas selecionadas continuam nos módulos originais (duplicate-include).
 
-6. **OBSERVACOES** — `quotes.notes`; imprime o bloco mesmo se vazio (`-`).
+6. **OBSERVACOES** — `quotes.notes` (pré-fill no wizard: aviso + `Ticket no.:`). Imprime o bloco mesmo se vazio (`-`). Se `notes` não trouxer o aviso/ticket, o render injeta essas linhas **dentro** de OBSERVACOES (não no rodapé).
 
-7. **Aviso + ticket** (fixo, imediatamente acima das assinaturas):
-
-```
-Os valores podem sofrer alteração sem prévio aviso.
-Ticket no.:
-```
-
-   `Ticket no.:` em branco; se `quotes.tiflux_ticket_number` existir, imprime o número na mesma linha.
-
-8. **Assinaturas** (3 colunas): data do aceite · Assinatura do Prestador · Assinatura do Sacado.
+7. **Assinaturas** (3 colunas): data do aceite · Assinatura do Prestador · Assinatura do Sacado. **Sem** bloco fixo de aviso+ticket acima das assinaturas.
 
 ## Fundo
 
@@ -68,7 +61,7 @@ Ticket no.:
 ## Formatação / paginação
 
 - Meta: **1 página A4** para orçamento típico.
-- Quebras **somente entre blocos lógicos**. Incluir no keep-together o par aviso+ticket+assinaturas.
+- Quebras **somente entre blocos lógicos**. Assinaturas no keep-together (aviso+ticket vão nas Observações).
 
 ## Dados da empresa (emitente)
 
@@ -98,3 +91,20 @@ Inalterada: Implantação seed sem MO; Mensalidade se `show_labor`; custom sem M
 - Upload logo via TiFlux URL.
 - Bloco “técnico / atendimento” editável.
 - Mão de obra em módulos custom.
+
+## Adendo — Mensalidades, versões e PDF (fast-follow)
+
+- Cabeçalho:
+  - Manter `Orçamento : M{id}` e exibir `vX` ao lado com **fonte menor**.
+- Observações (bloco `OBSERVACOES`):
+  - Deve conter o trecho:
+    - `Os valores podem sofrer alteracao sem previo aviso.`
+    - `Ticket no.:` (editável no passo 3).
+  - O PDF não deve ter um bloco fixo separado de “Aviso + Ticket” fora das Observações.
+- Desconto:
+  - Exibir o trecho de desconto **somente** quando o usuário preencher `discount_pct` e/ou `discount_value` (e o desconto aplicado for > 0).
+- Mensalidades:
+  - Adicionar uma seção exclusiva `MENSALIDADES` no PDF.
+  - Essa seção fica **fora do** `VALOR TOTAL DO ORCAMENTO` (separação implementação vs mensalidade).
+- Tabela:
+  - Aumentar espaço do texto em `ITEM`, melhorar alinhamento e quebrar em linhas quando o texto exceder a caixa.

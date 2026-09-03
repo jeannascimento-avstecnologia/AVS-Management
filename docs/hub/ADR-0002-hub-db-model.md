@@ -42,6 +42,9 @@ Path: `HUB_DB_PATH` (default `data/hub.db`). Bootstrap no startup espelhando `Au
 | `lead_temperature` | TEXT NULL | coluna OK no MVP; **filtro UI = O3** |
 | `billed_by_type` | TEXT NULL | `distribuidor` \| `fornecedor` |
 | `billed_by_name` | TEXT NULL | |
+| `active_quote_version_id` | INTEGER NULL | FK lógica → `quote_versions.id` |
+| `current_version_number` | INTEGER NULL | último `vX` criado |
+| `monthly_draft_json` | TEXT NULL | rascunho mensalidades antes do snapshot |
 | `implant_payment_plan` | TEXT NULL | ex. `3x_sem_juros` |
 | `implant_discount_pct` | REAL NULL | |
 | `implant_discount_value` | REAL NULL | |
@@ -81,6 +84,26 @@ Path: `HUB_DB_PATH` (default `data/hub.db`). Bootstrap no startup espelhando `Au
 | `sort_order` | INTEGER NOT NULL DEFAULT 0 | |
 
 Índice: `(quote_id, section, sort_order)`.
+
+---
+
+### 2b. `quote_versions`
+
+Snapshot imutável por clique em **Salvar orçamento**. Spec: `SPEC_MENSALIDADES_VERSOES_PDF.md`.
+
+| Coluna | Tipo | Notas |
+|--------|------|-------|
+| `id` | INTEGER PK | |
+| `quote_id` | INTEGER NOT NULL FK → quotes ON DELETE CASCADE | |
+| `version_number` | INTEGER NOT NULL | `v1`, `v2`… UNIQUE `(quote_id, version_number)` |
+| `snapshot_modules_json` | TEXT NOT NULL | canvas |
+| `snapshot_items_json` | TEXT NOT NULL | itens com `id` |
+| `snapshot_notes` | TEXT NULL | |
+| `snapshot_monthly_json` | TEXT NULL | charges + `license_item_ids` |
+| `pdf_path` | TEXT NULL | UUID filename desta versão |
+| `created_at` / `updated_at` | TEXT NOT NULL | |
+
+Índice: `quote_id`.
 
 ---
 

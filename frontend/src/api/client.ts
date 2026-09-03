@@ -91,6 +91,7 @@ export type QuoteItemRead = {
 }
 
 export type QuoteItemWrite = {
+  id?: number | null
   section: QuoteSection
   name: string
   qty: number
@@ -109,6 +110,8 @@ export type QuoteRead = {
   lead_temperature: LeadTemperature | null
   billed_by_type: BilledByType | null
   billed_by_name: string | null
+  active_quote_version_id: number | null
+  current_version_number: number | null
   implant_payment_plan: string | null
   implant_discount_pct: number | null
   implant_discount_value: number | null
@@ -122,6 +125,7 @@ export type QuoteRead = {
   modules: QuoteModule[]
   client_email: string | null
   extra_recipients: string[]
+  monthly_draft_json: string | null
   notes: string | null
   tiflux_ticket_number: string | null
   vhsys_os_id: string | null
@@ -133,6 +137,27 @@ export type QuoteRead = {
   sent_at: string | null
   approved_at: string | null
   items: QuoteItemRead[]
+}
+
+export type QuoteMonthlyChargeWrite = {
+  name: string
+  amount: number
+  sort_order?: number
+}
+
+export type QuoteMonthlyDraftWrite = {
+  license_item_ids: number[]
+  charges: QuoteMonthlyChargeWrite[]
+}
+
+export type QuoteVersionRead = {
+  id: number
+  quote_id: number
+  version_number: number
+  snapshot_notes: string | null
+  snapshot_monthly_json: string | null
+  pdf_path: string | null
+  created_at: string
 }
 
 export type QuoteWrite = {
@@ -1039,6 +1064,28 @@ export const api = {
   /** GET baixa PDF já gerado. */
   downloadQuotePdf: (id: number) =>
     requestBlob(`/orcamentos/${id}/pdf`, { method: 'GET' }, `orcamento-${id}.pdf`),
+
+  updateQuoteMonthlyDraft: (id: number, body: QuoteMonthlyDraftWrite) =>
+    request<QuoteRead>(`/orcamentos/${id}/mensalidades`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+    }),
+
+  listQuoteVersions: (id: number) =>
+    request<{ versions: QuoteVersionRead[] }>(`/orcamentos/${id}/versions`),
+
+  createQuoteVersion: (id: number) =>
+    request<QuoteVersionRead>(`/orcamentos/${id}/versions`, {
+      method: 'POST',
+      body: '{}',
+    }),
+
+  downloadQuoteVersionPdf: (id: number, versionId: number, versionNumber: number) =>
+    requestBlob(
+      `/orcamentos/${id}/versions/${versionId}/pdf`,
+      { method: 'GET' },
+      `orcamento-M${id}-v${versionNumber}.pdf`,
+    ),
 
   listBillingRuns: (params?: BillingRunsListParams) => {
     const qs = new URLSearchParams()

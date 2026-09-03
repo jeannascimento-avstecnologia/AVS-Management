@@ -204,7 +204,21 @@ def validate_modules_and_items(
     ]
 
 
+DEFAULT_QUOTE_NOTES = "Os valores podem sofrer alteracao sem previo aviso.\nTicket no.:"
+
+
+def seed_quote_notes(notes: str | None, *, ticket: str | None = None) -> str:
+    cleaned = (notes or "").strip()
+    if cleaned:
+        return cleaned
+    number = (ticket or "").strip()
+    if number:
+        return f"{DEFAULT_QUOTE_NOTES} {number}"
+    return DEFAULT_QUOTE_NOTES
+
+
 class QuoteItemWrite(BaseModel):
+    id: int | None = Field(default=None, ge=1)
     section: str = Field(min_length=1, max_length=64)
     name: str = Field(min_length=1, max_length=500)
     qty: float = Field(default=1.0, gt=0)
@@ -297,6 +311,7 @@ class QuoteWrite(BaseModel):
     modules: list[QuoteModule] | None = None
     client_email: str | None = None
     extra_recipients: list[str] = Field(default_factory=list)
+    monthly_draft_json: str | None = None
     notes: str | None = None
     items: list[QuoteItemWrite] = Field(default_factory=list)
 
@@ -484,6 +499,8 @@ class QuoteRead(BaseModel):
     lead_temperature: str | None
     billed_by_type: str | None
     billed_by_name: str | None
+    active_quote_version_id: int | None = None
+    current_version_number: int | None = None
     implant_payment_plan: str | None
     implant_discount_pct: float | None
     implant_discount_value: float | None
@@ -497,6 +514,7 @@ class QuoteRead(BaseModel):
     modules: list[QuoteModule] = Field(default_factory=list)
     client_email: str | None = None
     extra_recipients: list[str] = Field(default_factory=list)
+    monthly_draft_json: str | None = None
     notes: str | None = None
     tiflux_ticket_number: str | None
     vhsys_os_id: str | None
@@ -508,6 +526,54 @@ class QuoteRead(BaseModel):
     sent_at: str | None
     approved_at: str | None
     items: list[QuoteItemRead] = Field(default_factory=list)
+
+
+class QuoteMonthlyChargeWrite(BaseModel):
+    """Uma cobrança mensal (ex.: fornecedor, intermediador)."""
+
+    name: str = Field(min_length=1, max_length=200)
+    amount: float = Field(ge=0)
+    sort_order: int = Field(default=0, ge=0)
+
+    @field_validator("name")
+    @classmethod
+    def _strip_name(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned:
+            raise ValueError("Nome da mensalidade é obrigatório.")
+        return cleaned
+
+
+class QuoteMonthlyDraftWrite(BaseModel):
+    """
+    Rascunho das mensalidades antes do clique em "Salvar orçamento".
+
+    - license_item_ids: ids de `quote_items` que compõem o total da(s) licença(s).
+    - charges: lista de mensalidades (a soma deve bater exatamente com o total da licença).
+    """
+
+    license_item_ids: list[int] = Field(default_factory=list)
+    charges: list[QuoteMonthlyChargeWrite] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_unique_license_items(self) -> "QuoteMonthlyDraftWrite":
+        if len(self.license_item_ids) != len(set(self.license_item_ids)):
+            raise ValueError("license_item_ids não deve conter itens duplicados.")
+        has_ids = bool(self.license_item_ids)
+        has_charges = bool(self.charges)
+        if has_ids != has_charges:
+            raise ValueError("Selecione linhas e cobrancas de mensalidade, ou deixe ambos vazios.")
+        return self
+
+
+class QuoteVersionRead(BaseModel):
+    id: int
+    quote_id: int
+    version_number: int
+    snapshot_notes: str | None = None
+    snapshot_monthly_json: str | None = None
+    pdf_path: str | None = None
+    created_at: str
 
 
 class QuoteTemplateLine(BaseModel):

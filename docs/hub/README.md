@@ -54,6 +54,8 @@ Ordem de entrega do plano: **P0 → O1 → O2 → F1** (MVP) → **O3** (fast-fo
 | [ADR-0002-hub-db-model.md](./ADR-0002-hub-db-model.md) | Modelo `hub.db` + payloads |
 | [ADR-0003-hmac-outbox-dry-run.md](./ADR-0003-hmac-outbox-dry-run.md) | HMAC + outbox + `HUB_DRY_RUN` |
 | [MODULO_ORCAMENTO_CONTRATO.md](./MODULO_ORCAMENTO_CONTRATO.md) | Spec Orçamento → OS/ticket → Contrato |
+| [SPEC_PDF_ORCAMENTO.md](./SPEC_PDF_ORCAMENTO.md) | Layout PDF orçamento |
+| [SPEC_MENSALIDADES_VERSOES_PDF.md](./SPEC_MENSALIDADES_VERSOES_PDF.md) | Versões, mensalidades no passo 3, PDF vX |
 | [PRE_REQUISITOS.md](./PRE_REQUISITOS.md) | Gates API TiFlux/VHSYS + desenho 2 fluxos n8n |
 | [O2.0-api-go-nogo.md](./O2.0-api-go-nogo.md) | Matriz Go/No-Go endpoints (O2.0) — bloqueia O3 se sem contrato API |
 | [n8n/](./n8n/) | O2.3 `avs-hub-commercial` + F1.3 `avs-hub-billing` — spec + JSON import esqueleto |

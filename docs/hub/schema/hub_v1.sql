@@ -45,6 +45,9 @@ CREATE TABLE quotes (
     tiflux_ticket_number    TEXT,
     vhsys_os_id             TEXT,
     pdf_path                TEXT,   -- UUID filename; fora web root
+    active_quote_version_id INTEGER NULL,
+    current_version_number INTEGER, -- última versão criada (vX no PDF/UI)
+    monthly_draft_json     TEXT,   -- JSON das mensalidades (rascunho) antes de snapshot
     created_by              INTEGER, -- user id auth (lógico)
     created_at              TEXT    NOT NULL,
     updated_at              TEXT    NOT NULL,
@@ -167,6 +170,26 @@ CREATE TABLE billing_runs (
     approved_at             TEXT,
     sent_at                 TEXT
 );
+
+-- =============================================================================
+-- 4b. quote_versions (snapshot por versão de Orçamento)
+-- =============================================================================
+CREATE TABLE quote_versions (
+    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+    quote_id                INTEGER NOT NULL
+                            REFERENCES quotes (id) ON DELETE CASCADE,
+    version_number         INTEGER NOT NULL,
+    snapshot_modules_json  TEXT NOT NULL, -- modules_json (QuoteModule[])
+    snapshot_items_json    TEXT NOT NULL, -- items_json (QuoteItemWrite[])
+    snapshot_notes         TEXT,
+    snapshot_monthly_json TEXT,           -- JSON mensalidades (charges + sources)
+    pdf_path                TEXT,          -- UUID filename (por versão)
+    created_at              TEXT NOT NULL,
+    updated_at              TEXT NOT NULL,
+    UNIQUE (quote_id, version_number)
+);
+
+CREATE INDEX idx_quote_versions_quote_id ON quote_versions (quote_id);
 
 CREATE INDEX idx_billing_runs_status ON billing_runs (status);
 CREATE INDEX idx_billing_runs_competence ON billing_runs (competence);

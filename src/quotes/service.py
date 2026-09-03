@@ -24,6 +24,8 @@ from src.quotes.schemas import (
     QuoteProposalTemplateUpdate,
     QuoteProposalTemplateWrite,
     QuoteRead,
+    QuoteMonthlyDraftWrite,
+    QuoteVersionRead,
     QuoteTemplateLine,
     QuoteTemplateRead,
     QuoteTemplateUpdate,
@@ -31,6 +33,7 @@ from src.quotes.schemas import (
     QuoteUpdate,
     QuoteWrite,
     seed_default_modules,
+    seed_quote_notes,
     validate_modules_and_items,
 )
 
@@ -49,6 +52,8 @@ _QUOTE_COLUMNS = (
     "lead_temperature",
     "billed_by_type",
     "billed_by_name",
+    "active_quote_version_id",
+    "current_version_number",
     "implant_payment_plan",
     "implant_discount_pct",
     "implant_discount_value",
@@ -62,6 +67,7 @@ _QUOTE_COLUMNS = (
     "modules_json",
     "client_email",
     "extra_recipients",
+    "monthly_draft_json",
     "notes",
     "tiflux_ticket_number",
     "vhsys_os_id",
@@ -72,6 +78,19 @@ _QUOTE_COLUMNS = (
     "submitted_at",
     "sent_at",
     "approved_at",
+)
+
+_QUOTE_VERSION_COLUMNS = (
+    "id",
+    "quote_id",
+    "version_number",
+    "snapshot_modules_json",
+    "snapshot_items_json",
+    "snapshot_notes",
+    "snapshot_monthly_json",
+    "pdf_path",
+    "created_at",
+    "updated_at",
 )
 
 _EDITABLE_STATUSES = frozenset({"draft"})
@@ -161,6 +180,11 @@ def _optional_notes(row: sqlite3.Row) -> str | None:
 
 def _dump_modules(modules: list[QuoteModule]) -> str:
     return json.dumps([m.model_dump() for m in modules], ensure_ascii=False)
+
+
+def _dump_items(items: list[QuoteItemRead]) -> str:
+    """Serializa quote_items para snapshot de versão (PDF)."""
+    return json.dumps([i.model_dump() for i in items], ensure_ascii=False)
 
 
 def _legacy_flat_from_modules(modules: list[QuoteModule]) -> dict[str, Any]:
@@ -271,6 +295,16 @@ def _row_to_quote(row: sqlite3.Row, items: list[QuoteItemRead]) -> QuoteRead:
         lead_temperature=row["lead_temperature"],
         billed_by_type=row["billed_by_type"],
         billed_by_name=row["billed_by_name"],
+        active_quote_version_id=(
+            int(row["active_quote_version_id"])
+            if "active_quote_version_id" in row.keys() and row["active_quote_version_id"] is not None
+            else None
+        ),
+        current_version_number=(
+            int(row["current_version_number"])
+            if "current_version_number" in row.keys() and row["current_version_number"] is not None
+            else None
+        ),
         implant_payment_plan=row["implant_payment_plan"],
         implant_discount_pct=row["implant_discount_pct"],
         implant_discount_value=row["implant_discount_value"],
@@ -286,6 +320,7 @@ def _row_to_quote(row: sqlite3.Row, items: list[QuoteItemRead]) -> QuoteRead:
         extra_recipients=_parse_extra_recipients(
             row["extra_recipients"] if "extra_recipients" in row.keys() else None
         ),
+        monthly_draft_json=(str(row["monthly_draft_json"]) if "monthly_draft_json" in row.keys() else None),
         notes=_optional_notes(row),
         tiflux_ticket_number=row["tiflux_ticket_number"],
         vhsys_os_id=row["vhsys_os_id"],
@@ -337,8 +372,63 @@ def _insert_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteItem
 
 
 def _replace_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteItemWrite]) -> None:
-    conn.execute("DELETE FROM quote_items WHERE quote_id = ?", (quote_id,))
-    _insert_items(conn, quote_id, items)
+    """Upsert por id (mantém ids p/ mensalidades); remove linhas omitidas."""
+    existing = {
+        int(row["id"])
+        for row in conn.execute(
+            "SELECT id FROM quote_items WHERE quote_id = ?",
+            (quote_id,),
+        ).fetchall()
+    }
+    keep: set[int] = set()
+    for item in items:
+        total = item.computed_total()
+        if item.id is not None and item.id in existing:
+            conn.execute(
+                """
+                UPDATE quote_items
+                SET section = ?, name = ?, qty = ?, unit_value = ?, total_value = ?,
+                    template_key = ?, sort_order = ?
+                WHERE id = ? AND quote_id = ?
+                """,
+                (
+                    item.section,
+                    item.name,
+                    item.qty,
+                    item.unit_value,
+                    total,
+                    item.template_key,
+                    item.sort_order,
+                    item.id,
+                    quote_id,
+                ),
+            )
+            keep.add(item.id)
+        else:
+            cur = conn.execute(
+                """
+                INSERT INTO quote_items (
+                    quote_id, section, name, qty, unit_value, total_value,
+                    template_key, sort_order
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    quote_id,
+                    item.section,
+                    item.name,
+                    item.qty,
+                    item.unit_value,
+                    total,
+                    item.template_key,
+                    item.sort_order,
+                ),
+            )
+            keep.add(int(cur.lastrowid))
+    for leftover in existing - keep:
+        conn.execute(
+            "DELETE FROM quote_items WHERE id = ? AND quote_id = ?",
+            (leftover, quote_id),
+        )
 
 
 def _get_quote_row(conn: sqlite3.Connection, quote_id: int) -> sqlite3.Row | None:
@@ -404,7 +494,7 @@ class QuoteService:
                     _dump_modules(modules),
                     data.client_email,
                     _dump_extra_recipients(data.extra_recipients),
-                    (data.notes or "").strip() or None,
+                    seed_quote_notes(data.notes, ticket=None),
                     created_by,
                     now,
                     now,
@@ -1165,45 +1255,275 @@ class QuoteService:
             raise QuoteNotFoundError("PDF inválido ou ausente.")
         return target
 
+    def update_monthly_draft(
+        self,
+        quote_id: int,
+        draft: QuoteMonthlyDraftWrite,
+    ) -> QuoteRead:
+        # valida e persiste rascunho; o snapshot da versão só é criado no clique em "Salvar orçamento"
+        license_ids = draft.license_item_ids
+        with self._db.connect() as conn:
+            if license_ids:
+                placeholders = ",".join("?" for _ in license_ids)
+                rows = conn.execute(
+                    f"""
+                    SELECT id, total_value
+                    FROM quote_items
+                    WHERE quote_id = ? AND id IN ({placeholders})
+                    """,
+                    (quote_id, *license_ids),
+                ).fetchall()
+                if len(rows) != len(license_ids):
+                    raise QuoteNotFoundError(
+                        "Mensalidades: alguns quote_items selecionados não pertencem ao orçamento."
+                    )
+                license_total = round(sum(float(r["total_value"]) for r in rows), 2)
+                charges_total = round(sum(float(c.amount) for c in draft.charges), 2)
+                if abs(license_total - charges_total) > 0.01:
+                    raise QuoteConflictError(
+                        f"Mensalidades inválidas: soma mensalidades ({charges_total}) deve bater com a licença ({license_total})."
+                    )
+                monthly_json = json.dumps(draft.model_dump(), ensure_ascii=False)
+            else:
+                monthly_json = None
+            now = _utcnow_iso()
+            conn.execute(
+                """
+                UPDATE quotes
+                SET monthly_draft_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (monthly_json, now, quote_id),
+            )
+            updated_row = _get_quote_row(conn, quote_id)
+            assert updated_row is not None
+            return _row_to_quote(updated_row, _fetch_items(conn, quote_id))
+
+    def list_versions(self, quote_id: int, *, limit: int = 100) -> list[QuoteVersionRead]:
+        limit = max(1, min(limit, 200))
+        with self._db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, quote_id, version_number, snapshot_notes, snapshot_monthly_json,
+                       pdf_path, created_at
+                FROM quote_versions
+                WHERE quote_id = ?
+                ORDER BY version_number DESC, id DESC
+                LIMIT ?
+                """,
+                (quote_id, limit),
+            ).fetchall()
+        return [
+            QuoteVersionRead(
+                id=int(r["id"]),
+                quote_id=int(r["quote_id"]),
+                version_number=int(r["version_number"]),
+                snapshot_notes=r["snapshot_notes"],
+                snapshot_monthly_json=r["snapshot_monthly_json"],
+                pdf_path=r["pdf_path"],
+                created_at=str(r["created_at"]),
+            )
+            for r in rows
+        ]
+
+    def _row_to_version(self, row: sqlite3.Row) -> QuoteVersionRead:
+        return QuoteVersionRead(
+            id=int(row["id"]),
+            quote_id=int(row["quote_id"]),
+            version_number=int(row["version_number"]),
+            snapshot_notes=row["snapshot_notes"],
+            snapshot_monthly_json=row["snapshot_monthly_json"],
+            pdf_path=row["pdf_path"],
+            created_at=str(row["created_at"]),
+        )
+
+    def get_version(self, quote_id: int, version_id: int) -> QuoteVersionRead:
+        with self._db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT id, quote_id, version_number, snapshot_notes, snapshot_monthly_json,
+                       pdf_path, created_at
+                FROM quote_versions
+                WHERE id = ? AND quote_id = ?
+                """,
+                (version_id, quote_id),
+            ).fetchone()
+        if row is None:
+            raise QuoteNotFoundError(
+                f"Versão {version_id} não encontrada no orçamento {quote_id}."
+            )
+        return self._row_to_version(row)
+
+    def create_version(
+        self,
+        quote_id: int,
+        *,
+        created_by: int | None,
+        settings: Settings | None = None,
+    ) -> QuoteVersionRead:
+        # settings reservado para futuras validações/flags
+        _ = settings
+        _ = created_by
+        quote = self.get(quote_id)
+        snapshot_modules_json = _dump_modules(quote.modules)
+        snapshot_items_json = _dump_items(quote.items)
+        now = _utcnow_iso()
+        with self._db.connect() as conn:
+            cur = conn.execute(
+                """
+                SELECT COALESCE(MAX(version_number), 0) + 1 AS next_v
+                FROM quote_versions
+                WHERE quote_id = ?
+                """,
+                (quote_id,),
+            )
+            next_v = int(cur.fetchone()["next_v"])
+            cur2 = conn.execute(
+                """
+                INSERT INTO quote_versions (
+                    quote_id, version_number,
+                    snapshot_modules_json, snapshot_items_json,
+                    snapshot_notes, snapshot_monthly_json,
+                    pdf_path,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                """,
+                (
+                    quote_id,
+                    next_v,
+                    snapshot_modules_json,
+                    snapshot_items_json,
+                    quote.notes,
+                    quote.monthly_draft_json,
+                    now,
+                    now,
+                ),
+            )
+            version_id = int(cur2.lastrowid)
+            conn.execute(
+                """
+                UPDATE quotes
+                SET active_quote_version_id = ?, current_version_number = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (version_id, next_v, now, quote_id),
+            )
+
+        self.generate_pdf(quote_id, version_id=version_id)
+        return self.get_version(quote_id, version_id)
+
     def generate_pdf(
         self,
         quote_id: int,
         *,
         issuer: QuotePdfIssuer | None = None,
         client: QuotePdfClient | None = None,
+        version_id: int | None = None,
     ) -> tuple[QuoteRead, Path]:
-        """Gera PDF (draft/approved/qualquer status), grava UUID sob HUB_PDF_DIR."""
+        """Gera PDF da versão pedida (default: ativa) e salva UUID sob HUB_PDF_DIR."""
         quote = self.get(quote_id)
+        target_version_id = version_id if version_id is not None else quote.active_quote_version_id
+        version_number: int | None = None
+        snapshot_monthly_json: str | None = quote.monthly_draft_json
+        old_version_pdf: str | None = None
+        if target_version_id is not None:
+            with self._db.connect() as conn:
+                v = conn.execute(
+                    """
+                    SELECT version_number, snapshot_modules_json, snapshot_items_json,
+                           snapshot_notes, snapshot_monthly_json, id, pdf_path
+                    FROM quote_versions
+                    WHERE id = ? AND quote_id = ?
+                    """,
+                    (target_version_id, quote_id),
+                ).fetchone()
+                if v is None:
+                    target_version_id = None
+                else:
+                    version_number = int(v["version_number"])
+                    snapshot_monthly_json = v["snapshot_monthly_json"]
+                    snapshot_notes = v["snapshot_notes"]
+                    old_version_pdf = v["pdf_path"]
+                    modules_raw = json.loads(str(v["snapshot_modules_json"] or "[]"))
+                    items_raw = json.loads(str(v["snapshot_items_json"] or "[]"))
+                    modules = [QuoteModule.model_validate(m) for m in modules_raw]
+                    items = [QuoteItemRead.model_validate(i) for i in items_raw]
+                    quote = quote.model_copy(
+                        update={
+                            "modules": modules,
+                            "items": items,
+                            "notes": snapshot_notes,
+                        }
+                    )
         root = self._pdf_root()
         filename = f"{uuid.uuid4()}.pdf"
         dest = (root / filename).resolve()
         if not dest.is_relative_to(root):
             raise QuoteConflictError("Falha ao resolver path do PDF.")
 
-        old_name = quote.pdf_path
-        render_quote_pdf(quote, dest, issuer=issuer, client=client)
+        render_quote_pdf(
+            quote,
+            dest,
+            issuer=issuer,
+            client=client,
+            version_number=version_number,
+            monthly_draft_json=snapshot_monthly_json,
+        )
 
         now = _utcnow_iso()
         with self._db.connect() as conn:
-            conn.execute(
-                """
-                UPDATE quotes
-                SET pdf_path = ?, updated_at = ?
-                WHERE id = ?
-                """,
-                (filename, now, quote_id),
-            )
+            if target_version_id is not None:
+                if old_version_pdf and old_version_pdf != filename:
+                    try:
+                        old_path = self._resolve_stored_pdf(str(old_version_pdf))
+                        if old_path.is_file():
+                            old_path.unlink()
+                    except QuoteNotFoundError:
+                        pass
+                conn.execute(
+                    """
+                    UPDATE quote_versions
+                    SET pdf_path = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (filename, now, target_version_id),
+                )
+                live = _get_quote_row(conn, quote_id)
+                active = (
+                    int(live["active_quote_version_id"])
+                    if live is not None and live["active_quote_version_id"] is not None
+                    else None
+                )
+                if active == target_version_id:
+                    conn.execute(
+                        """
+                        UPDATE quotes
+                        SET pdf_path = ?, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (filename, now, quote_id),
+                    )
+            else:
+                old_name = quote.pdf_path
+                if old_name and old_name != filename:
+                    try:
+                        old_path = self._resolve_stored_pdf(old_name)
+                        if old_path.is_file():
+                            old_path.unlink()
+                    except QuoteNotFoundError:
+                        pass
+                conn.execute(
+                    """
+                    UPDATE quotes
+                    SET pdf_path = ?, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (filename, now, quote_id),
+                )
+
             row = _get_quote_row(conn, quote_id)
             assert row is not None
             updated = _row_to_quote(row, _fetch_items(conn, quote_id))
-
-        if old_name and old_name != filename:
-            try:
-                old_path = self._resolve_stored_pdf(old_name)
-                if old_path.is_file():
-                    old_path.unlink()
-            except QuoteNotFoundError:
-                pass
 
         return updated, dest
 
@@ -1215,4 +1535,27 @@ class QuoteService:
         path = self._resolve_stored_pdf(quote.pdf_path)
         if not path.is_file():
             raise QuoteNotFoundError(f"PDF do orçamento {quote_id} não encontrado no disco.")
+        return path
+
+    def get_version_pdf_file(self, quote_id: int, version_id: int) -> Path:
+        with self._db.connect() as conn:
+            row = conn.execute(
+                """
+                SELECT pdf_path
+                FROM quote_versions
+                WHERE id = ? AND quote_id = ?
+                """,
+                (version_id, quote_id),
+            ).fetchone()
+        if row is None:
+            raise QuoteNotFoundError(f"Versão {version_id} não encontrada no orçamento {quote_id}.")
+        pdf_path = row["pdf_path"]
+        if not pdf_path:
+            _, dest = self.generate_pdf(quote_id, version_id=version_id)
+            return dest
+        path = self._resolve_stored_pdf(str(pdf_path))
+        if not path.is_file():
+            raise QuoteNotFoundError(
+                f"PDF da versão {version_id} não encontrado no disco."
+            )
         return path

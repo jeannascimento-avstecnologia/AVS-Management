@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import zlib
 from pathlib import Path
@@ -370,6 +371,8 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "VALOR TOTAL DOS PRODUTOS" in text
     assert "VALOR TOTAL DO ORCAMENTO" in text
     assert "OBSERVACOES" in text
+    assert "QTDADE" in text
+    assert "Desconto 0%" not in text
     assert "Forma de Pagamento Servicos" in text
     assert "Observacoes" in text
     assert "Condicao implant" in text
@@ -422,7 +425,7 @@ def test_pdf_simplified_module_hides_line_names(tmp_path: Path) -> None:
     assert "Pacote Office" in text
     assert "Item Secreto XYZ" not in text
     assert "ITEM" in text
-    assert "QTDE." in text
+    assert "QTDADE" in text
     assert "V. UNIT." in text
     assert "V. TOTAL" in text
 
@@ -548,3 +551,43 @@ def test_pdf_legacy_without_modules_synthesizes_seed(tmp_path: Path) -> None:
     assert "IMPLANTACAO" not in text
     assert "MENSALIDADE" not in text
     assert "Ticket no." in text
+
+
+def test_pdf_header_version_and_monthly_outside_total(tmp_path: Path) -> None:
+    dest = tmp_path / "monthly.pdf"
+    quote = _sample_quote()
+    draft = {
+        "license_item_ids": [2],
+        "charges": [
+            {"name": "Fornecedor", "amount": 200.0, "sort_order": 0},
+            {"name": "Intermediador", "amount": 99.9, "sort_order": 1},
+        ],
+    }
+    render_quote_pdf(
+        quote,
+        dest,
+        issuer=_issuer(),
+        client=_client(),
+        version_number=3,
+        monthly_draft_json=json.dumps(draft),
+    )
+    text = _pdf_text(dest)
+    assert "v3" in text
+    assert "MENSALIDADES" in text
+    assert "Fornecedor" in text
+    assert "Intermediador" in text
+    assert "VALOR TOTAL DO ORCAMENTO" in text
+    assert "1.660,00" in text or "1660,00" in text
+    assert "1.959,90" not in text and "1959,90" not in text
+
+
+def test_pdf_shows_discount_only_when_applied(tmp_path: Path) -> None:
+    dest = tmp_path / "discount.pdf"
+    quote = _sample_quote()
+    mods = list(quote.modules)
+    mods[0] = mods[0].model_copy(update={"discount_pct": 10.0})
+    quote = quote.model_copy(update={"modules": mods})
+    render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
+    text = _pdf_text(dest)
+    assert "Desconto" in text
+    assert "Aplicado" in text

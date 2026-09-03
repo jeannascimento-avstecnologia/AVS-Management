@@ -26,6 +26,7 @@ from src.quotes.schemas import (
     QuoteTemplateWrite,
     QuoteUpdate,
     QuoteWrite,
+    QuoteMonthlyDraftWrite,
     VhsysCatalogCreateBody,
 )
 from src.quotes.service import QuoteConflictError, QuoteNotFoundError, QuoteService
@@ -650,6 +651,78 @@ def build_quotes_router() -> APIRouter:
         payload = result.to_dict()
         payload["outbox_status"] = final_status
         return payload
+
+    @router.put("/{quote_id}/mensalidades", status_code=200)
+    async def update_quote_monthly_draft(
+        request: Request,
+        quote_id: int,
+        body: QuoteMonthlyDraftWrite,
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        """Atualiza rascunho de mensalidades (validado) no quote (draft)."""
+        try:
+            updated = _service().update_monthly_draft(quote_id, body)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except QuoteConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        log_action(
+            request,
+            action="orcamento.mensalidades.draft.update",
+            resource=str(quote_id),
+            detail={"has_charges": True},
+            user=user,
+        )
+        return updated.model_dump()
+
+    @router.get("/{quote_id}/versions")
+    async def list_quote_versions(
+        quote_id: int,
+        _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        versions = _service().list_versions(quote_id)
+        return {"versions": [v.model_dump() for v in versions]}
+
+    @router.post("/{quote_id}/versions", status_code=201)
+    async def create_quote_version(
+        request: Request,
+        quote_id: int,
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        try:
+            created_by = _user_id(user)
+            version = _service().create_version(quote_id, created_by=created_by)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except QuoteConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        log_action(
+            request,
+            action="orcamento.version.create",
+            resource=str(quote_id),
+            detail={"version_number": version.version_number},
+            user=user,
+        )
+        return version.model_dump()
+
+    @router.get("/{quote_id}/versions/{version_id}/pdf")
+    async def download_quote_version_pdf(
+        quote_id: int,
+        version_id: int,
+        _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> FileResponse:
+        try:
+            version = _service().get_version(quote_id, version_id)
+            path = _service().get_version_pdf_file(quote_id, version_id)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except QuoteConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return FileResponse(
+            path,
+            media_type="application/pdf",
+            filename=f"orcamento-M{quote_id}-v{version.version_number}.pdf",
+        )
 
     @router.post("/{quote_id}/pdf")
     async def generate_quote_pdf(

@@ -13,6 +13,7 @@ import {
   MoreHorizontal,
   Plus,
   Search,
+  Repeat,
   Send,
   StickyNote,
   Thermometer,
@@ -40,6 +41,7 @@ import {
   type QuoteModule,
   type QuoteModuleTemplateRead,
   type QuoteProposalTemplateRead,
+  type QuoteMonthlyDraftWrite,
   type QuoteRead,
   type QuoteSection,
   type QuoteTemplateLine,
@@ -51,6 +53,7 @@ import {
   type QuoteClientLink,
 } from '@/components/quotes/QuoteClientRegisterDialog'
 import { QuoteModuleTemplatesPanel } from '@/components/quotes/QuoteModuleTemplatesPanel'
+import { QuoteMonthlyChargesDialog } from '@/components/quotes/QuoteMonthlyChargesDialog'
 import { QuoteProposalTemplatesPanel } from '@/components/quotes/QuoteProposalTemplatesPanel'
 import { localId } from '@/lib/localId'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
@@ -120,6 +123,7 @@ const INSTALLMENT_OPTIONS = Array.from({ length: 12 }, (_, i) => i + 1)
 
 type DraftItem = {
   localKey: string
+  itemId: number | null
   section: QuoteSection
   name: string
   qty: string
@@ -384,6 +388,56 @@ function buildPaymentPlan(mode: PaymentMode, installments: number | null): strin
   return ''
 }
 
+function defaultQuoteNotes(ticket: string | null): string {
+  const number = (ticket ?? '').trim()
+  return number
+    ? `Os valores podem sofrer alteracao sem previo aviso.\nTicket no.: ${number}`
+    : 'Os valores podem sofrer alteracao sem previo aviso.\nTicket no.:'
+}
+
+function parseMonthlyDraft(raw: string | null | undefined): QuoteMonthlyDraftWrite | null {
+  if (!raw?.trim()) return null
+  try {
+    const data = JSON.parse(raw) as QuoteMonthlyDraftWrite
+    if (!Array.isArray(data.charges)) return null
+    return {
+      license_item_ids: Array.isArray(data.license_item_ids) ? data.license_item_ids : [],
+      charges: data.charges,
+    }
+  } catch {
+    return null
+  }
+}
+
+function syncDraftItemIds(form: DraftForm, quote: QuoteRead): DraftForm {
+  const remaining = [...quote.items]
+  const items = form.items.map((draft) => {
+    if (draft.itemId != null) {
+      const hitIdx = remaining.findIndex((i) => i.id === draft.itemId)
+      if (hitIdx >= 0) {
+        remaining.splice(hitIdx, 1)
+        return draft
+      }
+    }
+    const name = draft.name.trim() || 'Novo item'
+    const qty = parsePositiveNumber(draft.qty, 1)
+    const unit = parseNonNegativeNumber(draft.unit_value)
+    const hitIdx = remaining.findIndex(
+      (i) =>
+        i.section === draft.section &&
+        i.name === name &&
+        i.qty === qty &&
+        i.unit_value === unit,
+    )
+    if (hitIdx >= 0) {
+      const hit = remaining.splice(hitIdx, 1)[0]
+      return { ...draft, itemId: hit.id }
+    }
+    return draft
+  })
+  return { ...form, items }
+}
+
 function quoteToForm(quote: QuoteRead): DraftForm {
   return {
     cnpj: quote.cnpj,
@@ -396,9 +450,10 @@ function quoteToForm(quote: QuoteRead): DraftForm {
     modules: modulesFromQuote(quote),
     client_email: quote.client_email ?? '',
     extra_recipients: [...(quote.extra_recipients ?? [])],
-    notes: quote.notes ?? '',
+    notes: quote.notes?.trim() ? quote.notes : defaultQuoteNotes(quote.tiflux_ticket_number),
     items: quote.items.map((item) => ({
       localKey: newLocalKey(),
+      itemId: item.id,
       section: item.section,
       name: item.name,
       qty: String(item.qty),
@@ -411,6 +466,7 @@ function quoteToForm(quote: QuoteRead): DraftForm {
 function formToUpdate(form: DraftForm): QuoteUpdate {
   const modules = form.modules.map((m, i) => draftModuleToApi(m, i))
   const items: QuoteItemWrite[] = form.items.map((item, index) => ({
+    id: item.itemId ?? undefined,
     section: item.section,
     name: item.name.trim() || 'Novo item',
     qty: parsePositiveNumber(item.qty, 1),
@@ -507,6 +563,10 @@ export function QuoteWizardPage() {
   const [proposalLibraryOpen, setProposalLibraryOpen] = useState(false)
   const [saveProposalOpen, setSaveProposalOpen] = useState(false)
   const [saveProposalName, setSaveProposalName] = useState('')
+  const [monthlyOpen, setMonthlyOpen] = useState(false)
+  const [monthlySaving, setMonthlySaving] = useState(false)
+  const [versionSaving, setVersionSaving] = useState(false)
+  const [versionPdfPending, setVersionPdfPending] = useState<number | null>(null)
   const emailPrefillDone = useRef(false)
   const discountSourceByModule = useRef<Record<string, 'pct' | 'value' | null>>({})
 
@@ -517,6 +577,12 @@ export function QuoteWizardPage() {
   const quoteQuery = useQuery({
     queryKey: ['quote', quoteId],
     queryFn: () => api.getQuote(quoteId),
+    enabled: Number.isFinite(quoteId) && quoteId > 0,
+  })
+
+  const versionsQuery = useQuery({
+    queryKey: ['quote-versions', quoteId],
+    queryFn: () => api.listQuoteVersions(quoteId),
     enabled: Number.isFinite(quoteId) && quoteId > 0,
   })
 
@@ -659,6 +725,7 @@ export function QuoteWizardPage() {
       setLastSavedAt(updated.updated_at)
       void queryClient.invalidateQueries({ queryKey: ['quotes'] })
       queryClient.setQueryData(['quote', quoteId], updated)
+      setForm((prev) => (prev ? syncDraftItemIds(prev, updated) : prev))
       if (dirtyRef.current) {
         setSaveStatus('dirty')
       } else {
@@ -719,6 +786,7 @@ export function QuoteWizardPage() {
         ...prev.items,
         {
           localKey: newLocalKey(),
+          itemId: null,
           section,
           name: '',
           qty: '1',
@@ -860,6 +928,7 @@ export function QuoteWizardPage() {
       ]
       const fromTemplate: DraftItem[] = template.lines.map((line) => ({
         localKey: newLocalKey(),
+        itemId: null,
         section: moduleId,
         name: line.name,
         qty: String(line.qty),
@@ -904,6 +973,7 @@ export function QuoteWizardPage() {
       })
     const items: DraftItem[] = template.items.map((item) => ({
       localKey: newLocalKey(),
+      itemId: null,
       section: idMap.get(item.section) ?? item.section,
       name: item.name,
       qty: String(item.qty),
@@ -915,16 +985,91 @@ export function QuoteWizardPage() {
     toast.success(`Modelo “${template.name}” aplicado`)
   }
 
-  function handleManualSave() {
+  async function handleManualSave() {
     if (!canEdit) return
     if (digitsOnly(form?.cnpj ?? '').length !== 14) {
       toast.error('CNPJ inválido — corrija no passo Cliente.')
       setStep(1)
       return
     }
+    const current = formRef.current
+    if (!current) return
     if (saveTimer.current) clearTimeout(saveTimer.current)
-    persist()
-    toast.success('Rascunho salvo')
+    setVersionSaving(true)
+    dirtyRef.current = false
+    setSaveStatus('saving')
+    try {
+      const updated = await api.updateQuote(quoteId, formToUpdate(current))
+      const synced = syncDraftItemIds(current, updated)
+      formRef.current = synced
+      setForm(synced)
+      queryClient.setQueryData(['quote', quoteId], updated)
+      setLastSavedAt(updated.updated_at)
+      const version = await api.createQuoteVersion(quoteId)
+      void queryClient.invalidateQueries({ queryKey: ['quote', quoteId] })
+      void queryClient.invalidateQueries({ queryKey: ['quote-versions', quoteId] })
+      void queryClient.invalidateQueries({ queryKey: ['quotes'] })
+      setSaveStatus('saved')
+      toast.success(`Versão v${version.version_number} salva`)
+    } catch (err) {
+      dirtyRef.current = true
+      setSaveStatus('error')
+      toast.error(err instanceof Error ? err.message : 'Falha ao salvar versão')
+    } finally {
+      setVersionSaving(false)
+    }
+  }
+
+  async function handleMonthlySave(draft: QuoteMonthlyDraftWrite, selectedLocalKeys: string[]) {
+    const current = formRef.current
+    if (!current || !canEdit) return
+    if (saveTimer.current) clearTimeout(saveTimer.current)
+    setMonthlySaving(true)
+    try {
+      const updated = await api.updateQuote(quoteId, formToUpdate(current))
+      const synced = syncDraftItemIds(current, updated)
+      formRef.current = synced
+      setForm(synced)
+      queryClient.setQueryData(['quote', quoteId], updated)
+      const ids = synced.items
+        .filter((i) => selectedLocalKeys.includes(i.localKey))
+        .map((i) => i.itemId)
+        .filter((id): id is number => id != null)
+      if (selectedLocalKeys.length > 0 && ids.length !== selectedLocalKeys.length) {
+        toast.error('Salve os itens antes de aplicar mensalidades.')
+        return
+      }
+      const next = await api.updateQuoteMonthlyDraft(quoteId, {
+        license_item_ids: ids,
+        charges: draft.charges,
+      })
+      queryClient.setQueryData(['quote', quoteId], next)
+      setLastSavedAt(next.updated_at)
+      dirtyRef.current = false
+      setSaveStatus('saved')
+      setMonthlyOpen(false)
+      toast.success(ids.length ? 'Mensalidades aplicadas' : 'Mensalidades limpas')
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Falha ao salvar mensalidades')
+    } finally {
+      setMonthlySaving(false)
+    }
+  }
+
+  async function handleDownloadVersionPdf(versionId: number, versionNumber: number) {
+    setVersionPdfPending(versionId)
+    try {
+      const { blob, filename } = await api.downloadQuoteVersionPdf(
+        quoteId,
+        versionId,
+        versionNumber,
+      )
+      downloadBinaryBlob(blob, filename)
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Falha ao baixar PDF da versão')
+    } finally {
+      setVersionPdfPending(null)
+    }
   }
 
   function addExtraRecipient() {
@@ -1109,6 +1254,16 @@ export function QuoteWizardPage() {
     }
   })
   const grandTotal = moduleNets.reduce((sum, row) => sum + row.net.net, 0)
+  const monthlyLines = form.items.map((item) => ({
+    localKey: item.localKey,
+    itemId: item.itemId,
+    section: item.section,
+    sectionTitle: form.modules.find((m) => m.id === item.section)?.title ?? item.section,
+    name: item.name.trim() || 'Novo item',
+    total: lineTotal(item),
+  }))
+  const monthlyDraft = parseMonthlyDraft(quote.monthly_draft_json)
+  const versions = versionsQuery.data?.versions ?? []
 
   return (
     <div className="mx-auto max-w-4xl space-y-6">
@@ -1125,7 +1280,12 @@ export function QuoteWizardPage() {
             Lista
           </Button>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Orçamento #{quote.id}
+            Orçamento M{quote.id}
+            {quote.current_version_number != null ? (
+              <span className="ml-2 text-base font-normal text-muted-foreground">
+                v{quote.current_version_number}
+              </span>
+            ) : null}
           </h1>
           <p className="text-sm text-muted-foreground">
             {formatCnpj(form.cnpj)}
@@ -1136,6 +1296,9 @@ export function QuoteWizardPage() {
           <Badge variant={canEdit ? 'secondary' : 'outline'}>
             {canEdit ? 'Rascunho' : quote.status}
           </Badge>
+          {quote.current_version_number != null ? (
+            <Badge variant="outline">v{quote.current_version_number}</Badge>
+          ) : null}
           <SaveIndicator status={saveStatus} lastSavedAt={lastSavedAt} />
         </div>
       </div>
@@ -1826,9 +1989,22 @@ export function QuoteWizardPage() {
                 >
                   PDF
                 </Badge>
+                {canEdit ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className={cn(btnSecondaryClass, 'ml-auto')}
+                    onClick={() => setMonthlyOpen(true)}
+                  >
+                    <Repeat className="h-4 w-4" />
+                    Mensalidades
+                  </Button>
+                ) : monthlyDraft ? (
+                  <Badge variant="outline">Mensalidades</Badge>
+                ) : null}
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Texto livre impresso no bloco OBSERVAÇÕES do PDF (forma de pagamento extra, condições, etc.).
+                Pré-preenchido com aviso e Ticket no. — editável. Impresso no bloco OBSERVAÇÕES do PDF.
               </p>
             </CardHeader>
             <CardContent>
@@ -1959,9 +2135,13 @@ export function QuoteWizardPage() {
                     type="button"
                     className={btnSecondaryClass}
                     onClick={handleManualSave}
-                    disabled={saveMutation.isPending || submitMutation.isPending}
+                    disabled={
+                      saveMutation.isPending ||
+                      submitMutation.isPending ||
+                      versionSaving
+                    }
                   >
-                    {saveMutation.isPending ? 'Salvando…' : 'Salvar orçamento'}
+                    {versionSaving || saveMutation.isPending ? 'Salvando…' : 'Salvar orçamento'}
                   </Button>
                 )}
                 {isQuoteSubmittable(quote.status) && (
@@ -2010,6 +2190,30 @@ export function QuoteWizardPage() {
                   PDF
                 </Button>
               </div>
+              {versions.length > 0 ? (
+                <div className="space-y-1.5 pt-1">
+                  <p className="text-xs text-muted-foreground">Histórico de versões</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {versions.map((v) => (
+                      <Button
+                        key={v.id}
+                        type="button"
+                        size="sm"
+                        className={btnSecondaryClass}
+                        disabled={versionPdfPending === v.id}
+                        onClick={() => void handleDownloadVersionPdf(v.id, v.version_number)}
+                      >
+                        {versionPdfPending === v.id ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <FileDown className="h-3.5 w-3.5" />
+                        )}
+                        v{v.version_number}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         </div>
@@ -2053,6 +2257,16 @@ export function QuoteWizardPage() {
           onLinked={applyClientLink}
         />
       )}
+
+      <QuoteMonthlyChargesDialog
+        open={monthlyOpen}
+        onOpenChange={setMonthlyOpen}
+        lines={monthlyLines}
+        canEdit={canEdit}
+        initialDraft={monthlyDraft}
+        saving={monthlySaving}
+        onSave={handleMonthlySave}
+      />
     </div>
   )
 }

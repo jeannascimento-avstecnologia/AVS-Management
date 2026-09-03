@@ -360,3 +360,16 @@ Orçamento **não** emite boleto mensal; só define o que depois será cobrado.
 3. Implementar **O1** no `avs-management` (UI + DB) antes de n8n  
 
 Documento irmão: faturamento mensal usa o **mesmo hub**; orçamento é o “antes” do contrato recorrente.
+
+## Adendo — Mensalidades, versões e PDF (fast-follow)
+
+### Passo 3 — Ações / Revisão
+1. **Mensalidades**: botão no passo 3 para selecionar linhas (de quaisquer blocos) e criar múltiplas mensalidades com valores configuráveis.
+2. **Salvar orçamento**: clique cria uma nova **versão** `v1, v2, v3...` (snapshot usado no PDF).
+
+### PDF do orçamento
+- Exibir `vX` em fonte menor ao lado do `M{id}` no cabeçalho.
+- O bloco de **OBSERVACOES** do PDF deve incluir:
+  - `Os valores podem sofrer alteracao sem previo aviso.`
+  - `Ticket no.:` (editável no passo 3).
+- A seção de **MENSALIDADES** deve ficar **fora do `VALOR TOTAL DO ORCAMENTO`** (separação implementação vs mensalidade).

@@ -5,8 +5,10 @@ Acabamento visual Aurora (textura, barras, tabelas) sem alterar estrutura/organi
 
 from __future__ import annotations
 
+import json
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 import unicodedata
 
 from fpdf import FPDF
@@ -53,10 +55,10 @@ _FS_MUTED = 7.0
 _ROW_H = 5.0
 _BAND_H = 5.6
 _GAP = 0.7
-_COL_ITEM = 98.0
-_COL_QTY = 24.0
-_COL_UNIT = 33.0
-_COL_TOTAL = 33.0  # 98+24+33+33 = 188
+_COL_ITEM = 104.0
+_COL_QTY = 22.0
+_COL_UNIT = 31.0
+_COL_TOTAL = 31.0  # 104+22+31+31 = 188
 _LABEL_W = _CONTENT_W - _COL_TOTAL
 
 
@@ -94,6 +96,25 @@ def _safe(text: str | None) -> str:
 def _dash(text: str | None) -> str:
     cleaned = (text or "").strip()
     return _safe(cleaned) if cleaned else "-"
+
+
+def _wrap_text_lines(pdf: FPDF, text: str, width: float) -> list[str]:
+    """Quebra palavras para caber na largura (usa métricas do font atual)."""
+    cleaned = (text or "").replace("\n", " ").strip()
+    if not cleaned:
+        return ["-"]
+    words = cleaned.split()
+    lines: list[str] = []
+    current = words[0]
+    for w in words[1:]:
+        test = f"{current} {w}"
+        if pdf.get_string_width(test) <= width:
+            current = test
+        else:
+            lines.append(current)
+            current = w
+    lines.append(current)
+    return lines
 
 
 def _fmt_date(iso: str | None) -> str:
@@ -250,7 +271,16 @@ def _estimate_section_height(
     if simplified:
         h += _ROW_H  # display_name row
     else:
-        h += max(1, len(items)) * _ROW_H  # rows or "(sem itens)"
+        if not items:
+            h += _ROW_H  # rows or "(sem itens)"
+        else:
+            # Aproxima quantas linhas o item tende a quebrar na largura _COL_ITEM.
+            line_h = 2.6
+            for item in items:
+                name_len = max(1, len((item.name or "").strip()))
+                est_lines = (name_len + 53) // 54  # baseline ~54 chars por linha
+                est_lines = max(1, min(3, est_lines))
+                h += max(_ROW_H, est_lines * line_h)
 
     labor = 0.0
     if include_labor:
@@ -262,10 +292,13 @@ def _estimate_section_height(
     section_subtotal = round_money(items_total + labor)
     discount, _net = apply_section_discount(section_subtotal, discount_pct, discount_value)
 
-    h += _GAP + 3.6 + _ROW_H  # Desconto / Pagamento
-    h += _GAP + _ROW_H  # subtotal
     if discount > 0:
-        h += _ROW_H
+        h += _GAP + 3.6 + _ROW_H  # Desconto / Pagamento
+        h += _GAP + _ROW_H  # subtotal
+        h += _ROW_H  # Desconto (linha extra)
+    else:
+        h += _GAP + 3.6 + _ROW_H  # Pagamento (se houver) + subtotal
+        h += _GAP + _ROW_H
     h += (_ROW_H + 0.6) + _GAP  # TOTAL LIQUIDO + ln
     h += _module_meta_height(notes, billed_by_name, billed_by_cnpj)
     return h
@@ -299,13 +332,34 @@ def _estimate_payment_summary_height(
 def _estimate_observations_height(notes: str | None) -> float:
     text = (notes or "").strip() or "-"
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    clipped = "\n".join(lines[:4])
-    if len(clipped) > 480:
+    max_lines = 12
+    clipped = "\n".join(lines[:max_lines])
+    if len(lines) > max_lines and len(clipped) > 480:
         clipped = clipped[:477] + "..."
     line_h = 3.6
     n_lines = max(1, clipped.count("\n") + 1)
     box_h = max(_ROW_H * 2, n_lines * line_h + 2.4)
     return _BAND_H + _GAP + box_h + _GAP
+
+
+def _notes_with_disclaimer_and_ticket(quote: QuoteRead) -> str:
+    """Garante que disclaimer+ticket aparecem em OBSERVACOES (sem duplicar)."""
+    notes = (quote.notes or "").strip()
+    has_disclaimer = "Os valores podem sofrer alteracao" in notes
+    has_ticket = "Ticket no." in notes
+    ticket = (quote.tiflux_ticket_number or "").strip()
+
+    extras: list[str] = []
+    if not has_disclaimer:
+        extras.append("Os valores podem sofrer alteracao sem previo aviso.")
+    if not has_ticket:
+        extras.append(f"Ticket no.: {ticket}" if ticket else "Ticket no.:")
+
+    if not extras:
+        return notes or "-"
+    if notes:
+        return "\n".join([notes, *extras])
+    return "\n".join(extras)
 
 
 def _estimate_signatures_height() -> float:
@@ -323,10 +377,31 @@ def render_quote_pdf(
     *,
     issuer: QuotePdfIssuer | None = None,
     client: QuotePdfClient | None = None,
+    version_number: int | None = None,
+    monthly_draft_json: str | None = None,
 ) -> None:
     """Grava PDF do orçamento em `dest` (arquivo já resolvido sob HUB_PDF_DIR)."""
     issuer = issuer or issuer_from_settings()
     _ = client or client_from_quote(quote)
+    monthly_exclude_total = 0.0
+    monthly_charges: list[dict[str, Any]] = []
+    if monthly_draft_json:
+        try:
+            draft = json.loads(str(monthly_draft_json))
+        except (ValueError, TypeError):
+            draft = {}
+        license_item_ids = draft.get("license_item_ids") or []
+        try:
+            license_ids = {int(i) for i in license_item_ids}
+        except (TypeError, ValueError):
+            license_ids = set()
+        if license_ids:
+            monthly_exclude_total = round_money(
+                sum(float(i.total_value) for i in quote.items if i.id in license_ids)
+            )
+        charges = draft.get("charges") or []
+        if isinstance(charges, list):
+            monthly_charges = [c for c in charges if isinstance(c, dict)]
 
     pdf = _QuotePdf(format="A4", issuer=issuer)
     pdf.alias_nb_pages()
@@ -334,7 +409,7 @@ def render_quote_pdf(
     pdf.set_margins(11, 9, 11)
     pdf.add_page()
 
-    _write_header(pdf, quote, issuer)
+    _write_header(pdf, quote, issuer, version_number=version_number)
 
     modules = _ordered_modules(quote)
     module_nets: list[tuple[QuoteModule, float, float]] = []  # mod, qty, net
@@ -387,13 +462,17 @@ def render_quote_pdf(
         module_nets.append((mod, _section_qty_total(mod_items), net))
 
     _ensure_space(pdf, _estimate_payment_summary_height(module_nets))
-    _write_payment_summary(pdf, module_nets=module_nets)
+    _write_payment_summary(pdf, module_nets=module_nets, exclude_total=monthly_exclude_total)
 
-    _ensure_space(pdf, _estimate_observations_height(quote.notes))
-    _write_observations(pdf, quote.notes)
+    if monthly_charges:
+        _ensure_space(pdf, _estimate_monthly_charges_height(monthly_charges))
+        _write_monthly_charges_section(pdf, charges=monthly_charges)
 
-    _ensure_space(pdf, _estimate_disclaimer_signatures_height())
-    _write_disclaimer_and_ticket(pdf, quote)
+    notes_for_pdf = _notes_with_disclaimer_and_ticket(quote)
+    _ensure_space(pdf, _estimate_observations_height(notes_for_pdf))
+    _write_observations(pdf, notes_for_pdf)
+
+    _ensure_space(pdf, _estimate_signatures_height())
     _write_signatures(pdf)
     dest.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(dest))
@@ -451,7 +530,13 @@ def _write_issuer_footer(pdf: _QuotePdf, issuer: QuotePdfIssuer | None, y: float
     pdf.set_y(contact_y + 3.8)
 
 
-def _write_header(pdf: _QuotePdf, quote: QuoteRead, issuer: QuotePdfIssuer) -> None:
+def _write_header(
+    pdf: _QuotePdf,
+    quote: QuoteRead,
+    issuer: QuotePdfIssuer,
+    *,
+    version_number: int | None = None,
+) -> None:
     top_y = pdf.get_y()
     logo_w = 24.0
     logo_h = 17.0
@@ -463,12 +548,21 @@ def _write_header(pdf: _QuotePdf, quote: QuoteRead, issuer: QuotePdfIssuer) -> N
         text_x = pdf.l_margin
 
     usable = pdf.w - pdf.r_margin - text_x
-    title = _safe(f"Orcamento : {quote_display_id(quote.id)}")
+    main_title = _safe(f"Orcamento : {quote_display_id(quote.id)}")
+    ver_label = f"v{int(version_number)}" if version_number is not None else ""
     date_s = f"Data: {_fmt_date(quote.updated_at or quote.created_at)}"
     pdf.set_xy(text_x, top_y)
     pdf.set_font("Helvetica", "B", _FS_TITLE)
     pdf.set_text_color(*_INK)
-    pdf.cell(usable, 5.8, title)
+    if ver_label:
+        main_w = pdf.get_string_width(main_title)
+        pdf.cell(main_w, 5.8, main_title)
+        pdf.set_x(text_x + main_w + 1.5)
+        pdf.set_font("Helvetica", "B", _FS_TITLE * 0.75)
+        pdf.cell(pdf.get_string_width(ver_label) + 1.5, 5.8, ver_label)
+        pdf.set_font("Helvetica", "B", _FS_BODY)
+    else:
+        pdf.cell(usable, 5.8, main_title)
     pdf.set_xy(text_x, top_y)
     pdf.set_font("Helvetica", "", _FS_BODY)
     pdf.cell(usable, 5.8, _safe(date_s), align="R", new_x="LMARGIN", new_y="NEXT")
@@ -610,7 +704,7 @@ def _write_section(
 
     items_total = sum(float(i.total_value) for i in items)
     pdf.cell(_COL_ITEM, _ROW_H, "ITEM", fill=True)
-    pdf.cell(_COL_QTY, _ROW_H, "QTDE.", align="C", fill=True)
+    pdf.cell(_COL_QTY, _ROW_H, "QTDADE", align="C", fill=True)
     pdf.cell(_COL_UNIT, _ROW_H, "V. UNIT.", align="R", fill=True)
     pdf.cell(_COL_TOTAL, _ROW_H, "V. TOTAL", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
     pdf.set_draw_color(*_RULE)
@@ -623,7 +717,7 @@ def _write_section(
         label = (display_name or title or "").strip() or title
         pdf.set_fill_color(*_PAGE)
         pdf.cell(_COL_ITEM, _ROW_H, _safe(label)[:54], fill=True)
-        pdf.cell(_COL_QTY, _ROW_H, "1", align="R", fill=True)
+        pdf.cell(_COL_QTY, _ROW_H, "1", align="C", fill=True)
         pdf.cell(_COL_UNIT, _ROW_H, _brl(items_total), align="R", fill=True)
         pdf.cell(
             _COL_TOTAL,
@@ -639,18 +733,36 @@ def _write_section(
     else:
         for idx, item in enumerate(items):
             pdf.set_fill_color(*(_ROW_ALT if idx % 2 == 1 else _PAGE))
-            pdf.cell(_COL_ITEM, _ROW_H, _safe(item.name)[:54], fill=True)
-            pdf.cell(_COL_QTY, _ROW_H, f"{item.qty:g}", align="R", fill=True)
-            pdf.cell(_COL_UNIT, _ROW_H, _brl(float(item.unit_value)), align="R", fill=True)
-            pdf.cell(
-                _COL_TOTAL,
-                _ROW_H,
-                _brl(float(item.total_value)),
-                align="R",
-                fill=True,
-                new_x="LMARGIN",
-                new_y="NEXT",
+            x_name = pdf.l_margin
+            x_qty = x_name + _COL_ITEM
+            x_unit = x_qty + _COL_QTY
+            x_total = x_unit + _COL_UNIT
+            y0 = pdf.get_y()
+
+            line_h = 2.6
+            name = _safe(item.name).replace("\n", " ").strip()
+            lines = _wrap_text_lines(pdf, name, _COL_ITEM)
+            row_h = max(_ROW_H, len(lines) * line_h)
+
+            # Fundo completo da célula ITEM
+            pdf.rect(x_name, y0, _COL_ITEM, row_h, style="F")
+
+            pdf.set_xy(x_name, y0)
+            pdf.multi_cell(
+                _COL_ITEM,
+                line_h,
+                "\n".join(lines),
+                align="L",
             )
+
+            pdf.set_xy(x_qty, y0)
+            pdf.cell(_COL_QTY, row_h, f"{item.qty:g}", align="C", fill=True)
+            pdf.set_xy(x_unit, y0)
+            pdf.cell(_COL_UNIT, row_h, _brl(float(item.unit_value)), align="R", fill=True)
+            pdf.set_xy(x_total, y0)
+            pdf.cell(_COL_TOTAL, row_h, _brl(float(item.total_value)), align="R", fill=True)
+
+            pdf.set_xy(pdf.l_margin, y0 + row_h)
 
     pdf.set_text_color(*_INK)
     _set_box_stroke(pdf)
@@ -673,21 +785,32 @@ def _write_section(
     section_subtotal = round_money(items_total + labor)
     discount, net = apply_section_discount(section_subtotal, discount_pct, discount_value)
 
-    pdf.ln(_GAP)
-    pdf.set_font("Helvetica", "B", _FS_BODY)
-    pdf.set_text_color(*_INK)
-    pdf.cell(0, 3.6, "Desconto / Pagamento", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_text_color(*_INK)
-    pdf.set_font("Helvetica", "", _FS_BODY)
-    pct_label = f"{float(discount_pct or 0):g}%" if discount_pct is not None else "0%"
-    val_label = _brl(float(discount_value or 0.0))
     pay = _safe(format_payment_plan_label(payment_plan)).strip()
-    discount_bits = [f"Desconto {pct_label} ({val_label})", f"Aplicado {_brl(discount)}"]
-    if pay and pay != "-":
-        discount_bits.append(pay)
-    pdf.cell(0, _ROW_H, " | ".join(discount_bits), new_x="LMARGIN", new_y="NEXT")
-
     pdf.ln(_GAP)
+    if discount > 0:
+        pdf.set_font("Helvetica", "B", _FS_BODY)
+        pdf.set_text_color(*_INK)
+        pdf.cell(0, 3.6, "Desconto / Pagamento", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*_INK)
+        pdf.set_font("Helvetica", "", _FS_BODY)
+        pct_label = f"{float(discount_pct or 0):g}%" if discount_pct is not None else "0%"
+        val_label = _brl(float(discount_value or 0.0))
+        discount_bits = [
+            f"Desconto {pct_label} ({val_label})",
+            f"Aplicado {_brl(discount)}",
+        ]
+        if pay and pay != "-":
+            discount_bits.append(pay)
+        pdf.cell(0, _ROW_H, " | ".join(discount_bits), new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(_GAP)
+    elif pay and pay != "-":
+        pdf.set_font("Helvetica", "B", _FS_BODY)
+        pdf.set_text_color(*_INK)
+        pdf.cell(0, 3.6, "Pagamento", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", _FS_BODY)
+        pdf.cell(0, _ROW_H, pay, new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(_GAP)
+
     pdf.set_font("Helvetica", "", _FS_BODY)
     subtotal_label = "Subtotal (itens + mao de obra)" if include_labor and labor > 0 else "Subtotal (itens)"
     pdf.cell(_LABEL_W, _ROW_H, subtotal_label, align="R")
@@ -730,9 +853,10 @@ def _write_payment_summary(
     pdf: _QuotePdf,
     *,
     module_nets: list[tuple[QuoteModule, float, float]],
+    exclude_total: float = 0.0,
 ) -> None:
     """Resumo por módulo presente + rótulos OS VHSYS se legacy implant/mensal existirem."""
-    quote_total = round_money(sum(net for _m, _q, net in module_nets))
+    quote_total = round_money(max(0.0, sum(net for _m, _q, net in module_nets) - float(exclude_total)))
     half = _CONTENT_W / 2.0
     lab_w = round(half * 0.64, 2)
     val_w = half - lab_w
@@ -831,12 +955,46 @@ def _write_payment_summary(
     pdf.ln(_GAP)
 
 
+def _estimate_monthly_charges_height(charges: list[dict[str, Any]]) -> float:
+    if not charges:
+        return 0.0
+    # band + gap + (linhas) + gap final
+    return _GAP + _BAND_H + (_ROW_H * (len(charges) + 1)) + _GAP
+
+
+def _write_monthly_charges_section(
+    pdf: _QuotePdf,
+    *,
+    charges: list[dict[str, Any]],
+) -> float:
+    """Renderiza seção 'MENSALIDADES' (valores derivados do snapshot)."""
+    if not charges:
+        return 0.0
+    charges_sorted = sorted(charges, key=lambda c: int(c.get("sort_order") or 0))
+    _section_band(pdf, "MENSALIDADES", _NAVY)
+    total = 0.0
+    pdf.set_text_color(*_INK)
+    pdf.set_font("Helvetica", "", _FS_BODY)
+    for c in charges_sorted:
+        name = (str(c.get("name") or "")).strip() or "-"
+        amount = float(c.get("amount") or 0.0)
+        total += amount
+        pdf.cell(_LABEL_W, _ROW_H, _safe(name)[:60], align="L")
+        pdf.cell(_COL_TOTAL, _ROW_H, _brl(amount), align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", _FS_BODY)
+    pdf.cell(_LABEL_W, _ROW_H, "TOTAL MENSALIDADES", align="L")
+    pdf.cell(_COL_TOTAL, _ROW_H, _brl(round_money(total)), align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(_GAP)
+    return 0.0
+
+
 def _write_observations(pdf: _QuotePdf, notes: str | None) -> None:
     _section_band(pdf, "OBSERVACOES", _BLUE)
     text = (notes or "").strip() or "-"
     lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    clipped = "\n".join(lines[:4])
-    if len(clipped) > 480:
+    max_lines = 12
+    clipped = "\n".join(lines[:max_lines])
+    if len(lines) > max_lines and len(clipped) > 480:
         clipped = clipped[:477] + "..."
 
     line_h = 3.6

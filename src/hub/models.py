@@ -15,6 +15,7 @@ HUB_TABLES: tuple[str, ...] = (
     "quote_templates",
     "quote_module_templates",
     "quote_proposal_templates",
+    "quote_versions",
     "billing_runs",
     "billing_items",
     "billing_artifacts",
@@ -75,6 +76,7 @@ class HubDatabase:
             self._migrate_quote_module_templates(conn)
             self._migrate_quote_module_template_columns(conn)
             self._migrate_quote_proposal_templates(conn)
+            self._migrate_quote_versions(conn)
             self._migrate_billing_columns(conn)
 
     def _migrate_quotes_columns(self, conn: sqlite3.Connection) -> None:
@@ -89,6 +91,9 @@ class HubDatabase:
             ("monthly_labor_hours", "REAL"),
             ("monthly_labor_hourly_rate", "REAL"),
             ("modules_json", "TEXT"),
+            ("active_quote_version_id", "INTEGER"),
+            ("current_version_number", "INTEGER"),
+            ("monthly_draft_json", "TEXT"),
             ("client_email", "TEXT"),
             ("extra_recipients", "TEXT"),
             ("notes", "TEXT"),
@@ -96,6 +101,33 @@ class HubDatabase:
         for name, col_type in additions:
             if name not in existing:
                 conn.execute(f"ALTER TABLE quotes ADD COLUMN {name} {col_type}")
+
+    def _migrate_quote_versions(self, conn: sqlite3.Connection) -> None:
+        """Cria quote_versions em DBs já bootstrapados (idempotente)."""
+        row = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'quote_versions'"
+        ).fetchone()
+        if row is not None:
+            return
+        conn.executescript(
+            """
+            CREATE TABLE quote_versions (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                quote_id                INTEGER NOT NULL
+                                        REFERENCES quotes (id) ON DELETE CASCADE,
+                version_number         INTEGER NOT NULL,
+                snapshot_modules_json  TEXT NOT NULL,
+                snapshot_items_json    TEXT NOT NULL,
+                snapshot_notes         TEXT,
+                snapshot_monthly_json TEXT,
+                pdf_path                TEXT,
+                created_at              TEXT NOT NULL,
+                updated_at              TEXT NOT NULL,
+                UNIQUE (quote_id, version_number)
+            );
+            CREATE INDEX idx_quote_versions_quote_id ON quote_versions (quote_id);
+            """
+        )
 
     def _migrate_relax_section_checks(self, conn: sqlite3.Connection) -> None:
         """Recria quote_items / quote_templates sem CHECK binário de section."""
