@@ -126,6 +126,23 @@ def _wrap_text_lines(pdf: FPDF, text: str, width: float) -> list[str]:
     cleaned = (text or "").replace("\n", " ").strip()
     if not cleaned:
         return ["-"]
+
+    def _chunks(s: str) -> list[str]:
+        if pdf.get_string_width(s) <= width:
+            return [s]
+        out: list[str] = []
+        buf = ""
+        for ch in s:
+            trial = buf + ch
+            if buf and pdf.get_string_width(trial) > width:
+                out.append(buf)
+                buf = ch
+            else:
+                buf = trial
+        if buf:
+            out.append(buf)
+        return out or ["-"]
+
     words = cleaned.split()
     lines: list[str] = []
     current = words[0]
@@ -134,9 +151,9 @@ def _wrap_text_lines(pdf: FPDF, text: str, width: float) -> list[str]:
         if pdf.get_string_width(test) <= width:
             current = test
         else:
-            lines.append(current)
+            lines.extend(_chunks(current))
             current = w
-    lines.append(current)
+    lines.extend(_chunks(current))
     return lines
 
 
@@ -1016,7 +1033,12 @@ def _write_payment_summary(
 def _estimate_monthly_charges_height(rows: list[dict[str, Any]]) -> float:
     if not rows:
         return 0.0
-    return _GAP + _BAND_H + (_ROW_H * (len(rows) + 1)) + _GAP
+    # produto longo pode quebrar ~3 linhas; + total
+    extra = 0
+    for r in rows:
+        n = len(str(r.get("name") or ""))
+        extra += max(0, (n // 50))
+    return _GAP + _BAND_H + (_ROW_H * (len(rows) + 1 + extra)) + _GAP
 
 
 def _write_monthly_charges_section(
@@ -1027,6 +1049,37 @@ def _write_monthly_charges_section(
     """Renderiza seção 'MENSALIDADES' (produto + fornecedor/intermediador)."""
     if not rows:
         return 0.0
+    wrap_counts: list[int] = []
+    _section_band(pdf, "MENSALIDADES", _NAVY)
+    total = 0.0
+    pdf.set_text_color(*_INK)
+    line_h = 3.6
+    name_w = _COL_ITEM
+    x_amt = pdf.l_margin + _LABEL_W
+    for r in rows:
+        role = str(r.get("role") or "split")
+        raw = (str(r.get("name") or "")).replace("\n", " ").strip() or "-"
+        amount = float(r.get("amount") or 0.0)
+        label = raw if role == "product" else f"  {raw}"
+        if role == "product":
+            pdf.set_font("Helvetica", "B", _FS_BODY)
+        else:
+            pdf.set_font("Helvetica", "", _FS_BODY)
+            total += amount
+        wrapped = _wrap_text_lines(pdf, _safe(label), name_w)
+        wrap_counts.append(len(wrapped))
+        row_h = max(_ROW_H, len(wrapped) * line_h)
+        y0 = pdf.get_y()
+        x_amt_col = pdf.l_margin + _LABEL_W
+        pdf.set_xy(pdf.l_margin, y0)
+        pdf.multi_cell(name_w, line_h, "\n".join(wrapped))
+        pdf.set_xy(x_amt_col, y0)
+        pdf.cell(_COL_TOTAL, row_h, _brl(amount), align="R")
+        pdf.set_xy(pdf.l_margin, y0 + row_h)
+    pdf.set_font("Helvetica", "B", _FS_BODY)
+    pdf.cell(_LABEL_W, _ROW_H, "TOTAL MENSALIDADES", align="L")
+    pdf.cell(_COL_TOTAL, _ROW_H, _brl(round_money(total)), align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(_GAP)
     # #region agent log
     _agent_dbg(
         "D",
@@ -1034,31 +1087,13 @@ def _write_monthly_charges_section(
         "monthly section rows",
         {
             "roles": [str(r.get("role")) for r in rows],
-            "names": [str(r.get("name") or "")[:40] for r in rows],
+            "names": [str(r.get("name") or "")[:80] for r in rows],
             "amounts": [float(r.get("amount") or 0) for r in rows],
+            "wrap_counts": wrap_counts,
+            "name_w": name_w,
         },
     )
     # #endregion
-    _section_band(pdf, "MENSALIDADES", _NAVY)
-    total = 0.0
-    pdf.set_text_color(*_INK)
-    for r in rows:
-        role = str(r.get("role") or "split")
-        name = (str(r.get("name") or "")).strip() or "-"
-        amount = float(r.get("amount") or 0.0)
-        if role == "product":
-            pdf.set_font("Helvetica", "B", _FS_BODY)
-            pdf.cell(_LABEL_W, _ROW_H, _safe(name)[:60], align="L")
-            pdf.cell(_COL_TOTAL, _ROW_H, _brl(amount), align="R", new_x="LMARGIN", new_y="NEXT")
-        else:
-            pdf.set_font("Helvetica", "", _FS_BODY)
-            pdf.cell(_LABEL_W, _ROW_H, _safe(f"  {name}")[:60], align="L")
-            pdf.cell(_COL_TOTAL, _ROW_H, _brl(amount), align="R", new_x="LMARGIN", new_y="NEXT")
-            total += amount
-    pdf.set_font("Helvetica", "B", _FS_BODY)
-    pdf.cell(_LABEL_W, _ROW_H, "TOTAL MENSALIDADES", align="L")
-    pdf.cell(_COL_TOTAL, _ROW_H, _brl(round_money(total)), align="R", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(_GAP)
     return 0.0
 
 

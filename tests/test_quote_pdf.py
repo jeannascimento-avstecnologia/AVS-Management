@@ -615,6 +615,38 @@ def test_pdf_monthly_omits_zero_party_amount(tmp_path: Path) -> None:
     assert "Intermediador" not in text
 
 
+def test_pdf_monthly_product_name_wraps_not_truncated(tmp_path: Path) -> None:
+    dest = tmp_path / "monthly-wrap.pdf"
+    long_name = (
+        "Microsoft 365 | Business Standard - Compromisso Anual (pagamento Mensal)"
+    )
+    quote = _sample_quote()
+    items = list(quote.items)
+    items[1] = items[1].model_copy(update={"name": long_name})
+    quote = quote.model_copy(update={"items": items})
+    draft = {
+        "allocations": [
+            {
+                "item_id": 2,
+                "fornecedor_name": "AVS",
+                "fornecedor_amount": 299.9,
+                "intermediador_name": "Intermediador",
+                "intermediador_amount": 0.0,
+            }
+        ],
+    }
+    render_quote_pdf(
+        quote,
+        dest,
+        issuer=_issuer(),
+        client=_client(),
+        monthly_draft_json=json.dumps(draft),
+    )
+    text = _pdf_text(dest)
+    assert "pagamento Mensal" in text
+    assert "Compromisso Anual" in text
+
+
 def test_pdf_shows_discount_only_when_applied(tmp_path: Path) -> None:
     dest = tmp_path / "discount.pdf"
     quote = _sample_quote()
