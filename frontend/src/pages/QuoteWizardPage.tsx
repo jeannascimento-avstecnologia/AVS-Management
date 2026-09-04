@@ -102,7 +102,7 @@ import { digitsOnly, formatCnpj, formatDate } from '@/lib/format'
 import { btnAccentClass, btnSecondaryClass, btnDangerClass, inputClass } from '@/lib/ui-classes'
 import { cn } from '@/lib/cn'
 
-const STEPS = ['Cliente', 'Itens', 'Revisão'] as const
+const STEPS = ['Orçamento', 'Revisão'] as const
 
 const TEMP_LABELS: Record<LeadTemperature, string> = {
   quente: 'Quente',
@@ -133,6 +133,11 @@ type DraftItem = {
   vhsys_product_id: number | null
 }
 
+type DraftInstallment = {
+  due_date: string
+  amount: string
+}
+
 type DraftModule = {
   id: string
   title: string
@@ -149,6 +154,7 @@ type DraftModule = {
   simplified: boolean
   display_name: string
   sort_order: number
+  installments: DraftInstallment[]
 }
 
 type PaymentMode = 'a_vista' | 'parcelado' | 'recorrente_anual' | ''
@@ -188,6 +194,7 @@ const PRESET_IMPLANT: DraftModule = {
   simplified: false,
   display_name: '',
   sort_order: 0,
+  installments: [],
 }
 
 const PRESET_MONTHLY: DraftModule = {
@@ -206,6 +213,7 @@ const PRESET_MONTHLY: DraftModule = {
   simplified: false,
   display_name: '',
   sort_order: 1,
+  installments: [],
 }
 
 function moduleFromApi(mod: QuoteModule): DraftModule {
@@ -225,6 +233,10 @@ function moduleFromApi(mod: QuoteModule): DraftModule {
     simplified: Boolean(mod.simplified),
     display_name: mod.display_name ?? '',
     sort_order: mod.sort_order,
+    installments: (mod.installments_json ?? []).map((i) => ({
+      due_date: i.due_date,
+      amount: String(i.amount),
+    })),
   }
 }
 
@@ -263,6 +275,13 @@ function draftModuleToApi(mod: DraftModule, index: number): QuoteModule {
     simplified: mod.simplified,
     display_name: mod.display_name.trim() || null,
     sort_order: index,
+    installments_json:
+      mod.installments.length > 0
+        ? mod.installments.map((i) => ({
+            due_date: i.due_date,
+            amount: parseNonNegativeNumber(i.amount),
+          }))
+        : null,
   }
 }
 
@@ -352,7 +371,7 @@ function mirrorDiscountFromValue(
   return { pct: formatPctInput(pct), value: valueRaw }
 }
 
-const RECORRENTE_LABEL = 'Anual - Recorrente Mensal'
+const RECORRENTE_LABEL = 'Recorrente'
 
 function parsePaymentPlan(value: string): { mode: PaymentMode; installments: number | null } {
   const raw = value.trim()
@@ -392,11 +411,8 @@ function buildPaymentPlan(mode: PaymentMode, installments: number | null): strin
   return ''
 }
 
-function defaultQuoteNotes(ticket: string | null): string {
-  const number = (ticket ?? '').trim()
-  return number
-    ? `Os valores podem sofrer alteracao sem previo aviso.\nTicket no.: ${number}`
-    : 'Os valores podem sofrer alteracao sem previo aviso.\nTicket no.:'
+function defaultQuoteNotes(_ticket: string | null): string {
+  return ''
 }
 
 function parseMonthlyDraft(raw: string | null | undefined): QuoteMonthlyDraftWrite | null {
@@ -553,9 +569,7 @@ export function QuoteWizardPage() {
   const canCadastrar = usePermission('cadastrar')
 
   const locationStep = (location.state as { initialStep?: number } | null)?.initialStep
-  const [step, setStep] = useState(() =>
-    locationStep === 2 || locationStep === 3 ? locationStep : 1,
-  )
+  const [step, setStep] = useState(() => (locationStep === 3 ? 2 : 1))
   const [form, setForm] = useState<DraftForm | null>(null)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
@@ -678,7 +692,7 @@ export function QuoteWizardPage() {
 
   // Prefill e-mail: TiFlux (contato) → fallback VHSYS, se ainda vazio.
   useEffect(() => {
-    if (step !== 3 || !form || !canEdit) return
+    if (step !== 2 || !form || !canEdit) return
     if (emailPrefillDone.current) return
     if (form.client_email.trim()) {
       emailPrefillDone.current = true
@@ -897,6 +911,7 @@ export function QuoteWizardPage() {
           simplified: false,
           display_name: '',
           sort_order: prev.modules.length,
+          installments: [],
         },
       ]
       return { ...prev, modules: modules.map((m, i) => ({ ...m, sort_order: i })) }
@@ -932,6 +947,7 @@ export function QuoteWizardPage() {
           simplified: Boolean(template.simplified),
           display_name: template.display_name ?? '',
           sort_order: prev.modules.length,
+          installments: [],
         },
       ]
       const fromTemplate: DraftItem[] = template.lines.map((line) => ({
@@ -1195,7 +1211,7 @@ export function QuoteWizardPage() {
     }
     if ((form?.items.length ?? 0) === 0) {
       toast.error('Adicione ao menos um item antes de enviar.')
-      setStep(2)
+      setStep(1)
       return
     }
     const primary = form?.client_email.trim() ?? ''
@@ -1335,7 +1351,8 @@ export function QuoteWizardPage() {
       <WizardStepper steps={[...STEPS]} current={step} accent="blue" />
 
       {step === 1 && (
-        <Card className="hub-panel-enter border-aurora-border border-l-4 border-l-aurora-accent bg-aurora-surface shadow-sm">
+        <div className="space-y-6 hub-panel-enter">
+        <Card className="border-aurora-border border-l-4 border-l-aurora-accent bg-aurora-surface shadow-sm">
           <CardHeader className="pb-3">
             <div className="flex flex-wrap items-center gap-2">
               <UserRound className="h-4 w-4 text-aurora-accent" aria-hidden />
@@ -1527,10 +1544,7 @@ export function QuoteWizardPage() {
             </div>
           </CardContent>
         </Card>
-      )}
-
-      {step === 2 && (
-        <div className="space-y-4 hub-panel-enter">
+        <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-xl text-sm text-muted-foreground">
               Blocos viram seções do PDF. Bibliotecas reutilizam blocos e modelos de orçamento.
@@ -1627,6 +1641,8 @@ export function QuoteWizardPage() {
                   onBilledByCnpj={(v) => patchModule(mod.id, { billed_by_cnpj: v })}
                   onSimplified={(v) => patchModule(mod.id, { simplified: v })}
                   onDisplayName={(v) => patchModule(mod.id, { display_name: v })}
+                  installments={mod.installments}
+                  onInstallments={(v) => patchModule(mod.id, { installments: v })}
                   onAdd={() => addItem(mod.id)}
                   onRemove={removeItem}
                   onUpdate={updateItem}
@@ -1873,9 +1889,10 @@ export function QuoteWizardPage() {
             </DialogContent>
           </Dialog>
         </div>
+        </div>
       )}
 
-      {step === 3 && (
+      {step === 2 && (
         <div className="space-y-4 hub-panel-enter">
           <Card className="border-aurora-border border-l-4 border-l-aurora-accent bg-aurora-surface shadow-sm">
             <CardHeader className="pb-3">
@@ -1886,7 +1903,7 @@ export function QuoteWizardPage() {
                   variant="outline"
                   className="border-aurora-accent/40 bg-aurora-accent-muted text-aurora-accent"
                 >
-                  Passo 3
+                  Passo 2
                 </Badge>
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
@@ -2023,7 +2040,7 @@ export function QuoteWizardPage() {
                 ) : null}
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                Pré-preenchido com aviso e Ticket no. — editável. Impresso no bloco OBSERVAÇÕES do PDF.
+                Opcional. Impresso no bloco OBSERVAÇÕES do PDF.
               </p>
             </CardHeader>
             <CardContent>
@@ -2284,11 +2301,11 @@ export function QuoteWizardPage() {
           Voltar
         </Button>
         <div className="flex gap-2">
-          {step < 3 ? (
+          {step < 2 ? (
             <Button
               type="button"
               className={btnAccentClass}
-              onClick={() => setStep((s) => Math.min(3, s + 1))}
+              onClick={() => setStep((s) => Math.min(2, s + 1))}
             >
               Próximo
             </Button>
@@ -2433,6 +2450,8 @@ function ItemsSection({
   onBilledByCnpj,
   onSimplified,
   onDisplayName,
+  installments,
+  onInstallments,
   onAdd,
   onRemove,
   onUpdate,
@@ -2469,6 +2488,8 @@ function ItemsSection({
   onBilledByCnpj: (v: string) => void
   onSimplified: (v: boolean) => void
   onDisplayName: (v: string) => void
+  installments: DraftInstallment[]
+  onInstallments: (v: DraftInstallment[]) => void
   onAdd: () => void
   onRemove: (localKey: string) => void
   onUpdate: (localKey: string, patch: Partial<DraftItem>) => void
@@ -2788,6 +2809,9 @@ function ItemsSection({
                 paymentPlan={paymentPlan}
                 canEdit={canEdit}
                 onPaymentPlan={onPaymentPlan}
+                installments={installments}
+                onInstallments={onInstallments}
+                moduleNet={applySectionDiscount(subtotal, discountPct, discountValue).net}
               />
 
               <div className="grid gap-3 sm:grid-cols-2">
@@ -2939,17 +2963,49 @@ function PaymentPlanFields({
   paymentPlan,
   canEdit,
   onPaymentPlan,
+  installments,
+  onInstallments,
+  moduleNet,
 }: {
   paymentPlan: string
   canEdit: boolean
   onPaymentPlan: (v: string) => void
+  installments: DraftInstallment[]
+  onInstallments: (v: DraftInstallment[]) => void
+  moduleNet: number
 }) {
-  const { mode, installments } = parsePaymentPlan(paymentPlan)
+  const { mode, installments: nParcels } = parsePaymentPlan(paymentPlan)
   const modeValue = mode || NONE
   const showValueField = mode === 'parcelado' || mode === 'recorrente_anual'
-  const monthsValue = String(installments ?? (mode === 'recorrente_anual' ? 12 : 2))
+  const monthsValue = String(nParcels ?? (mode === 'recorrente_anual' ? 12 : 2))
+
+  useEffect(() => {
+    if (mode !== 'parcelado' || !nParcels || nParcels < 1) {
+      if (installments.length > 0) onInstallments([])
+      return
+    }
+    if (installments.length === nParcels) return
+
+    const perParcel = moduleNet > 0 ? roundMoney(moduleNet / nParcels) : 0
+    const today = new Date()
+    const generated: DraftInstallment[] = []
+    let dt = new Date(today)
+    dt.setDate(dt.getDate() + 7)
+
+    for (let i = 0; i < nParcels; i++) {
+      generated.push({
+        due_date: dt.toISOString().split('T')[0],
+        amount: String(perParcel),
+      })
+      dt = new Date(dt)
+      dt.setDate(dt.getDate() + 30)
+    }
+    onInstallments(generated)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- só regenera quando muda N/modo
+  }, [mode, nParcels])
 
   return (
+    <div className="space-y-3">
     <div className="grid gap-3 sm:grid-cols-2">
       <div className="space-y-2">
         <Label>Forma de pagamento</Label>
@@ -2966,10 +3022,10 @@ function PaymentPlanFields({
               return
             }
             if (v === 'recorrente_anual') {
-              onPaymentPlan(buildPaymentPlan('recorrente_anual', installments ?? 12))
+              onPaymentPlan(buildPaymentPlan('recorrente_anual', nParcels ?? 12))
               return
             }
-            onPaymentPlan(buildPaymentPlan('parcelado', installments ?? 2))
+            onPaymentPlan(buildPaymentPlan('parcelado', nParcels ?? 2))
           }}
         >
           <SelectTrigger aria-label="Forma de pagamento">
@@ -3011,6 +3067,44 @@ function PaymentPlanFields({
           </Select>
         </div>
       ) : null}
+    </div>
+      {mode === 'parcelado' && installments.length > 0 && (
+        <div className="space-y-2 rounded-lg border border-aurora-border bg-aurora-surface-2/50 p-3">
+          <p className="text-xs font-medium text-muted-foreground">Parcelas</p>
+          {installments.map((inst, i) => (
+            <div key={i} className="grid grid-cols-[auto_1fr_auto_auto_1fr] items-center gap-2">
+              <span className="text-xs text-muted-foreground whitespace-nowrap">
+                Parcela {i + 1}
+              </span>
+              <input
+                type="date"
+                disabled={!canEdit}
+                value={inst.due_date}
+                className={cn(inputClass, 'text-sm')}
+                onChange={(e) => {
+                  const next = [...installments]
+                  next[i] = { ...next[i], due_date: e.target.value }
+                  onInstallments(next)
+                }}
+              />
+              <span className="text-xs text-muted-foreground">→</span>
+              <span className="text-xs text-muted-foreground">R$</span>
+              <input
+                type="text"
+                inputMode="decimal"
+                disabled={!canEdit}
+                value={inst.amount}
+                className={cn(inputClass, 'text-sm text-right max-w-[100px]')}
+                onChange={(e) => {
+                  const next = [...installments]
+                  next[i] = { ...next[i], amount: e.target.value }
+                  onInstallments(next)
+                }}
+              />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

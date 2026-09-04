@@ -73,6 +73,13 @@ def _normalize_module_id(value: str) -> str:
     return cleaned
 
 
+class InstallmentLine(BaseModel):
+    """Uma parcela individual com data e valor."""
+
+    due_date: str = Field(max_length=10)
+    amount: float = Field(ge=0)
+
+
 class QuoteModule(BaseModel):
     """Bloco do passo 2 / PDF — seed Implantação+Mensalidade ou custom."""
 
@@ -91,6 +98,7 @@ class QuoteModule(BaseModel):
     simplified: bool = False
     display_name: str | None = Field(default=None, max_length=200)
     sort_order: int = Field(default=0, ge=0)
+    installments_json: list[InstallmentLine] | None = None
 
     @field_validator("id")
     @classmethod
@@ -215,13 +223,15 @@ def validate_modules_and_items(
     ]
 
 
-DEFAULT_QUOTE_NOTES = "Os valores podem sofrer alteracao sem previo aviso.\nTicket no.:"
+DEFAULT_QUOTE_NOTES = ""
 
 
 def seed_quote_notes(notes: str | None, *, ticket: str | None = None) -> str:
     cleaned = (notes or "").strip()
     if cleaned:
         return cleaned
+    if not DEFAULT_QUOTE_NOTES:
+        return ""
     number = (ticket or "").strip()
     if number:
         return f"{DEFAULT_QUOTE_NOTES} {number}"

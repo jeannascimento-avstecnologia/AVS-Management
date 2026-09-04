@@ -42,7 +42,7 @@ def test_create_versions_and_monthly_draft(quotes_client: TestClient) -> None:
     body = created.json()
     quote_id = body["id"]
     assert body["current_version_number"] is None
-    assert "Ticket no." in (body.get("notes") or "")
+    assert "Ticket no." not in (body.get("notes") or "")
     item_ids = [i["id"] for i in body["items"]]
     monthly_id = next(i["id"] for i in body["items"] if i["section"] == "mensalidade")
     assert monthly_id in item_ids

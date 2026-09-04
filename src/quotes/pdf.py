@@ -363,6 +363,7 @@ def _estimate_section_height(
     billed_by_cnpj: str | None = None,
     simplified: bool = False,
     payment_plan: str | None = None,
+    installments: list[dict[str, Any]] | None = None,
 ) -> float:
     """Altura estimada de `_write_section` (banda → total líquido + gap final)."""
     h = _BAND_H + _GAP  # section band
@@ -400,7 +401,14 @@ def _estimate_section_height(
         + (1 if notes_clean_est else 0)
         + (1 if billed_est else 0)
     )
-    h += _GAP * 0.5 + n_right * _ROW_H + n_extra * (_ROW_H - 1.0) + _GAP * 0.5
+    n_installments = len(installments or [])
+    h += (
+        _GAP * 0.5
+        + n_right * _ROW_H
+        + n_extra * (_ROW_H - 1.0)
+        + n_installments * (_ROW_H - 1.0)
+        + _GAP * 0.5
+    )
     # #region agent log
     try:
         import time as _t3
@@ -615,6 +623,12 @@ def render_quote_pdf(
             billed_by_cnpj=mod.billed_by_cnpj,
             simplified=bool(mod.simplified),
             payment_plan=mod.payment_plan,
+            installments=[
+                i.model_dump() if hasattr(i, "model_dump") else i
+                for i in (mod.installments_json or [])
+            ]
+            if getattr(mod, "installments_json", None)
+            else None,
         )
         if idx > 0:
             section_h += _divider_height()
@@ -637,6 +651,12 @@ def render_quote_pdf(
             billed_by_cnpj=mod.billed_by_cnpj,
             simplified=bool(mod.simplified),
             display_name=mod.display_name,
+            installments=[
+                i.model_dump() if hasattr(i, "model_dump") else i
+                for i in (mod.installments_json or [])
+            ]
+            if getattr(mod, "installments_json", None)
+            else None,
         )
         net = _section_net_total(
             mod_items,
@@ -940,6 +960,7 @@ def _write_section(
     billed_by_cnpj: str | None = None,
     simplified: bool = False,
     display_name: str | None = None,
+    installments: list[dict[str, Any]] | None = None,
 ) -> None:
     billed_clean = (billed_by_name or "").strip()
     cnpj_clean = (billed_by_cnpj or "").strip()
@@ -1136,6 +1157,29 @@ def _write_section(
         pdf.cell(_COL_TOTAL, row_h, rval, align="R", new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(*_INK)
     full_w = _LABEL_W + _COL_TOTAL
+    installment_rows = installments or []
+    if installment_rows:
+        pdf.set_font("Helvetica", "", _FS_MUTED)
+        pdf.set_text_color(*_MUTED)
+        for idx_inst, line in enumerate(installment_rows):
+            due = str(line.get("due_date", "") if isinstance(line, dict) else "")
+            amt = float(line.get("amount", 0) if isinstance(line, dict) else 0)
+            due_fmt = due
+            if due and len(due) == 10:
+                try:
+                    parts = due.split("-")
+                    due_fmt = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                except (IndexError, ValueError):
+                    pass
+            pdf.cell(
+                full_w,
+                _ROW_H - 1.0,
+                f"Parcela {idx_inst + 1} ({due_fmt})  {_brl(amt)} ",
+                align="R",
+                new_x="LMARGIN",
+                new_y="NEXT",
+            )
+        pdf.set_text_color(*_INK)
     if pay and pay != "-":
         pdf.set_font("Helvetica", "", _FS_MUTED)
         pdf.set_text_color(*_MUTED)

@@ -60,6 +60,11 @@ export type LegacyModuleKind = 'implantacao' | 'mensalidade'
 export type LeadTemperature = 'quente' | 'morno' | 'frio'
 export type BilledByType = 'distribuidor' | 'fornecedor'
 
+export type InstallmentLine = {
+  due_date: string
+  amount: number
+}
+
 export type QuoteModule = {
   id: string
   title: string
@@ -76,6 +81,7 @@ export type QuoteModule = {
   simplified: boolean
   display_name: string | null
   sort_order: number
+  installments_json?: InstallmentLine[] | null
 }
 
 export type QuoteItemRead = {

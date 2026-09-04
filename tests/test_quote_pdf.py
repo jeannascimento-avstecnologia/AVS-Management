@@ -197,8 +197,8 @@ def test_quote_display_id_prefix_m() -> None:
 
 
 def test_format_payment_plan_label_recorrente_anual() -> None:
-    assert format_payment_plan_label("recorrente_anual") == "Anual - Recorrente Mensal"
-    assert format_payment_plan_label("recorrente_12x") == "Anual - Recorrente Mensal 12x"
+    assert format_payment_plan_label("recorrente_anual") == "Recorrente"
+    assert format_payment_plan_label("recorrente_12x") == "Recorrente 12x"
     assert format_payment_plan_label("a_vista") == "À vista"
     assert format_payment_plan_label("12x") == "Parcelado 12x"
     assert format_payment_plan_label(None) == ""
@@ -385,7 +385,7 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "Forma de Pagamento Servicos" in text
     assert "Obs:" in text
     assert "Condicao implant" in text
-    assert "Anual - Recorrente Mensal" in text
+    assert "Recorrente" in text
     assert "Faturado por" in text
     assert "Fornecedor Modulo" in text
     assert "Parceiro X" not in text
@@ -407,6 +407,27 @@ def test_pdf_omits_internal_notes(tmp_path: Path) -> None:
     assert secret not in text
     assert "Observacoes internas" not in text
     assert "SEGREDO_INTERNO" not in text
+
+
+def test_pdf_renders_installments(tmp_path: Path) -> None:
+    dest = tmp_path / "parcelas.pdf"
+    quote = _sample_quote()
+    mods = list(quote.modules)
+    mods[0] = mods[0].model_copy(
+        update={
+            "installments_json": [
+                {"due_date": "2026-09-11", "amount": 750.0},
+                {"due_date": "2026-10-11", "amount": 750.0},
+            ]
+        }
+    )
+    quote = quote.model_copy(update={"modules": mods})
+    render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
+    text = _pdf_text(dest)
+    assert "Parcela 1" in text
+    assert "11/09/2026" in text
+    assert "Parcela 2" in text
+    assert "10/11/2026" in text or "11/10/2026" in text
 
 
 def test_pdf_simplified_module_hides_line_names(tmp_path: Path) -> None:
