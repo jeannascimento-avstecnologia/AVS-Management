@@ -37,6 +37,54 @@ def test_hub_database_idempotent(tmp_path: Path) -> None:
     assert set(HubDatabase(db_path).list_tables()) == set(HUB_TABLES)
 
 
+def test_repair_stale_quote_items_fk(tmp_path: Path) -> None:
+    """Filho com REFERENCES quotes__old_status (ALTER SQLite) volta a apontar para quotes."""
+    import sqlite3
+
+    db_path = tmp_path / "hub_stale_fk.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE quotes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cnpj TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        INSERT INTO quotes (cnpj, status, created_at, updated_at)
+        VALUES ('12345678000199', 'draft', '2026-01-01', '2026-01-01');
+        CREATE TABLE quote_items (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            quote_id INTEGER NOT NULL REFERENCES "quotes__old_status" (id) ON DELETE CASCADE,
+            section TEXT NOT NULL,
+            name TEXT NOT NULL,
+            qty REAL NOT NULL DEFAULT 1,
+            unit_value REAL NOT NULL DEFAULT 0,
+            total_value REAL NOT NULL,
+            template_key TEXT,
+            sort_order INTEGER NOT NULL DEFAULT 0
+        );
+        """
+    )
+    conn.close()
+    db = HubDatabase(db_path)
+    with db.connect() as opened:
+        opened.execute("PRAGMA foreign_keys = ON")
+        parents = {str(row[2]) for row in opened.execute("PRAGMA foreign_key_list(quote_items)")}
+        assert "quotes" in parents
+        assert "quotes__old_status" not in parents
+        opened.execute(
+            """
+            INSERT INTO quote_items (
+                quote_id, section, name, qty, unit_value, total_value, sort_order
+            ) VALUES (1, 'mensalidade', 'Licenca', 1, 10, 10, 0)
+            """
+        )
+        row = opened.execute("SELECT COUNT(*) FROM quote_items").fetchone()
+        assert int(row[0]) == 1
+
+
 def test_migrate_quote_module_templates_on_existing_db(tmp_path: Path) -> None:
     """DB bootstrapado sem a tabela → migração cria quote_module_templates."""
     db_path = tmp_path / "hub_legacy.db"

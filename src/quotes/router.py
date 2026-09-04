@@ -14,7 +14,12 @@ from src.config import get_settings
 from src.hub.outbox import dispatch_outbox, get_outbox_row
 from src.hub.store import get_hub_db
 from src.integrations.tiflux_client import TifluxApiError, TifluxClient
-from src.integrations.vhsys_client import VhsysApiError, VhsysClient, normalize_vhsys_party
+from src.integrations.vhsys_client import (
+    VhsysApiError,
+    VhsysClient,
+    _agent_dbg,
+    normalize_vhsys_party,
+)
 from src.quotes.schemas import (
     LeadTemperature,
     QuoteModuleTemplateUpdate,
@@ -380,6 +385,19 @@ def build_quotes_router() -> APIRouter:
             )
         except VhsysApiError as exc:
             status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
+            # #region agent log
+            _agent_dbg(
+                "A",
+                "router.py:search_vhsys_catalog",
+                "catalog endpoint error",
+                {
+                    "http_status": status,
+                    "detail": str(exc),
+                    "body_head": (exc.body or "")[:400],
+                    "q_len": len(q.strip()),
+                },
+            )
+            # #endregion
             if status == 401:
                 raise HTTPException(status_code=502, detail="Tokens VHSYS inválidos.") from exc
             raise HTTPException(status_code=status, detail=str(exc)) from exc
@@ -709,8 +727,10 @@ def build_quotes_router() -> APIRouter:
         try:
             for item in items:
                 product = None
+                lookup = "none"
                 if item.vhsys_product_id:
                     product = await vhsys.get_product(item.vhsys_product_id)
+                    lookup = "by_id" if product else "by_id_miss"
                 if product is None and (item.name or "").strip():
                     found = await vhsys.search_catalog_items(item.name.strip(), limit=20)
                     needle = item.name.strip().casefold()
@@ -718,12 +738,38 @@ def build_quotes_router() -> APIRouter:
                         (p for p in found if str(p.get("name") or "").strip().casefold() == needle),
                         None,
                     )
+                    lookup = "by_name" if product else "by_name_miss"
                 alloc = build_monthly_suggestion(
                     item, product, intermediador_name=issuer_name
                 )
+                # #region agent log
+                _agent_dbg(
+                    "C",
+                    "router.py:suggest_quote_monthly",
+                    "monthly suggestion per item",
+                    {
+                        "item_id": item.id,
+                        "has_vhsys_product_id": item.vhsys_product_id is not None,
+                        "lookup": lookup,
+                        "product_found": product is not None,
+                        "cost_value": None if product is None else product.get("cost_value"),
+                        "fornecedor_amount": alloc.fornecedor_amount,
+                        "intermediador_amount": alloc.intermediador_amount,
+                        "source": alloc.source,
+                    },
+                )
+                # #endregion
                 allocations.append(alloc.model_dump())
         except VhsysApiError as exc:
             status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
+            # #region agent log
+            _agent_dbg(
+                "A",
+                "router.py:suggest_quote_monthly",
+                "suggest endpoint error",
+                {"http_status": status, "detail": str(exc), "body_head": (exc.body or "")[:400]},
+            )
+            # #endregion
             if status == 401:
                 raise HTTPException(status_code=502, detail="Tokens VHSYS inválidos.") from exc
             raise HTTPException(status_code=status, detail=str(exc)) from exc

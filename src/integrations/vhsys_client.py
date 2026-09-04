@@ -1,6 +1,30 @@
 import asyncio
+import json
+import time
+from pathlib import Path
 
 import httpx
+
+
+def _agent_dbg(hypothesis_id: str, location: str, message: str, data: dict) -> None:
+    # #region agent log
+    try:
+        payload = {
+            "sessionId": "ae8776",
+            "runId": "pre-fix",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(time.time() * 1000),
+        }
+        p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-ae8776.log")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    # #endregion
 
 from src.config import Settings
 from src.mapping.canonical import CompanyPayload
@@ -227,6 +251,22 @@ class VhsysClient:
             raise VhsysApiError("Tokens VHSYS inválidos.", 401, response.text)
         if _is_not_found_response(response):
             return []
+        # #region agent log
+        _agent_dbg(
+            "A",
+            "vhsys_client.py:_get_produtos_page",
+            "GET /produtos response",
+            {
+                "http_status": response.status_code,
+                "body_head": (response.text or "")[:400],
+                "param_keys": sorted(str(k) for k in params.keys()),
+                "has_desc_filter": "desc_produto" in params,
+                "has_cod_filter": "cod_produto" in params,
+                "limit": params.get("limit"),
+                "offset": params.get("offset"),
+            },
+        )
+        # #endregion
         if response.status_code >= 400:
             raise VhsysApiError(
                 f"Erro ao listar produtos VHSYS: {response.status_code}.",
@@ -253,6 +293,18 @@ class VhsysClient:
             raise VhsysApiError("Tokens VHSYS inválidos.", 401, response.text)
         if _is_not_found_response(response) or response.status_code == 404:
             return None
+        # #region agent log
+        _agent_dbg(
+            "B",
+            "vhsys_client.py:get_product",
+            "GET /produtos/{id} response",
+            {
+                "product_id": int(product_id),
+                "http_status": response.status_code,
+                "body_head": (response.text or "")[:400],
+            },
+        )
+        # #endregion
         if response.status_code >= 400:
             raise VhsysApiError(
                 f"Erro ao consultar produto VHSYS: {response.status_code}.",

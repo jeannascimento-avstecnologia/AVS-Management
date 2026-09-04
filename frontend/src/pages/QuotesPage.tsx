@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileDown, FileText, Plus, Send, Trash2, AlertCircle, Loader2, Boxes } from 'lucide-react'
+import { FileDown, FileText, Plus, Send, Trash2, AlertCircle, Loader2, Boxes, ChevronDown, ChevronUp } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   ApiError,
@@ -102,6 +102,7 @@ export function QuotesPage() {
   const [debouncedNumber, setDebouncedNumber] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
   const [showCreate, setShowCreate] = useState(false)
+  const [filtersCollapsed, setFiltersCollapsed] = useState(false)
   const [cnpj, setCnpj] = useState('')
   const [clientName, setClientName] = useState('')
   const [clientSearch, setClientSearch] = useState('')
@@ -287,6 +288,8 @@ export function QuotesPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+            {!filtersCollapsed ? (
+              <>
             <Select
               value={leadFilter}
               onValueChange={(v) => {
@@ -325,10 +328,19 @@ export function QuotesPage() {
                 ))}
               </SelectContent>
             </Select>
+              </>
+            ) : null}
             <Button
               type="button"
               className={btnGreenClass}
-              onClick={() => setShowCreate((v) => !v)}
+              onClick={() =>
+                setShowCreate((v) => {
+                  const next = !v
+                  if (next) setFiltersCollapsed(true)
+                  else setFiltersCollapsed(false)
+                  return next
+                })
+              }
             >
               <Plus className="h-4 w-4" />
               Novo
@@ -355,9 +367,37 @@ export function QuotesPage() {
       </div>
 
       <Card className="border-aurora-border bg-aurora-surface shadow-sm">
-        <CardHeader className="pb-2">
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-base">Pesquisa</CardTitle>
+          {filtersCollapsed ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-8 gap-1 text-xs text-muted-foreground"
+              onClick={() => setFiltersCollapsed(false)}
+            >
+              <ChevronDown className="h-4 w-4" />
+              Expandir filtros
+            </Button>
+          ) : showCreate ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="h-8 gap-1 text-xs text-muted-foreground"
+              onClick={() => setFiltersCollapsed(true)}
+            >
+              <ChevronUp className="h-4 w-4" />
+              Recolher
+            </Button>
+          ) : null}
         </CardHeader>
+        {filtersCollapsed ? (
+          <CardContent className="pb-3 pt-0">
+            <p className="text-xs text-muted-foreground">
+              Filtros recolhidos enquanto você cria o rascunho.
+            </p>
+          </CardContent>
+        ) : (
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground" htmlFor="quote-filter-client">
@@ -415,6 +455,7 @@ export function QuotesPage() {
             />
           </div>
         </CardContent>
+        )}
       </Card>
 
       {showCreate && (

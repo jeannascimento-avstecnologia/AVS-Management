@@ -15,6 +15,7 @@ Além de status/lead:
 | `q` | texto livre: nome, CNPJ, `title`, `M{id}`, nome de item, **valor** (parse `1.866,60` / `1866.60` → total da linha ou soma do orçamento) |
 
 UI: seção Pesquisa na home (cliente, número, datas, caixa livre). Debounce ~300ms.
+Ao abrir **Novo** (rascunho), Pesquisa + filtros lead/status compactam numa barra; o usuário pode expandir de novo sem fechar o formulário.
 
 ## 2) Título interno (`quotes.title`)
 

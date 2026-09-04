@@ -79,6 +79,7 @@ class HubDatabase:
             self._migrate_quote_proposal_templates(conn)
             self._migrate_quote_versions(conn)
             self._migrate_billing_columns(conn)
+            self._migrate_repair_stale_quote_fks(conn)
 
     def _migrate_quotes_columns(self, conn: sqlite3.Connection) -> None:
         """ALTER TABLE idempotente para colunas novas em DBs já bootstrapados."""
@@ -104,7 +105,149 @@ class HubDatabase:
             if name not in existing:
                 conn.execute(f"ALTER TABLE quotes ADD COLUMN {name} {col_type}")
 
+    def _table_fk_targets_missing_parent(self, conn: sqlite3.Connection, table: str) -> bool:
+        """True se algum FK aponta para tabela que não existe (ex.: quotes__old_status)."""
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (table,),
+        ).fetchone()
+        if exists is None:
+            return False
+        parents = {
+            str(row[2])
+            for row in conn.execute(f"PRAGMA foreign_key_list({table})").fetchall()
+        }
+        if not parents:
+            return False
+        existing = {
+            str(row[0])
+            for row in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            ).fetchall()
+        }
+        return any(parent not in existing for parent in parents)
+
+    def _rebuild_table_copy(
+        self,
+        conn: sqlite3.Connection,
+        *,
+        table: str,
+        create_sql: str,
+        extra_indexes: tuple[str, ...] = (),
+    ) -> None:
+        """Copia colunas comuns para DDL nova (FK corrigida). FK OFF no caller."""
+        cols = [str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})").fetchall()]
+        if not cols:
+            return
+        tmp = f"{table}__fkfix"
+        ddl = create_sql.replace(f"CREATE TABLE {table}", f"CREATE TABLE {tmp}", 1)
+        conn.executescript(ddl)
+        new_cols = [str(row[1]) for row in conn.execute(f"PRAGMA table_info({tmp})").fetchall()]
+        shared = [c for c in cols if c in new_cols]
+        col_csv = ", ".join(shared)
+        conn.execute(f"INSERT INTO {tmp} ({col_csv}) SELECT {col_csv} FROM {table}")
+        conn.execute(f"DROP TABLE {table}")
+        conn.execute(f"ALTER TABLE {tmp} RENAME TO {table}")
+        has_seq = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'"
+        ).fetchone()
+        if has_seq is not None:
+            conn.execute("DELETE FROM sqlite_sequence WHERE name = ?", (table,))
+            max_row = conn.execute(f"SELECT MAX(id) FROM {table}").fetchone()
+            max_id = int(max_row[0] or 0) if max_row is not None else 0
+            if max_id > 0:
+                conn.execute(
+                    "INSERT INTO sqlite_sequence(name, seq) VALUES (?, ?)",
+                    (table, max_id),
+                )
+        for idx_sql in extra_indexes:
+            conn.execute(idx_sql)
+
+    def _migrate_repair_stale_quote_fks(self, conn: sqlite3.Connection) -> None:
+        """SQLite ALTER em quotes deixa filhos com REFERENCES quotes__old_status."""
+        items_broken = self._table_fk_targets_missing_parent(conn, "quote_items")
+        tokens_exist = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'quote_acceptance_tokens'"
+        ).fetchone()
+        tokens_broken = bool(tokens_exist) and self._table_fk_targets_missing_parent(
+            conn, "quote_acceptance_tokens"
+        )
+        if not items_broken and not tokens_broken:
+            return
+        conn.execute("PRAGMA foreign_keys = OFF")
+        try:
+            if items_broken:
+                self._rebuild_table_copy(
+                    conn,
+                    table="quote_items",
+                    create_sql="""
+                    CREATE TABLE quote_items (
+                        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                        quote_id        INTEGER NOT NULL
+                                        REFERENCES quotes (id) ON DELETE CASCADE,
+                        section         TEXT    NOT NULL,
+                        name            TEXT    NOT NULL,
+                        qty             REAL    NOT NULL DEFAULT 1,
+                        unit_value      REAL    NOT NULL DEFAULT 0,
+                        total_value     REAL    NOT NULL,
+                        template_key    TEXT,
+                        vhsys_product_id INTEGER,
+                        sort_order      INTEGER NOT NULL DEFAULT 0
+                    );
+                    """,
+                    extra_indexes=(
+                        "CREATE INDEX IF NOT EXISTS idx_quote_items_quote_section_sort "
+                        "ON quote_items (quote_id, section, sort_order)",
+                    ),
+                )
+            if tokens_broken:
+                self._rebuild_table_copy(
+                    conn,
+                    table="quote_acceptance_tokens",
+                    create_sql="""
+                    CREATE TABLE quote_acceptance_tokens (
+                        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                        quote_id    INTEGER NOT NULL
+                                    REFERENCES quotes (id) ON DELETE CASCADE,
+                        token_hash  TEXT    NOT NULL UNIQUE,
+                        expires_at  TEXT    NOT NULL,
+                        consumed_at TEXT,
+                        created_by  INTEGER,
+                        created_at  TEXT    NOT NULL
+                    );
+                    """,
+                )
+        finally:
+            conn.execute("PRAGMA foreign_keys = ON")
+        # #region agent log
+        try:
+            import json
+            import time
+            from pathlib import Path
+
+            payload = {
+                "sessionId": "ae8776",
+                "runId": "post-fix",
+                "hypothesisId": "F",
+                "location": "models.py:_migrate_repair_stale_quote_fks",
+                "message": "repaired stale quote FKs",
+                "data": {"items_broken": items_broken, "tokens_broken": tokens_broken},
+                "timestamp": int(time.time() * 1000),
+            }
+            p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-ae8776.log")
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with p.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
+        # #endregion
+
     def _migrate_quote_items_columns(self, conn: sqlite3.Connection) -> None:
+        exists = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'quote_items'"
+        ).fetchone()
+        if exists is None:
+            return
         existing = {
             str(row[1])
             for row in conn.execute("PRAGMA table_info(quote_items)").fetchall()

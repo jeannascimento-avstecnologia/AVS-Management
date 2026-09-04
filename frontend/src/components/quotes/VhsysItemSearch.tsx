@@ -83,6 +83,13 @@ export function VhsysItemSearch({
     gcTime: 30 * 60_000,
   })
 
+  useEffect(() => {
+    if (!catalog.isError) return
+    // #region agent log
+    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ae8776'},body:JSON.stringify({sessionId:'ae8776',runId:'pre-fix',hypothesisId:'A',location:'VhsysItemSearch.tsx:catalog',message:'catalog query error',data:{err:catalog.error instanceof Error?catalog.error.message:String(catalog.error),categoryId,subcategoryId},timestamp:Date.now()})}).catch(()=>{})
+    // #endregion
+  }, [catalog.isError, catalog.error, categoryId, subcategoryId])
+
   const createMutation = useMutation({
     mutationFn: (name: string) =>
       api.createVhsysCatalogItem({
