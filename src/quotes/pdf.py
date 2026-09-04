@@ -391,12 +391,9 @@ def _estimate_section_height(
     discount, _net = apply_section_discount(section_subtotal, discount_pct, discount_value)
 
     notes_clean_est = (notes or "").strip()
-    billed_clean_est = (billed_by_name or "").strip()
     n_right = 2 + (1 if discount > 0 else 0)  # subtotal + total [+ desconto]
     n_right += 1  # pagamento (or empty slot)
-    n_left = (1 if notes_clean_est else 0) + (
-        1 if billed_clean_est or (billed_by_cnpj or "").strip() else 0
-    )
+    n_left = 1 if notes_clean_est else 0
     h += _GAP * 0.5 + max(n_left, n_right) * _ROW_H + _GAP * 0.5
     # #region agent log
     try:
@@ -855,6 +852,7 @@ def _section_band(
     pdf: _QuotePdf,
     title: str,
     color: tuple[int, int, int],
+    right: str | None = None,
 ) -> None:
     _ = color  # retrocompat: todas as seções usam _BLUE
     y = pdf.get_y()
@@ -864,7 +862,15 @@ def _section_band(
     pdf.set_xy(pdf.l_margin + 3.0, y)
     pdf.set_font("Helvetica", "B", _FS_SECTION)
     pdf.set_text_color(*_BLUE)
-    pdf.cell(0, _BAND_H, _safe(title), new_x="LMARGIN", new_y="NEXT")
+    right_txt = _safe((right or "").strip())
+    if right_txt:
+        title_w = round(_CONTENT_W * 0.46, 2)
+        rest_w = _CONTENT_W - 3.0 - title_w
+        pdf.cell(title_w, _BAND_H, _safe(title))
+        pdf.set_font("Helvetica", "", _FS_MUTED)
+        pdf.cell(rest_w, _BAND_H, right_txt[:78], align="R", new_x="LMARGIN", new_y="NEXT")
+    else:
+        pdf.cell(0, _BAND_H, _safe(title), new_x="LMARGIN", new_y="NEXT")
     # Linha na base da barra (não acima do demarcador)
     rule_y = y + _BAND_H
     pdf.set_draw_color(*_RULE)
@@ -895,7 +901,44 @@ def _write_section(
     simplified: bool = False,
     display_name: str | None = None,
 ) -> None:
-    _section_band(pdf, title, accent)
+    billed_clean = (billed_by_name or "").strip()
+    cnpj_clean = (billed_by_cnpj or "").strip()
+    billed_label = billed_clean
+    if cnpj_clean:
+        pretty = format_cnpj(cnpj_clean) or cnpj_clean
+        billed_label = f"{billed_clean} | CNPJ {pretty}" if billed_clean else f"CNPJ {pretty}"
+    billed_right = (
+        f"Faturado por: {_safe(billed_label)[:78]}" if (billed_clean or cnpj_clean) else None
+    )
+    _section_band(pdf, title, accent, right=billed_right)
+    # #region agent log
+    try:
+        import time as _tb
+
+        _pb = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
+        _pb.parent.mkdir(parents=True, exist_ok=True)
+        _pb.open("a", encoding="utf-8").write(
+            json.dumps(
+                {
+                    "sessionId": "e0d4ae",
+                    "runId": "billed-band",
+                    "hypothesisId": "L",
+                    "location": "pdf.py:_write_section:band",
+                    "message": "billed on section band",
+                    "data": {
+                        "title": title[:80],
+                        "has_billed_right": bool(billed_right),
+                        "billed_preview": (billed_right or "")[:80],
+                    },
+                    "timestamp": int(_tb.time() * 1000),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
 
     original_c_margin = pdf.c_margin
     pdf.c_margin = _CELL_PAD
@@ -1009,17 +1052,9 @@ def _write_section(
 
     pay = _safe(format_payment_plan_label(payment_plan)).strip()
     notes_clean = (notes or "").strip()
-    billed_clean = (billed_by_name or "").strip()
-    cnpj_clean = (billed_by_cnpj or "").strip()
-    billed_label = billed_clean
-    if cnpj_clean:
-        pretty = format_cnpj(cnpj_clean) or cnpj_clean
-        billed_label = f"{billed_clean} | CNPJ {pretty}" if billed_clean else f"CNPJ {pretty}"
     lefts: list[str] = []
     if notes_clean:
         lefts.append(f"Obs: {_safe(notes_clean)[:90]}")
-    if billed_clean or cnpj_clean:
-        lefts.append(f"Faturado por: {_safe(billed_label)[:90]}")
     subtotal_label = "Subtotal (itens + mao de obra)" if include_labor and labor > 0 else "Subtotal (itens)"
     rights: list[tuple[str, str, str]] = [
         (subtotal_label, _brl(section_subtotal) + " ", "body"),
