@@ -428,6 +428,22 @@ def test_normalize_catalog_category_and_product() -> None:
     assert _product_subcategory_ids({"id_subcategoria": 7, "subcategoria": [7, 8]}) == [7, 8]
 
 
+def test_is_not_found_http_403_produto() -> None:
+    import httpx
+
+    from src.integrations.vhsys_client import _is_not_found_response
+
+    req = httpx.Request("GET", "https://api.vhsys.com/v2/produtos")
+    r = httpx.Response(
+        403,
+        request=req,
+        json={"code": 403, "message": "Nenhum produto encontrado"},
+    )
+    assert _is_not_found_response(r) is True
+    r2 = httpx.Response(403, request=req, json={"code": 403})
+    assert _is_not_found_response(r2) is True
+
+
 def test_mensalidades_sugerir_from_vhsys(
     quotes_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

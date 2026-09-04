@@ -133,7 +133,7 @@ export function QuoteMonthlyChargesDialog({
       .filter((id): id is number => id != null && id >= 1)
     if (itemIds.length === 0) {
       // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ae8776'},body:JSON.stringify({sessionId:'ae8776',runId:'pre-fix',hypothesisId:'E',location:'QuoteMonthlyChargesDialog.tsx:applySuggestion',message:'skip suggest: no persisted item ids',data:{keys,quoteId},timestamp:Date.now()})}).catch(()=>{})
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'35fefc'},body:JSON.stringify({sessionId:'35fefc',runId:'pre-fix',hypothesisId:'E',location:'QuoteMonthlyChargesDialog.tsx:applySuggestion',message:'skip suggest: no persisted item ids',data:{keys,quoteId},timestamp:Date.now()})}).catch(()=>{})
       // #endregion
       return
     }
@@ -141,7 +141,7 @@ export function QuoteMonthlyChargesDialog({
     try {
       const { allocations } = await api.suggestQuoteMonthly(quoteId, itemIds)
       // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ae8776'},body:JSON.stringify({sessionId:'ae8776',runId:'pre-fix',hypothesisId:'C',location:'QuoteMonthlyChargesDialog.tsx:applySuggestion',message:'suggest ok',data:{itemIds,allocCount:allocations.length,sources:allocations.map((a)=>a.source),costs:allocations.map((a)=>({f:a.fornecedor_amount,i:a.intermediador_amount}))},timestamp:Date.now()})}).catch(()=>{})
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'35fefc'},body:JSON.stringify({sessionId:'35fefc',runId:'pre-fix',hypothesisId:'C',location:'QuoteMonthlyChargesDialog.tsx:applySuggestion',message:'suggest ok',data:{itemIds,allocCount:allocations.length,sources:allocations.map((a)=>a.source),costs:allocations.map((a)=>({f:a.fornecedor_amount,i:a.intermediador_amount}))},timestamp:Date.now()})}).catch(()=>{})
       // #endregion
       setSplits((prev) => {
         const next = { ...prev }
@@ -154,7 +154,7 @@ export function QuoteMonthlyChargesDialog({
       })
     } catch (err) {
       // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'ae8776'},body:JSON.stringify({sessionId:'ae8776',runId:'pre-fix',hypothesisId:'A',location:'QuoteMonthlyChargesDialog.tsx:applySuggestion',message:'suggest failed',data:{itemIds,err:err instanceof Error?err.message:String(err)},timestamp:Date.now()})}).catch(()=>{})
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'35fefc'},body:JSON.stringify({sessionId:'35fefc',runId:'pre-fix',hypothesisId:'A',location:'QuoteMonthlyChargesDialog.tsx:applySuggestion',message:'suggest failed',data:{itemIds,err:err instanceof Error?err.message:String(err)},timestamp:Date.now()})}).catch(()=>{})
       // #endregion
       toast.error(err instanceof Error ? err.message : 'Falha ao buscar mensalidades no VHSYS.')
     } finally {

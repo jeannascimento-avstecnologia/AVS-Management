@@ -724,6 +724,20 @@ def build_quotes_router() -> APIRouter:
         issuer_name = (settings.quote_issuer_name or "AVS TECNOLOGIA").strip() or "AVS TECNOLOGIA"
         vhsys = VhsysClient(settings)
         allocations = []
+        # #region agent log
+        _agent_dbg(
+            "C",
+            "router.py:suggest_quote_monthly",
+            "suggest start",
+            {
+                "quote_id": quote_id,
+                "item_ids": [i.id for i in items],
+                "vhsys_product_ids": [i.vhsys_product_id for i in items],
+                "has_access_token": bool(settings.vhsys_access_token),
+                "has_secret": bool(settings.vhsys_secret_access_token),
+            },
+        )
+        # #endregion
         try:
             for item in items:
                 product = None

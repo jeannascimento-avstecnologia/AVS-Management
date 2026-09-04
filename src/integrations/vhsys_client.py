@@ -1,16 +1,19 @@
 import asyncio
 import json
+import logging
 import time
 from pathlib import Path
 
 import httpx
+
+_log = logging.getLogger(__name__)
 
 
 def _agent_dbg(hypothesis_id: str, location: str, message: str, data: dict) -> None:
     # #region agent log
     try:
         payload = {
-            "sessionId": "ae8776",
+            "sessionId": "35fefc",
             "runId": "pre-fix",
             "hypothesisId": hypothesis_id,
             "location": location,
@@ -18,7 +21,7 @@ def _agent_dbg(hypothesis_id: str, location: str, message: str, data: dict) -> N
             "data": data,
             "timestamp": int(time.time() * 1000),
         }
-        p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-ae8776.log")
+        p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-35fefc.log")
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -39,12 +42,24 @@ class VhsysApiError(Exception):
 
 
 def _is_not_found_response(response: httpx.Response) -> bool:
+    """VHSYS usa HTTP 403 como 'sem resultado' (clientes e produtos)."""
     if response.status_code == 404:
         return True
     if response.status_code != 403:
         return False
-    text = response.text.lower()
-    return "nenhum cliente encontrado" in text
+    text = (response.text or "").lower()
+    if "nenhum" in text or "nao encontrado" in text or "não encontrado" in text:
+        return True
+    try:
+        data = response.json()
+    except Exception:
+        return False
+    if not isinstance(data, dict):
+        return False
+    try:
+        return int(data.get("code", 0)) == 403
+    except (TypeError, ValueError):
+        return False
 
 
 class VhsysClient:
@@ -249,8 +264,7 @@ class VhsysClient:
             )
         if response.status_code == 401:
             raise VhsysApiError("Tokens VHSYS inválidos.", 401, response.text)
-        if _is_not_found_response(response):
-            return []
+        empty = _is_not_found_response(response)
         # #region agent log
         _agent_dbg(
             "A",
@@ -261,13 +275,21 @@ class VhsysClient:
                 "body_head": (response.text or "")[:400],
                 "param_keys": sorted(str(k) for k in params.keys()),
                 "has_desc_filter": "desc_produto" in params,
-                "has_cod_filter": "cod_produto" in params,
+                "not_found": empty,
                 "limit": params.get("limit"),
                 "offset": params.get("offset"),
             },
         )
         # #endregion
+        if empty:
+            return []
         if response.status_code >= 400:
+            _log.warning(
+                "vhsys GET /produtos http=%s not_found_helper=%s body_head=%s",
+                response.status_code,
+                False,
+                (response.text or "")[:400],
+            )
             raise VhsysApiError(
                 f"Erro ao listar produtos VHSYS: {response.status_code}.",
                 response.status_code,
@@ -291,8 +313,7 @@ class VhsysClient:
             )
         if response.status_code == 401:
             raise VhsysApiError("Tokens VHSYS inválidos.", 401, response.text)
-        if _is_not_found_response(response) or response.status_code == 404:
-            return None
+        empty = _is_not_found_response(response) or response.status_code == 404
         # #region agent log
         _agent_dbg(
             "B",
@@ -302,9 +323,12 @@ class VhsysClient:
                 "product_id": int(product_id),
                 "http_status": response.status_code,
                 "body_head": (response.text or "")[:400],
+                "not_found": empty,
             },
         )
         # #endregion
+        if empty:
+            return None
         if response.status_code >= 400:
             raise VhsysApiError(
                 f"Erro ao consultar produto VHSYS: {response.status_code}.",
