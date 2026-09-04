@@ -15,7 +15,7 @@ from fpdf import FPDF
 
 from src.cnpj.validator import format_cnpj
 from src.quotes.pdf_parties import QuotePdfClient, QuotePdfIssuer, client_from_quote, issuer_from_settings
-from src.quotes.schemas import QuoteItemRead, QuoteModule, QuoteRead
+from src.quotes.schemas import DEFAULT_QUOTE_NOTES, QuoteItemRead, QuoteModule, QuoteRead
 from src.quotes.totals import (
     apply_section_discount,
     format_payment_plan_label,
@@ -30,15 +30,15 @@ def _agent_dbg(hypothesis_id: str, location: str, message: str, data: dict[str, 
         import time
 
         payload = {
-            "sessionId": "ae8776",
-            "runId": "pre-fix",
+            "sessionId": "53c421",
+            "runId": "post-fix",
             "hypothesisId": hypothesis_id,
             "location": location,
             "message": message,
             "data": data,
             "timestamp": int(time.time() * 1000),
         }
-        p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-ae8776.log")
+        p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-53c421.log")
         p.parent.mkdir(parents=True, exist_ok=True)
         with p.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
@@ -68,9 +68,10 @@ _ICON_DIR = Path(__file__).resolve().parent / "pdf_icons"
 _ICON_PHONE = _ICON_DIR / "phone.png"
 _ICON_MAIL = _ICON_DIR / "mail.png"
 _ICON_GLOBE = _ICON_DIR / "globe.png"
+_VEIVO_LOGO_PATH = _ICON_DIR / "veivo-powered-by.png"
 # Grade tipográfica / geometria (tudo alinhado à mesma largura útil)
 _CONTENT_W = 188.0
-_FS_TITLE = 13.0
+_FS_TITLE = 16.0
 _FS_SECTION = 9.0
 _FS_BODY = 8.0
 _FS_SMALL = 7.5
@@ -79,6 +80,7 @@ _ROW_H = 5.8
 _BAND_H = 6.2
 _GAP = 1.4
 _LINE_H = 4.2
+_CELL_PAD = 1.5
 _COL_ITEM = 104.0
 _COL_QTY = 22.0
 _COL_UNIT = 31.0
@@ -221,6 +223,61 @@ class _QuotePdf(FPDF):
         self.set_line_width(0.2)
         self.line(self.l_margin, y, self.w - self.r_margin, y)
         _write_page_number(self, y + 1.2)
+        # Logo VEIVO discreta no canto inferior direito
+        exists = _VEIVO_LOGO_PATH.is_file()
+        veivo_h = 8.0  # mm — lockup 3 linhas (POWERED BY / VEIVO / SISTEMAS)
+        veivo_w = veivo_h * (2000 / 617)
+        veivo_x = self.w - self.r_margin - veivo_w
+        veivo_y = self.h - _FOOTER_MARGIN + 3.5
+        # #region agent log
+        _agent_dbg(
+            "H2-H4",
+            "pdf.py:_QuotePdf.footer",
+            "veivo footer draw",
+            {
+                "exists": exists,
+                "path": str(_VEIVO_LOGO_PATH),
+                "size_bytes": _VEIVO_LOGO_PATH.stat().st_size if exists else 0,
+                "page": int(self.page_no()),
+                "page_h": float(self.h),
+                "veivo_x": veivo_x,
+                "veivo_y": veivo_y,
+                "veivo_w": veivo_w,
+                "veivo_h": veivo_h,
+                "bottom": veivo_y + veivo_h,
+            },
+        )
+        # #endregion
+        if exists:
+            try:
+                # Logo oficial (RGBA) — opacidade 40% deixava o placeholder invisível (H3)
+                self.image(
+                    str(_VEIVO_LOGO_PATH),
+                    x=veivo_x,
+                    y=veivo_y,
+                    w=veivo_w,
+                    h=veivo_h,
+                )
+                # #region agent log
+                _agent_dbg(
+                    "H3",
+                    "pdf.py:_QuotePdf.footer",
+                    "veivo image ok full opacity",
+                    {
+                        "page": int(self.page_no()),
+                        "size_bytes": _VEIVO_LOGO_PATH.stat().st_size,
+                    },
+                )
+                # #endregion
+            except Exception as exc:
+                # #region agent log
+                _agent_dbg(
+                    "H3",
+                    "pdf.py:_QuotePdf.footer",
+                    "veivo image failed",
+                    {"page": int(self.page_no()), "err": type(exc).__name__, "msg": str(exc)[:200]},
+                )
+                # #endregion
 
 
 def _section_net_total(
@@ -272,8 +329,8 @@ def _ensure_space(pdf: FPDF, needed: float) -> bool:
 
 
 def _divider_height() -> float:
-    """Altura de `_write_divider` (ln + rule + gap_after)."""
-    return _GAP + (_GAP * 2)
+    """Espaço entre módulos (sem regra extra — a banda já desenha a linha)."""
+    return _GAP * 2
 
 
 def _module_meta_height(
@@ -313,15 +370,15 @@ def _estimate_section_height(
         h += _ROW_H  # display_name row
     else:
         if not items:
-            h += _ROW_H  # rows or "(sem itens)"
+            h += _ROW_H + 2.0  # "(sem itens)" com o mesmo respiro das linhas
         else:
             # Aproxima quantas linhas o item tende a quebrar na largura _COL_ITEM.
-            line_h = 2.6
+            line_h = _LINE_H
             for item in items:
                 name_len = max(1, len((item.name or "").strip()))
                 est_lines = (name_len + 53) // 54  # baseline ~54 chars por linha
                 est_lines = max(1, min(3, est_lines))
-                h += max(_ROW_H, est_lines * line_h)
+                h += max(_ROW_H + 2.0, est_lines * line_h + 2.0)
 
     labor = 0.0
     if include_labor:
@@ -371,7 +428,8 @@ def _estimate_payment_summary_height(
     h = _GAP + _BAND_H + _GAP
     h += _payment_summary_row_count(module_nets) * _ROW_H
     h += extra * _ROW_H
-    h += (_ROW_H + 0.8) + _GAP  # VALOR TOTAL + ln
+    h += (_ROW_H + 0.8) + _GAP  # VALOR TOTAL (legado)
+    h += _ROW_H + 6.0  # box navy
     return h
 
 
@@ -389,32 +447,31 @@ def _estimate_observations_height(notes: str | None) -> float:
 
 
 def _notes_with_disclaimer_and_ticket(quote: QuoteRead) -> str:
-    """Garante que disclaimer+ticket aparecem em OBSERVACOES (sem duplicar)."""
+    """Retorna apenas as observações do orçamento, sem disclaimer hardcoded."""
     notes = (quote.notes or "").strip()
-    has_disclaimer = "Os valores podem sofrer alteracao" in notes
-    has_ticket = "Ticket no." in notes
-    ticket = (quote.tiflux_ticket_number or "").strip()
-
-    extras: list[str] = []
-    if not has_disclaimer:
-        extras.append("Os valores podem sofrer alteracao sem previo aviso.")
-    if not has_ticket:
-        extras.append(f"Ticket no.: {ticket}" if ticket else "Ticket no.:")
-
-    if not extras:
-        return notes or "-"
-    if notes:
-        return "\n".join([notes, *extras])
-    return "\n".join(extras)
+    # Seed do wizard não é observação do cliente (H5: M13 notes_preview = DEFAULT_QUOTE_NOTES)
+    if notes == DEFAULT_QUOTE_NOTES.strip():
+        notes = ""
+    # #region agent log
+    _agent_dbg(
+        "H5",
+        "pdf.py:_notes_with_disclaimer_and_ticket",
+        "notes source",
+        {
+            "quote_id": int(quote.id),
+            "notes_len": len(notes),
+            "notes_preview": notes[:160],
+            "has_disclaimer": "Os valores podem sofrer alteracao" in notes,
+            "has_ticket": "Ticket no." in notes,
+        },
+    )
+    # #endregion
+    return notes or "-"
 
 
 def _estimate_signatures_height() -> float:
-    """Altura do bloco de assinaturas (espaço em branco + linhas)."""
-    return 8.0 + 22.0 + 3.0 + 5.0 + 6.0
-
-
-def _estimate_disclaimer_signatures_height() -> float:
-    return 8.0 + 5.0 + 5.0 + 20.0
+    """Assinaturas removidas do PDF — altura zero para keep-together."""
+    return 0.0
 
 
 def render_quote_pdf(
@@ -572,8 +629,6 @@ def render_quote_pdf(
     _ensure_space(pdf, _estimate_observations_height(notes_for_pdf))
     _write_observations(pdf, notes_for_pdf)
 
-    _ensure_space(pdf, _estimate_signatures_height())
-    _write_signatures(pdf)
     dest.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(dest))
 
@@ -624,7 +679,7 @@ def _write_page_number(pdf: _QuotePdf, y: float) -> None:
     pdf.set_font("Helvetica", "I", _FS_MUTED)
     pdf.set_text_color(*_MUTED)
     pdf.set_xy(pdf.l_margin, y)
-    pdf.cell(0, 3.4, page_label, align="R")
+    pdf.cell(0, 3.4, page_label, align="L")
     pdf.set_text_color(*_INK)
 
 
@@ -641,34 +696,31 @@ def _write_header(
     version_number: int | None = None,
 ) -> None:
     top_y = pdf.get_y()
-    logo_w = 24.0
     logo_h = 17.0
-    text_x = pdf.l_margin + logo_w + 3.0
-
-    if _LOGO_PATH.is_file():
-        pdf.image(str(_LOGO_PATH), x=pdf.l_margin, y=top_y, w=logo_w)
-    else:
-        text_x = pdf.l_margin
+    logo_w = round(logo_h * 2.63, 1)  # 1965×746 → 44.7 mm
+    has_logo = _LOGO_PATH.is_file()
+    text_x = pdf.l_margin + (logo_w + 3.0 if has_logo else 0.0)
 
     usable = pdf.w - pdf.r_margin - text_x
     main_title = _safe(f"Orcamento : {quote_display_id(quote.id)}")
     ver_label = f"v{int(version_number)}" if version_number is not None else ""
     date_s = f"Data: {_fmt_date(quote.updated_at or quote.created_at)}"
+    title_font_height = 5.8
     pdf.set_xy(text_x, top_y)
     pdf.set_font("Helvetica", "B", _FS_TITLE)
     pdf.set_text_color(*_INK)
     if ver_label:
         main_w = pdf.get_string_width(main_title)
-        pdf.cell(main_w, 5.8, main_title)
+        pdf.cell(main_w, title_font_height, main_title)
         pdf.set_x(text_x + main_w + 1.5)
         pdf.set_font("Helvetica", "B", _FS_TITLE * 0.75)
-        pdf.cell(pdf.get_string_width(ver_label) + 1.5, 5.8, ver_label)
+        pdf.cell(pdf.get_string_width(ver_label) + 1.5, title_font_height, ver_label)
         pdf.set_font("Helvetica", "B", _FS_BODY)
     else:
-        pdf.cell(usable, 5.8, main_title)
+        pdf.cell(usable, title_font_height, main_title)
     pdf.set_xy(text_x, top_y)
     pdf.set_font("Helvetica", "", _FS_BODY)
-    pdf.cell(usable, 5.8, _safe(date_s), align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(usable, title_font_height, _safe(date_s), align="R", new_x="LMARGIN", new_y="NEXT")
 
     ie = (issuer.ie or "").strip()
     line1 = f"{issuer.name} - CNPJ: {issuer.cnpj}"
@@ -689,8 +741,14 @@ def _write_header(
     _draw_contact_line(pdf, issuer, text_x, contact_y, show_page=False)
     pdf.set_y(contact_y + 4.2)
 
+    text_bottom = pdf.get_y()
+    text_h = text_bottom - top_y
+    logo_y = top_y + max(0.0, (text_h - logo_h) / 2.0)
+    if has_logo:
+        pdf.image(str(_LOGO_PATH), x=pdf.l_margin, y=logo_y, w=logo_w, h=logo_h)
+
     pdf.set_text_color(*_INK)
-    content_y = max(pdf.get_y(), top_y + logo_h)
+    content_y = max(text_bottom, logo_y + logo_h if has_logo else text_bottom)
     pdf.set_y(content_y + _GAP)
     _rule(pdf, color=_RULE, width=0.35)
 
@@ -713,9 +771,17 @@ def _write_client_block(
     rows = (
         ("Cliente:", name),
         ("CNPJ:", cnpj),
-        ("Tecnico responsavel:", tech),
+        ("Vendedor:", tech),
     )
-    label_w = 42.0
+    label_w = 25.0
+    # #region agent log
+    _agent_dbg(
+        "H6",
+        "pdf.py:_write_client_block",
+        "client label width",
+        {"label_w": label_w, "c_margin": float(pdf.c_margin)},
+    )
+    # #endregion
     for label, value in rows:
         pdf.set_font("Helvetica", "B", _FS_SMALL)
         pdf.set_text_color(*_BLUE)
@@ -724,12 +790,10 @@ def _write_client_block(
         pdf.set_text_color(*_INK)
         pdf.cell(0, _ROW_H, _dash(value)[:90], new_x="LMARGIN", new_y="NEXT")
     pdf.ln(_GAP)
-    _rule(pdf)
 
 
 def _write_divider(pdf: _QuotePdf) -> None:
-    pdf.ln(_GAP)
-    _rule(pdf, color=_RULE, width=0.3, gap_after=_GAP * 2)
+    pdf.ln(_GAP * 2)
 
 
 def _rule(
@@ -752,14 +816,21 @@ def _section_band(
     title: str,
     color: tuple[int, int, int],
 ) -> None:
+    _ = color  # retrocompat: todas as seções usam _BLUE
     y = pdf.get_y()
-    pdf.set_xy(pdf.l_margin, y)
+    # Barra vertical fina à esquerda (1.2mm) — mesma altura da linha
+    pdf.set_fill_color(*_BLUE)
+    pdf.rect(pdf.l_margin, y, 1.2, _BAND_H, style="F")
+    pdf.set_xy(pdf.l_margin + 3.0, y)
     pdf.set_font("Helvetica", "B", _FS_SECTION)
-    pdf.set_text_color(*_INK)
-    pdf.cell(0, _BAND_H - 1.1, _safe(title), new_x="LMARGIN", new_y="NEXT")
+    pdf.set_text_color(*_BLUE)
+    pdf.cell(0, _BAND_H, _safe(title), new_x="LMARGIN", new_y="NEXT")
+    # Linha na base da barra (não acima do demarcador)
+    rule_y = y + _BAND_H
     pdf.set_draw_color(*_RULE)
     pdf.set_line_width(0.3)
-    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+    pdf.line(pdf.l_margin, rule_y, pdf.w - pdf.r_margin, rule_y)
+    pdf.set_y(rule_y)
     pdf.ln(_GAP)
     pdf.set_text_color(*_INK)
     pdf.set_draw_color(0, 0, 0)
@@ -786,6 +857,23 @@ def _write_section(
 ) -> None:
     _section_band(pdf, title, accent)
 
+    original_c_margin = pdf.c_margin
+    pdf.c_margin = _CELL_PAD
+    # #region agent log
+    _agent_dbg(
+        "H1",
+        "pdf.py:_write_section",
+        "cell padding before table",
+        {
+            "c_margin": float(pdf.c_margin),
+            "l_margin": float(pdf.l_margin),
+            "col_item": _COL_ITEM,
+            "col_total": _COL_TOTAL,
+            "line_h": _LINE_H,
+        },
+    )
+    # #endregion
+
     pdf.set_fill_color(*_HEADER_FILL)
     pdf.set_text_color(*_INK)
     pdf.set_font("Helvetica", "B", _FS_SMALL)
@@ -811,11 +899,11 @@ def _write_section(
         pdf.set_fill_color(*_PAGE)
         pdf.cell(_COL_ITEM, _ROW_H, _safe(label)[:54], fill=True)
         pdf.cell(_COL_QTY, _ROW_H, "1", align="C", fill=True)
-        pdf.cell(_COL_UNIT, _ROW_H, _brl(items_total), align="R", fill=True)
+        pdf.cell(_COL_UNIT, _ROW_H, _brl(items_total) + " ", align="R", fill=True)
         pdf.cell(
             _COL_TOTAL,
             _ROW_H,
-            _brl(items_total),
+            _brl(items_total) + " ",
             align="R",
             fill=True,
             new_x="LMARGIN",
@@ -832,17 +920,18 @@ def _write_section(
             x_total = x_unit + _COL_UNIT
             y0 = pdf.get_y()
 
-            line_h = 2.6
+            line_h = _LINE_H
+            name_w = _COL_ITEM - _CELL_PAD
             name = _safe(item.name).replace("\n", " ").strip()
-            lines = _wrap_text_lines(pdf, name, _COL_ITEM)
-            row_h = max(_ROW_H, len(lines) * line_h)
+            lines = _wrap_text_lines(pdf, name, name_w)
+            row_h = max(_ROW_H + 2.0, len(lines) * line_h + 2.0)
 
             # Fundo completo da célula ITEM
             pdf.rect(x_name, y0, _COL_ITEM, row_h, style="F")
 
-            pdf.set_xy(x_name, y0)
+            pdf.set_xy(x_name + _CELL_PAD, y0 + 1.4)
             pdf.multi_cell(
-                _COL_ITEM,
+                name_w,
                 line_h,
                 "\n".join(lines),
                 align="L",
@@ -851,9 +940,9 @@ def _write_section(
             pdf.set_xy(x_qty, y0)
             pdf.cell(_COL_QTY, row_h, f"{item.qty:g}", align="C", fill=True)
             pdf.set_xy(x_unit, y0)
-            pdf.cell(_COL_UNIT, row_h, _brl(float(item.unit_value)), align="R", fill=True)
+            pdf.cell(_COL_UNIT, row_h, _brl(float(item.unit_value)) + " ", align="R", fill=True)
             pdf.set_xy(x_total, y0)
-            pdf.cell(_COL_TOTAL, row_h, _brl(float(item.total_value)), align="R", fill=True)
+            pdf.cell(_COL_TOTAL, row_h, _brl(float(item.total_value)) + " ", align="R", fill=True)
 
             pdf.set_xy(pdf.l_margin, y0 + row_h)
 
@@ -907,19 +996,28 @@ def _write_section(
     pdf.set_font("Helvetica", "", _FS_BODY)
     subtotal_label = "Subtotal (itens + mao de obra)" if include_labor and labor > 0 else "Subtotal (itens)"
     pdf.cell(_LABEL_W, _ROW_H, subtotal_label, align="R")
-    pdf.cell(_COL_TOTAL, _ROW_H, _brl(section_subtotal), align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(_COL_TOTAL, _ROW_H, _brl(section_subtotal) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
+    # #region agent log
+    _agent_dbg(
+        "H1",
+        "pdf.py:_write_section",
+        "subtotal cell",
+        {
+            "c_margin": float(pdf.c_margin),
+            "label_w": _LABEL_W,
+            "col_total": _COL_TOTAL,
+            "value": _brl(section_subtotal),
+        },
+    )
+    # #endregion
     if discount > 0:
         pdf.cell(_LABEL_W, _ROW_H, "Desconto", align="R")
-        pdf.cell(_COL_TOTAL, _ROW_H, f"- {_brl(discount)}", align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(_COL_TOTAL, _ROW_H, f"- {_brl(discount)} ", align="R", new_x="LMARGIN", new_y="NEXT")
 
     pdf.set_font("Helvetica", "B", _FS_BODY)
     pdf.cell(_LABEL_W, _ROW_H + 0.6, "TOTAL LIQUIDO", align="R")
-    pdf.cell(_COL_TOTAL, _ROW_H + 0.6, _brl(net), align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(_COL_TOTAL, _ROW_H + 0.6, _brl(net) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(*_INK)
-    pdf.set_draw_color(*_RULE)
-    pdf.set_line_width(0.3)
-    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
-    pdf.set_draw_color(0, 0, 0)
 
     notes_clean = (notes or "").strip()
     billed_clean = (billed_by_name or "").strip()
@@ -940,6 +1038,7 @@ def _write_section(
         pdf.cell(0, _ROW_H, f"Faturado por: {_safe(billed_label)[:90]}", new_x="LMARGIN", new_y="NEXT")
 
     pdf.ln(_GAP)
+    pdf.c_margin = original_c_margin
 
 
 def _write_payment_summary(
@@ -958,6 +1057,8 @@ def _write_payment_summary(
 
     pdf.ln(_GAP)
     _section_band(pdf, "DADOS DE PAGAMENTO", _NAVY)
+    original_c_margin = pdf.c_margin
+    pdf.c_margin = _CELL_PAD
 
     def _monthly_under(mod_id: str) -> None:
         extra = monthly_by_module.get(mod_id)
@@ -1065,15 +1166,21 @@ def _write_payment_summary(
         for mod, qty, net in module_nets:
             _full_row(mod, qty, net)
 
-    pdf.set_font("Helvetica", "B", _FS_SECTION)
-    pdf.cell(_LABEL_W, _ROW_H + 0.8, "VALOR TOTAL DO ORCAMENTO", align="R")
-    pdf.cell(_COL_TOTAL, _ROW_H + 0.8, _brl(quote_total), align="R", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_draw_color(*_RULE)
-    pdf.set_line_width(0.35)
-    pdf.line(pdf.l_margin, pdf.get_y(), pdf.w - pdf.r_margin, pdf.get_y())
+    # Box navy com texto branco para total geral
+    pdf.ln(_GAP * 2)
+    y_box = pdf.get_y()
+    box_h = _ROW_H + 4.0
+    pdf.set_fill_color(*_NAVY)
+    pdf.rect(pdf.l_margin, y_box, _CONTENT_W, box_h, style="F")
+    pdf.set_font("Helvetica", "B", _FS_SECTION + 2)
+    pdf.set_text_color(*_WHITE)
+    pdf.set_xy(pdf.l_margin + 3.0, y_box + 1.0)
+    pdf.cell(_LABEL_W - 3.0, box_h - 2.0, "VALOR TOTAL DO ORCAMENTO", align="R")
+    pdf.cell(_COL_TOTAL, box_h - 2.0, _brl(quote_total), align="R")
+    pdf.set_xy(pdf.l_margin, y_box + box_h)
     pdf.set_text_color(*_INK)
-    pdf.set_draw_color(0, 0, 0)
-    pdf.ln(_GAP)
+    pdf.ln(_GAP * 2)
+    pdf.c_margin = original_c_margin
 
 
 def _estimate_monthly_charges_height(rows: list[dict[str, Any]]) -> float:
@@ -1084,7 +1191,7 @@ def _estimate_monthly_charges_height(rows: list[dict[str, Any]]) -> float:
     for r in rows:
         n = len(str(r.get("name") or ""))
         extra += max(0, (n // 50))
-    return _GAP + _BAND_H + (_ROW_H * (len(rows) + 1 + extra)) + _GAP
+    return _GAP + _BAND_H + (_ROW_H * (len(rows) + 1 + extra)) + _GAP + (_ROW_H + 5.0)
 
 
 def _write_monthly_charges_section(
@@ -1097,10 +1204,12 @@ def _write_monthly_charges_section(
         return 0.0
     wrap_counts: list[int] = []
     _section_band(pdf, "MENSALIDADES", _NAVY)
+    original_c_margin = pdf.c_margin
+    pdf.c_margin = _CELL_PAD
     total = 0.0
     pdf.set_text_color(*_INK)
     line_h = _LINE_H
-    name_w = _COL_ITEM
+    name_w = _COL_ITEM - _CELL_PAD
     x_amt = pdf.l_margin + _LABEL_W
     for r in rows:
         role = str(r.get("role") or "split")
@@ -1114,17 +1223,34 @@ def _write_monthly_charges_section(
             total += amount
         wrapped = _wrap_text_lines(pdf, _safe(label), name_w)
         wrap_counts.append(len(wrapped))
-        row_h = max(_ROW_H, len(wrapped) * line_h)
+        row_h = max(_ROW_H + 1.0, len(wrapped) * line_h + 1.0)
         y0 = pdf.get_y()
         x_amt_col = pdf.l_margin + _LABEL_W
-        pdf.set_xy(pdf.l_margin, y0)
+        pdf.set_xy(pdf.l_margin + _CELL_PAD, y0 + 0.6)
         pdf.multi_cell(name_w, line_h, "\n".join(wrapped))
         pdf.set_xy(x_amt_col, y0)
-        pdf.cell(_COL_TOTAL, row_h, _brl(amount), align="R")
+        pdf.cell(_COL_TOTAL, row_h, _brl(amount) + " ", align="R")
         pdf.set_xy(pdf.l_margin, y0 + row_h)
+    monthly_total = round_money(total)
     pdf.set_font("Helvetica", "B", _FS_BODY)
     pdf.cell(_LABEL_W, _ROW_H, "TOTAL MENSALIDADES", align="L")
-    pdf.cell(_COL_TOTAL, _ROW_H, _brl(round_money(total)), align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(_COL_TOTAL, _ROW_H, _brl(monthly_total) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
+    # Box outline azul para total mensalidades
+    pdf.ln(_GAP)
+    y_box = pdf.get_y()
+    box_h = _ROW_H + 3.0
+    pdf.set_fill_color(*_HEADER_FILL)
+    pdf.set_draw_color(*_BLUE)
+    pdf.set_line_width(0.8)
+    pdf.rect(pdf.l_margin, y_box, _CONTENT_W, box_h, style="DF")
+    pdf.set_font("Helvetica", "B", _FS_SECTION + 1)
+    pdf.set_text_color(*_BLUE)
+    pdf.set_xy(pdf.l_margin + 3.0, y_box + 0.8)
+    pdf.cell(_LABEL_W - 3.0, box_h - 1.6, "TOTAL MENSALIDADES", align="R")
+    pdf.cell(_COL_TOTAL, box_h - 1.6, _brl(monthly_total), align="R")
+    pdf.set_xy(pdf.l_margin, y_box + box_h)
+    pdf.set_text_color(*_INK)
+    pdf.set_draw_color(0, 0, 0)
     pdf.ln(_GAP)
     # #region agent log
     _agent_dbg(
@@ -1140,6 +1266,7 @@ def _write_monthly_charges_section(
         },
     )
     # #endregion
+    pdf.c_margin = original_c_margin
     return 0.0
 
 
@@ -1158,47 +1285,3 @@ def _write_observations(pdf: _QuotePdf, notes: str | None) -> None:
     pdf.multi_cell(_CONTENT_W, line_h, _safe(clipped))
     pdf.ln(_GAP)
 
-
-def _write_disclaimer_and_ticket(pdf: _QuotePdf, quote: QuoteRead) -> None:
-    pdf.ln(_GAP)
-    pdf.set_font("Helvetica", "", _FS_BODY)
-    pdf.set_text_color(*_INK)
-    pdf.multi_cell(
-        _CONTENT_W,
-        4.0,
-        _safe("Os valores podem sofrer alteracao sem previo aviso."),
-    )
-    ticket = (quote.tiflux_ticket_number or "").strip()
-    line = f"Ticket no.: {ticket}" if ticket else "Ticket no.:"
-    pdf.set_x(pdf.l_margin)
-    pdf.cell(_CONTENT_W, 4.5, _safe(line), align="L", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(_GAP)
-
-
-def _write_signatures(pdf: _QuotePdf) -> None:
-    pdf.ln(8.0)
-    _rule(pdf, color=_RULE, width=0.35, gap_after=4.0)
-    col_w = _CONTENT_W / 3.0
-    blank = 22.0
-    y_start = pdf.get_y()
-    y_line = y_start + blank
-    pdf.set_draw_color(*_NAVY)
-    pdf.set_line_width(0.3)
-    for i in range(3):
-        x0 = pdf.l_margin + i * col_w + 4
-        x1 = pdf.l_margin + (i + 1) * col_w - 4
-        pdf.line(x0, y_line, x1, y_line)
-
-    pdf.set_y(y_line + 3.0)
-    pdf.set_font("Helvetica", "", _FS_SMALL)
-    pdf.set_text_color(*_MUTED)
-    labels = (
-        "EM ___/___/___ Data do aceite",
-        "Assinatura do Prestador",
-        "Assinatura do Sacado",
-    )
-    for i, label in enumerate(labels):
-        pdf.set_x(pdf.l_margin + i * col_w)
-        pdf.cell(col_w, 4.0, _safe(label), align="C")
-    pdf.set_text_color(*_INK)
-    pdf.ln(6.0)

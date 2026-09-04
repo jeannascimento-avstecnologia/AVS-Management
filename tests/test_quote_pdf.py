@@ -256,7 +256,7 @@ def test_estimate_section_height_scales_with_items() -> None:
         labor_rate=None,
         include_labor=False,
     )
-    assert abs(many - (one + 4 * _ROW_H)) < 1e-9
+    assert abs(many - (one + 4 * (_ROW_H + 2.0))) < 1e-9
     assert many > _BAND_H + 5 * _ROW_H
     with_meta = _estimate_section_height(
         [],
@@ -348,9 +348,11 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "DADOS DO CLIENTE" in text
     assert "Cliente PDF LTDA" in text
     assert "Jean Teste" in text
+    assert "Vendedor:" in text
+    assert "Tecnico responsavel" not in text
     assert "NOME INTERNO NAO IMPRIMIR" not in text
-    assert "Os valores podem sofrer alteracao sem previo aviso" in text
-    assert "Ticket no." in text
+    assert "Os valores podem sofrer alteracao sem previo aviso" not in text
+    assert "Ticket no." not in text
     assert "comercial@avstecnologia.cloud" in text
     assert "Rua Teste, 70 Parque" in text
     assert " |?" not in text
@@ -359,9 +361,9 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "795.275.950.117" in text
     assert "IMPLANTACAO" in text
     assert "MENSALIDADE" in text
-    assert "Assinatura do Prestador" in text
-    assert "Assinatura do Sacado" in text
-    assert "Data do aceite" in text
+    assert "Assinatura do Prestador" not in text
+    assert "Assinatura do Sacado" not in text
+    assert "Data do aceite" not in text
     # Mão de obra mensalidade (2h × 80 = 160)
     assert "Horas: 2" in text
     assert "160,00" in text or "R$ 160,00" in text
@@ -556,7 +558,8 @@ def test_pdf_legacy_without_modules_synthesizes_seed(tmp_path: Path) -> None:
     text = _pdf_text(dest)
     assert "IMPLANTACAO" not in text
     assert "MENSALIDADE" not in text
-    assert "Ticket no." in text
+    assert "OBSERVACOES" in text
+    assert "Ticket no." not in text
 
 
 def test_pdf_header_version_and_monthly_outside_total(tmp_path: Path) -> None:
@@ -584,6 +587,7 @@ def test_pdf_header_version_and_monthly_outside_total(tmp_path: Path) -> None:
     text = _pdf_text(dest)
     assert "v3" in text
     assert "MENSALIDADES" in text
+    assert "TOTAL MENSALIDADES" in text
     assert "Plano mensal" in text
     assert "Fornecedor" in text
     assert "Intermediador" in text
@@ -662,3 +666,45 @@ def test_pdf_shows_discount_only_when_applied(tmp_path: Path) -> None:
     text = _pdf_text(dest)
     assert "Desconto" in text
     assert "Aplicado" in text
+
+
+def test_pdf_notes_verbatim_no_hardcoded_disclaimer(tmp_path: Path) -> None:
+    dest = tmp_path / "notes.pdf"
+    quote = _sample_quote().model_copy(
+        update={"notes": "Somente esta obs", "tiflux_ticket_number": "999"}
+    )
+    render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
+    text = _pdf_text(dest)
+    assert "Somente esta obs" in text
+    assert "Ticket no." not in text
+    assert "Os valores podem sofrer alteracao" not in text
+
+
+def test_pdf_single_module_fits_one_page(tmp_path: Path) -> None:
+    dest = tmp_path / "one-mod.pdf"
+    quote = _sample_quote()
+    quote = quote.model_copy(
+        update={
+            "modules": [quote.modules[0]],
+            "items": [i for i in quote.items if i.section == "implantacao"],
+        }
+    )
+    render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
+    from pypdf import PdfReader
+
+    assert len(PdfReader(str(dest)).pages) == 1
+
+
+def test_pdf_veivo_logo_on_every_page(tmp_path: Path) -> None:
+    from src.quotes.pdf import _VEIVO_LOGO_PATH
+
+    assert _VEIVO_LOGO_PATH.is_file()
+    dest = tmp_path / "veivo.pdf"
+    quote = _multi_module_quote(extra_modules=4, items_per=6)
+    render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(dest))
+    assert len(reader.pages) >= 2
+    for i, page in enumerate(reader.pages):
+        assert len(page.images) >= 1, f"pagina {i + 1} sem imagem (logo VEIVO)"

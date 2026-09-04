@@ -1,8 +1,8 @@
 # Spec — PDF de Orçamento (MVP)
 
-> Status: aprovada para implementação · 2026-09-02  
+> Status: aprovada para implementação · 2026-09-04  
 > SoT relacionado: `MODULO_ORCAMENTO_CONTRATO.md`  
-> Layout: proposta comercial convencional (sem estética OS/VHSYS colorida).
+> Layout: proposta comercial convencional (mockup `artifacts/orcamento-M25-v4.pdf`).
 
 ## Título e identificação
 
@@ -15,7 +15,7 @@
 
 ## Layout
 
-1. **Cabeçalho (emitente fixo AVS)** — logo à esquerda; mesma linha: título `Orçamento : M{id}` à esquerda da área de texto e **data do orçamento na extrema direita** (alinhada à margem útil). Abaixo, só identificação fiscal:
+1. **Cabeçalho (emitente fixo AVS)** — logo à esquerda (aspect 1965×746 ≈ 2.63:1, ~44.7×17 mm); título 16 pt **centralizado verticalmente com a logo**; mesma linha: `Orçamento : M{id}` à esquerda da área de texto e **data do orçamento na extrema direita**. Abaixo, só identificação fiscal:
 
 ```
 AVS TECNOLOGIA - CNPJ: 08.354.533/0001-83 | Insc Estadual: 795.275.950.117
@@ -28,12 +28,12 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
 (ícone tel) (19) 3243-9559 | (ícone e-mail) comercial@avstecnologia.cloud | (ícone site) https://avstecnologia.cloud/
 ```
 
-   **Rodapé (todas as páginas):** só paginação `Pagina X/{nb}`.
+   **Rodapé (todas as páginas):** paginação `Pagina X/{nb}` + logo VEIVO Sistemas (`pdf_icons/veivo-powered-by.png`) no canto inferior direito, opacidade 40%.
 
-2. **Primeiro bloco: DADOS DO CLIENTE** — Nome (`legal_name` / `client_name`), CNPJ, Técnico responsável (`quotes.created_by` → nome do usuário; fallback usuário logado).
+2. **Primeiro bloco: DADOS DO CLIENTE** — Nome (`legal_name` / `client_name`), CNPJ, Vendedor (`quotes.created_by` → nome do usuário; fallback usuário logado).
 
 3. **Módulos (N seções)** — ordem `sort_order` de `quotes.modules_json`:
-   - Título = `module.title` (tipografia negrito + regra cinza; **sem** banda vermelha/azul).
+   - Título = `module.title` (negrito na cor `_BLUE` + barra vertical azul 1.2 mm à esquerda + regra cinza). **Sem** diferenciação de cor por módulo.
    - Tabela **sempre** com cabeçalho `ITEM` / `QTDE` / `V. UNIT.` / `V. TOTAL`. Coluna `ITEM` mais larga, com quebra de linha (não truncar). Números alinhados ao header.
    - Se `module.simplified`: uma linha de dados com `display_name` (fallback `title`); qtde `1`; v. unit. = v. total = soma das linhas. **Não** imprimir nomes das linhas originais.
    - Senão: uma linha por item (`quote_items.section = module.id`).
@@ -50,23 +50,23 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
    - Se ainda existirem módulos com `legacy_kind` `implantacao` / `mensalidade`, manter também os rótulos OS VHSYS:
      - `TOTAL DE HORAS/QTDE DE SERVICOS` / `VALOR TOTAL DOS SERVICOS` ← `implantacao`
      - `TOTAL DE PRODUTOS` / `VALOR TOTAL DOS PRODUTOS` ← `mensalidade`
-   - `VALOR TOTAL DO ORCAMENTO` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver).
-   - Seção **`MENSALIDADES`** (cobranças) **depois** do valor total: fora do `VALOR TOTAL DO ORCAMENTO`. Linhas selecionadas continuam nos módulos originais (duplicate-include).
+   - `VALOR TOTAL DO ORCAMENTO` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver). Destaque: box navy, texto branco.
+   - Seção **`MENSALIDADES`** (cobranças) **depois** do valor total: fora do `VALOR TOTAL DO ORCAMENTO`. Linhas selecionadas continuam nos módulos originais (duplicate-include). Total da seção: box com outline azul.
 
-6. **OBSERVACOES** — `quotes.notes` (pré-fill no wizard: aviso + `Ticket no.:`). Imprime o bloco mesmo se vazio (`-`). Se `notes` não trouxer o aviso/ticket, o render injeta essas linhas **dentro** de OBSERVACOES (não no rodapé).
+6. **OBSERVACOES** — imprime **somente** `quotes.notes`. Sem disclaimer/ticket hardcoded. Bloco mesmo se vazio (`-`). Pré-fill do wizard (aviso + `Ticket no.:`) entra só se o usuário salvou isso em `notes`.
 
-7. **Assinaturas** (3 colunas): data do aceite · Assinatura do Prestador · Assinatura do Sacado. **Sem** bloco fixo de aviso+ticket acima das assinaturas.
+7. **Assinaturas** — **não** imprimir (removidas).
 
 ## Fundo
 
-- Página A4 branca. **Sem** barras de marca no topo/lateral, **sem** bandas coloridas de seção.
+- Página A4 branca. **Sem** barras de marca no topo/lateral. Hierarquia de seção: barra vertical `_BLUE` 1.2 mm (todas as seções).
 - Tabelas: header cinza claro, bordas cinza. Sem padrão PCB.
 
 ## Formatação / paginação
 
 - Meta: **1 página A4** para orçamento típico.
 - Respiro entre linhas: `_ROW_H` ≥ 5.8, `_GAP` ≥ 1.4, `line_h` ≥ 4.2 (não grudar rótulo/valor).
-- Quebras **somente entre blocos lógicos**. Assinaturas no keep-together (aviso+ticket vão nas Observações).
+- Quebras **somente entre blocos lógicos** (`_ensure_space` keep-together por módulo/resumo).
 
 ## Dados da empresa (emitente)
 
@@ -102,10 +102,8 @@ Inalterada: Implantação seed sem MO; Mensalidade se `show_labor`; custom sem M
 - Cabeçalho:
   - Manter `Orçamento : M{id}` e exibir `vX` ao lado com **fonte menor**.
 - Observações (bloco `OBSERVACOES`):
-  - Deve conter o trecho:
-    - `Os valores podem sofrer alteracao sem previo aviso.`
-    - `Ticket no.:` (editável no passo 3).
-  - O PDF não deve ter um bloco fixo separado de “Aviso + Ticket” fora das Observações.
+  - PDF imprime somente `quotes.notes` (pré-fill do wizard continua no formulário).
+  - Sem bloco fixo de “Aviso + Ticket” no PDF.
 - Desconto:
   - Exibir o trecho de desconto **somente** quando o usuário preencher `discount_pct` e/ou `discount_value` (e o desconto aplicado for > 0).
 - Mensalidades:

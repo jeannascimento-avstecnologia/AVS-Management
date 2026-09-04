@@ -665,7 +665,7 @@ def test_pdf_generate_and_download(quotes_client: TestClient, quotes_env: Path) 
 
 
 def test_pdf_layout_title_and_no_implant_labor(quotes_client: TestClient, tmp_path: Path) -> None:
-    """PDF: Orçamento : M{id}, assinaturas; implant labor ignorada no cálculo/render."""
+    """PDF: Orçamento : M{id}; implant labor ignorada no cálculo/render."""
     from src.quotes.pdf import quote_display_id, render_quote_pdf
     from src.quotes.pdf_parties import QuotePdfClient, QuotePdfIssuer
     from src.quotes.schemas import QuoteItemRead, QuoteModule, QuoteRead
@@ -773,25 +773,12 @@ def test_pdf_layout_title_and_no_implant_labor(quotes_client: TestClient, tmp_pa
     )
     raw = dest.read_bytes()
     assert raw[:4] == b"%PDF"
-    # fpdf2 comprime streams — extrai texto via zlib
-    import re
-    import zlib
+    from pypdf import PdfReader
 
-    texts: list[str] = []
-    for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", raw, re.S):
-        try:
-            dec = zlib.decompress(m.group(1))
-        except zlib.error:
-            continue
-        for lit in re.findall(rb"\((?:\\.|[^\\)])*\)", dec):
-            try:
-                texts.append(lit[1:-1].decode("latin-1"))
-            except UnicodeDecodeError:
-                pass
-    blob = "\n".join(texts)
+    blob = "\n".join((p.extract_text() or "") for p in PdfReader(str(dest)).pages)
     assert "Orcamento : M2353" in blob
-    assert "Assinatura do Prestador" in blob
-    assert "Assinatura do Sacado" in blob
+    assert "Assinatura do Prestador" not in blob
+    assert "Assinatura do Sacado" not in blob
     assert "IMPLANTACAO" in blob
     assert "MENSALIDADE" in blob
     assert blob.count("Mao de obra") <= 1
