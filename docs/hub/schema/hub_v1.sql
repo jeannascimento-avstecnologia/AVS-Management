@@ -40,6 +40,9 @@ CREATE TABLE quotes (
     monthly_labor_hourly_rate REAL,
     modules_json            TEXT,   -- JSON array QuoteModule (SoT passo 2 / PDF)
     client_email            TEXT,   -- e-mail principal (envio orçamento)
+    contact_name            TEXT,   -- contato escolhido / manual (wizard)
+    contact_email           TEXT,
+    contact_phone           TEXT,
     extra_recipients        TEXT,   -- JSON array de e-mails extras (CC)
     notes                   TEXT,   -- observações do PDF / wizard passo 3
     title                   TEXT,   -- nome interno (UI); NÃO vai ao PDF

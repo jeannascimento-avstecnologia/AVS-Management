@@ -132,6 +132,9 @@ export type QuoteRead = {
   monthly_labor_hourly_rate: number | null
   modules: QuoteModule[]
   client_email: string | null
+  contact_name: string | null
+  contact_email: string | null
+  contact_phone: string | null
   extra_recipients: string[]
   monthly_draft_json: string | null
   notes: string | null
@@ -200,6 +203,9 @@ export type QuoteWrite = {
   monthly_labor_hourly_rate?: number | null
   modules?: QuoteModule[]
   client_email?: string | null
+  contact_name?: string | null
+  contact_email?: string | null
+  contact_phone?: string | null
   extra_recipients?: string[]
   notes?: string | null
   internal_notes?: string | null
@@ -1058,6 +1064,11 @@ export const api = {
   getTifluxClientContact: (clientId: number) =>
     request<{ id: number; name: string | null; email: string | null }>(
       `/orcamentos/tiflux/clients/${clientId}`,
+    ),
+
+  listTifluxClientContacts: (clientId: number) =>
+    request<Array<{ name: string | null; email: string | null; phone: string | null }>>(
+      `/orcamentos/tiflux/clients/${clientId}/contacts`,
     ),
 
   getVhsysClientContact: (clientId: number) =>

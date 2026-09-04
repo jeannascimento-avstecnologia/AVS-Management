@@ -101,6 +101,9 @@ class HubDatabase:
             ("notes", "TEXT"),
             ("title", "TEXT"),
             ("internal_notes", "TEXT"),
+            ("contact_name", "TEXT"),
+            ("contact_email", "TEXT"),
+            ("contact_phone", "TEXT"),
         )
         for name, col_type in additions:
             if name not in existing:

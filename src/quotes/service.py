@@ -87,6 +87,9 @@ _QUOTE_COLUMNS = (
     "monthly_labor_hourly_rate",
     "modules_json",
     "client_email",
+    "contact_name",
+    "contact_email",
+    "contact_phone",
     "extra_recipients",
     "monthly_draft_json",
     "notes",
@@ -187,6 +190,16 @@ def _optional_title(row: sqlite3.Row) -> str | None:
     if "title" not in row.keys():
         return None
     raw = row["title"]
+    if raw is None:
+        return None
+    cleaned = str(raw).strip()
+    return cleaned or None
+
+
+def _optional_contact_field(row: sqlite3.Row, key: str) -> str | None:
+    if key not in row.keys():
+        return None
+    raw = row[key]
     if raw is None:
         return None
     cleaned = str(raw).strip()
@@ -467,6 +480,9 @@ def _row_to_quote(row: sqlite3.Row, items: list[QuoteItemRead]) -> QuoteRead:
         monthly_labor_hourly_rate=_optional_float(row, "monthly_labor_hourly_rate"),
         modules=modules,
         client_email=(str(row["client_email"]).strip() if row["client_email"] else None),
+        contact_name=_optional_contact_field(row, "contact_name"),
+        contact_email=_optional_contact_field(row, "contact_email"),
+        contact_phone=_optional_contact_field(row, "contact_phone"),
         extra_recipients=_parse_extra_recipients(
             row["extra_recipients"] if "extra_recipients" in row.keys() else None
         ),
@@ -614,7 +630,8 @@ class QuoteService:
                     monthly_payment_plan, monthly_discount_pct, monthly_discount_value,
                     monthly_labor_hours, monthly_labor_hourly_rate,
                     modules_json,
-                    client_email, extra_recipients, notes, internal_notes, title,
+                    client_email, contact_name, contact_email, contact_phone,
+                    extra_recipients, notes, internal_notes, title,
                     created_by, created_at, updated_at
                 ) VALUES (
                     ?, ?, ?, ?,
@@ -624,7 +641,8 @@ class QuoteService:
                     ?, ?, ?,
                     ?, ?,
                     ?,
-                    ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?,
+                    ?, ?, ?, ?,
                     ?, ?, ?
                 )
                 """,
@@ -648,6 +666,9 @@ class QuoteService:
                     flat["monthly_labor_hourly_rate"],
                     _dump_modules(modules),
                     data.client_email,
+                    data.contact_name,
+                    data.contact_email,
+                    data.contact_phone,
                     _dump_extra_recipients(data.extra_recipients),
                     seed_quote_notes(data.notes, ticket=None),
                     (data.internal_notes.strip() if data.internal_notes else None),

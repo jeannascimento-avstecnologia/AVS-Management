@@ -26,6 +26,7 @@ import {
   Pencil,
   UserPlus,
   UserRound,
+  Contact,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -170,6 +171,9 @@ type DraftForm = {
   billed_by_name: string
   modules: DraftModule[]
   client_email: string
+  contact_name: string
+  contact_email: string
+  contact_phone: string
   extra_recipients: string[]
   notes: string
   internal_notes: string
@@ -467,6 +471,9 @@ function quoteToForm(quote: QuoteRead): DraftForm {
     billed_by_name: quote.billed_by_name ?? '',
     modules: modulesFromQuote(quote),
     client_email: quote.client_email ?? '',
+    contact_name: quote.contact_name ?? '',
+    contact_email: quote.contact_email ?? '',
+    contact_phone: quote.contact_phone ?? '',
     extra_recipients: [...(quote.extra_recipients ?? [])],
     notes: quote.notes?.trim() ? quote.notes : defaultQuoteNotes(quote.tiflux_ticket_number),
     internal_notes: quote.internal_notes?.trim() ?? '',
@@ -519,6 +526,9 @@ function formToUpdate(form: DraftForm): QuoteUpdate {
     monthly_labor_hourly_rate: monthly?.labor_hourly_rate ?? null,
     modules,
     client_email: form.client_email.trim() || null,
+    contact_name: form.contact_name.trim() || null,
+    contact_email: form.contact_email.trim() || null,
+    contact_phone: form.contact_phone.trim() || null,
     extra_recipients: form.extra_recipients
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
@@ -1124,6 +1134,9 @@ export function QuoteWizardPage() {
       tiflux_client_id: link.tiflux_client_id,
       vhsys_client_id: link.vhsys_client_id,
       client_email: '',
+      contact_name: '',
+      contact_email: '',
+      contact_phone: '',
     }))
   }
 
@@ -1312,16 +1325,23 @@ export function QuoteWizardPage() {
                 </span>
               ) : null}
             </span>
-            <Input
-              className="h-8 max-w-xs text-sm font-normal"
-              placeholder="Nome do orçamento (não vai no PDF)"
-              disabled={!canEdit}
-              value={form.title}
-              maxLength={120}
-              onChange={(e) => patchForm((prev) => ({ ...prev, title: e.target.value }))}
-              aria-label="Nome do orçamento"
-            />
           </h1>
+          <div className="flex items-center gap-3 pt-1">
+            <div className="flex-1">
+              <Label className="text-xs font-semibold uppercase tracking-wider text-aurora-accent">
+                Referência
+              </Label>
+              <Input
+                className="mt-1 h-10 border-aurora-accent/30 bg-aurora-accent-muted/20 text-base font-medium placeholder:text-muted-foreground/50"
+                placeholder="Ex.: Microsoft 365, Backup Acronis, Infraestrutura..."
+                disabled={!canEdit}
+                value={form.title}
+                maxLength={120}
+                onChange={(e) => patchForm((prev) => ({ ...prev, title: e.target.value }))}
+                aria-label="Referência do orçamento"
+              />
+            </div>
+          </div>
           <p className="text-sm text-muted-foreground">
             {formatCnpj(form.cnpj)}
             {form.client_name ? ` · ${form.client_name}` : ''}
@@ -1402,6 +1422,9 @@ export function QuoteWizardPage() {
                       tiflux_client_id: null,
                       client_name: '',
                       cnpj: '',
+                      contact_name: '',
+                      contact_email: '',
+                      contact_phone: '',
                     }))
                   }
                 }}
@@ -1419,6 +1442,9 @@ export function QuoteWizardPage() {
                     client_name: client.name || prev.client_name,
                     tiflux_client_id: client.id,
                     client_email: '',
+                    contact_name: '',
+                    contact_email: '',
+                    contact_phone: '',
                   }))
                   void api
                     .getTifluxClientContact(client.id)
@@ -1471,6 +1497,75 @@ export function QuoteWizardPage() {
                 </div>
               )}
             </div>
+
+            {form.tiflux_client_id != null && (
+              <div
+                className={cn(
+                  'space-y-3 rounded-xl border border-aurora-border p-3 sm:p-4',
+                  'bg-gradient-to-br from-aurora-surface-2/80 to-aurora-surface',
+                )}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <Contact className="h-4 w-4 text-aurora-muted" aria-hidden />
+                  <span className="text-sm font-semibold text-aurora-fg">Contato</span>
+                  {form.contact_name && (
+                    <Badge variant="outline" className="text-xs">
+                      {form.contact_name}
+                    </Badge>
+                  )}
+                </div>
+                <ContactPicker
+                  clientId={form.tiflux_client_id}
+                  canEdit={canEdit}
+                  selected={{
+                    name: form.contact_name,
+                    email: form.contact_email,
+                    phone: form.contact_phone,
+                  }}
+                  onSelect={(contact) =>
+                    patchForm((prev) => ({
+                      ...prev,
+                      contact_name: contact.name ?? '',
+                      contact_email: contact.email ?? '',
+                      contact_phone: contact.phone ?? '',
+                      client_email: contact.email ?? prev.client_email,
+                    }))
+                  }
+                />
+                <div className="grid gap-2 sm:grid-cols-3">
+                  <div className="space-y-1">
+                    <Label className="text-xs">Nome</Label>
+                    <Input
+                      className="h-8 text-sm"
+                      placeholder="Nome do contato"
+                      disabled={!canEdit}
+                      value={form.contact_name}
+                      onChange={(e) => patchForm((p) => ({ ...p, contact_name: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">E-mail</Label>
+                    <Input
+                      className="h-8 text-sm"
+                      placeholder="email@empresa.com"
+                      disabled={!canEdit}
+                      value={form.contact_email}
+                      onChange={(e) => patchForm((p) => ({ ...p, contact_email: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs">Telefone</Label>
+                    <Input
+                      className="h-8 text-sm"
+                      placeholder="(19) 9xxxx-xxxx"
+                      disabled={!canEdit}
+                      value={form.contact_phone}
+                      onChange={(e) => patchForm((p) => ({ ...p, contact_phone: e.target.value }))}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div
               className={cn(
@@ -3233,5 +3328,95 @@ function ReviewBlock({
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+function ContactPicker({
+  clientId,
+  canEdit,
+  selected,
+  onSelect,
+}: {
+  clientId: number
+  canEdit: boolean
+  selected: { name: string; email: string; phone: string }
+  onSelect: (c: { name: string | null; email: string | null; phone: string | null }) => void
+}) {
+  const [contacts, setContacts] = useState<
+    Array<{ name: string | null; email: string | null; phone: string | null }>
+  >([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    setLoading(true)
+    api
+      .listTifluxClientContacts(clientId)
+      .then((data) => {
+        if (!cancelled) setContacts(data)
+      })
+      .catch(() => {
+        if (!cancelled) setContacts([])
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [clientId])
+
+  if (loading) return <p className="text-xs text-muted-foreground">Carregando contatos...</p>
+  if (contacts.length === 0) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <p className="text-xs text-muted-foreground">
+          Nenhum contato encontrado — preencha manualmente.
+        </p>
+        <Button
+          type="button"
+          size="sm"
+          disabled={!canEdit}
+          className={cn(btnSecondaryClass, 'text-xs')}
+          onClick={() => onSelect({ name: null, email: null, phone: null })}
+        >
+          Novo +
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {contacts.map((c, i) => {
+        const isSelected = c.email === selected.email && c.name === selected.name
+        return (
+          <Button
+            key={i}
+            type="button"
+            size="sm"
+            disabled={!canEdit}
+            className={cn(
+              btnSecondaryClass,
+              'text-xs',
+              isSelected &&
+                'border-aurora-accent bg-aurora-accent-muted text-aurora-accent ring-2 ring-aurora-accent/25',
+            )}
+            onClick={() => onSelect(c)}
+          >
+            {c.name || c.email || '(sem nome)'}
+          </Button>
+        )
+      })}
+      <Button
+        type="button"
+        size="sm"
+        disabled={!canEdit}
+        className={cn(btnSecondaryClass, 'text-xs')}
+        onClick={() => onSelect({ name: null, email: null, phone: null })}
+      >
+        Novo +
+      </Button>
+    </div>
   )
 }

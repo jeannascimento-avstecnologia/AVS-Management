@@ -333,6 +333,9 @@ class QuoteWrite(BaseModel):
     monthly_labor_hourly_rate: float | None = None
     modules: list[QuoteModule] | None = None
     client_email: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
     extra_recipients: list[str] = Field(default_factory=list)
     monthly_draft_json: str | None = None
     notes: str | None = None
@@ -367,6 +370,21 @@ class QuoteWrite(BaseModel):
     @classmethod
     def _normalize_client_email(cls, value: str | None) -> str | None:
         return _normalize_optional_email(value)
+
+    @field_validator("contact_name")
+    @classmethod
+    def _normalize_contact_name(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=300, label="Nome do contato")
+
+    @field_validator("contact_email")
+    @classmethod
+    def _normalize_contact_email(cls, value: str | None) -> str | None:
+        return _normalize_optional_email(value)
+
+    @field_validator("contact_phone")
+    @classmethod
+    def _normalize_contact_phone(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=40, label="Telefone do contato")
 
     @field_validator("extra_recipients")
     @classmethod
@@ -458,6 +476,9 @@ class QuoteUpdate(BaseModel):
     monthly_labor_hourly_rate: float | None = None
     modules: list[QuoteModule] | None = None
     client_email: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
     extra_recipients: list[str] | None = None
     notes: str | None = None
     internal_notes: str | None = None
@@ -493,6 +514,21 @@ class QuoteUpdate(BaseModel):
     @classmethod
     def _normalize_client_email(cls, value: str | None) -> str | None:
         return _normalize_optional_email(value)
+
+    @field_validator("contact_name")
+    @classmethod
+    def _normalize_contact_name_upd(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=300, label="Nome do contato")
+
+    @field_validator("contact_email")
+    @classmethod
+    def _normalize_contact_email_upd(cls, value: str | None) -> str | None:
+        return _normalize_optional_email(value)
+
+    @field_validator("contact_phone")
+    @classmethod
+    def _normalize_contact_phone_upd(cls, value: str | None) -> str | None:
+        return _normalize_optional_text(value, max_len=40, label="Telefone do contato")
 
     @field_validator("extra_recipients")
     @classmethod
@@ -560,6 +596,9 @@ class QuoteRead(BaseModel):
     monthly_labor_hourly_rate: float | None = None
     modules: list[QuoteModule] = Field(default_factory=list)
     client_email: str | None = None
+    contact_name: str | None = None
+    contact_email: str | None = None
+    contact_phone: str | None = None
     extra_recipients: list[str] = Field(default_factory=list)
     monthly_draft_json: str | None = None
     notes: str | None = None

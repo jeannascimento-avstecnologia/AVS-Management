@@ -305,6 +305,32 @@ def build_quotes_router() -> APIRouter:
         clients = [c for c in (_normalize_tiflux_quote_client(r) for r in raw) if c is not None]
         return {"clients": clients[:limit], "query": term}
 
+    @router.get("/tiflux/clients/{client_id}/contacts")
+    async def list_tiflux_client_contacts(
+        client_id: int,
+        _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> list[dict[str, Any]]:
+        """Lista todos os contatos do cliente TiFlux."""
+        settings = get_settings()
+        if not settings.tiflux_api_token:
+            raise HTTPException(status_code=503, detail="Credenciais TiFlux não configuradas.")
+        client = TifluxClient(settings)
+        try:
+            contacts = await client.get_client_contacts(client_id)
+        except TifluxApiError as exc:
+            status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
+        result: list[dict[str, Any]] = []
+        for c in contacts:
+            result.append(
+                {
+                    "name": str(c.get("name") or "").strip() or None,
+                    "email": str(c.get("email") or "").strip() or None,
+                    "phone": str(c.get("phone") or c.get("phone_number") or "").strip() or None,
+                }
+            )
+        return result
+
     @router.get("/tiflux/clients/{client_id}")
     async def get_tiflux_client_contact(
         client_id: int,
