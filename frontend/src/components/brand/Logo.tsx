@@ -1,6 +1,6 @@
 import { cn } from '@/lib/cn'
 
-export const LOGO_SRC = '/static/Logo_AVS_Management.png?v=1'
+export const LOGO_SRC = '/static/AVS_Management_white.png?v=2'
 
 export type LogoVariant = 'sidebar' | 'topbar' | 'auth' | 'onLight'
 
@@ -16,7 +16,7 @@ const variantConfig: Record<
   { img: string; wrapper?: string; blend?: boolean }
 > = {
   topbar: {
-    img: 'h-12 w-auto max-w-[200px] md:h-[52px]',
+    img: 'h-9 w-auto max-w-[200px] md:h-10',
     blend: true,
   },
   sidebar: {

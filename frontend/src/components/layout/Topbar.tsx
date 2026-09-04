@@ -15,8 +15,8 @@ type Props = {
 
 export function Topbar({ onMenuClick, showMenuButton }: Props) {
   return (
-    <header className="sticky top-0 z-30 h-14 border-b border-white/10 bg-aurora-topbar-bg text-white">
-      <div className="relative flex h-full items-center gap-3 px-4">
+    <header className="sticky top-0 z-30 border-b border-white/10 bg-aurora-topbar-bg py-2 text-white">
+      <div className="relative flex min-h-10 items-center gap-3 px-4">
         {showMenuButton && (
           <Button
             variant="ghost"
