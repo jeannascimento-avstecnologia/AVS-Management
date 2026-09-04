@@ -12,7 +12,7 @@ Além de status/lead:
 | `client` | `client_name` LIKE ou `cnpj` LIKE (só dígitos) |
 | `number` | `M123` ou `123` → `quotes.id` |
 | `date_from` / `date_to` | ISO `YYYY-MM-DD` em `created_at` (prefixo data) |
-| `q` | texto livre: nome, CNPJ, `title`, `M{id}`, nome de item, **valor** (parse `1.866,60` / `1866.60` → total da linha ou soma do orçamento) |
+| `q` | texto livre: nome, CNPJ, `title`, `internal_notes`, `M{id}`, nome de item, **valor** (parse `1.866,60` / `1866.60` → total da linha ou soma do orçamento) |
 
 UI: seção Pesquisa na home (cliente, número, datas, caixa livre). Debounce ~300ms.
 Ao abrir **Novo** (rascunho), Pesquisa + filtros lead/status compactam numa barra; o usuário pode expandir de novo sem fechar o formulário.

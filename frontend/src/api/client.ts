@@ -129,6 +129,7 @@ export type QuoteRead = {
   extra_recipients: string[]
   monthly_draft_json: string | null
   notes: string | null
+  internal_notes: string | null
   title: string | null
   tiflux_ticket_number: string | null
   vhsys_os_id: string | null
@@ -195,6 +196,7 @@ export type QuoteWrite = {
   client_email?: string | null
   extra_recipients?: string[]
   notes?: string | null
+  internal_notes?: string | null
   title?: string | null
   items?: QuoteItemWrite[]
 }

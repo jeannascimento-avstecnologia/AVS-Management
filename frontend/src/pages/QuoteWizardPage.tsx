@@ -9,6 +9,7 @@ import {
   CloudOff,
   FileDown,
   Loader2,
+  Lock,
   Mail,
   MoreHorizontal,
   Plus,
@@ -165,6 +166,7 @@ type DraftForm = {
   client_email: string
   extra_recipients: string[]
   notes: string
+  internal_notes: string
   items: DraftItem[]
 }
 
@@ -451,6 +453,7 @@ function quoteToForm(quote: QuoteRead): DraftForm {
     client_email: quote.client_email ?? '',
     extra_recipients: [...(quote.extra_recipients ?? [])],
     notes: quote.notes?.trim() ? quote.notes : defaultQuoteNotes(quote.tiflux_ticket_number),
+    internal_notes: quote.internal_notes?.trim() ?? '',
     items: quote.items.map((item) => ({
       localKey: newLocalKey(),
       itemId: item.id,
@@ -504,6 +507,7 @@ function formToUpdate(form: DraftForm): QuoteUpdate {
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean),
     notes: form.notes.trim() || null,
+    internal_notes: form.internal_notes.trim() || null,
     title: form.title.trim() || null,
     items,
   }
@@ -2038,6 +2042,42 @@ export function QuoteWizardPage() {
               />
               <p className="mt-1.5 text-right text-[11px] text-muted-foreground tabular-nums">
                 {form.notes.length}/4000
+              </p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">Observações Internas</CardTitle>
+                <Badge
+                  variant="outline"
+                  className="border-amber-500/40 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+                >
+                  <Lock className="mr-1 h-3 w-3" />
+                  Não aparece no PDF
+                </Badge>
+              </div>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Anotações internas sobre este orçamento (ex: contexto da negociação, aprovações pendentes, histórico).
+              </p>
+            </CardHeader>
+            <CardContent>
+              <Label htmlFor="review-internal-notes" className="sr-only">
+                Observações internas do orçamento
+              </Label>
+              <textarea
+                id="review-internal-notes"
+                rows={3}
+                maxLength={4000}
+                disabled={!canEdit}
+                value={form.internal_notes}
+                placeholder="Ex.: Cliente pediu desconto de 10% se fechar até sexta. André aprovou..."
+                className={cn(inputClass, 'min-h-[72px] resize-y py-2.5')}
+                onChange={(e) => patchForm((p) => ({ ...p, internal_notes: e.target.value }))}
+              />
+              <p className="mt-1.5 text-right text-[11px] text-muted-foreground tabular-nums">
+                {form.internal_notes.length}/4000
               </p>
             </CardContent>
           </Card>

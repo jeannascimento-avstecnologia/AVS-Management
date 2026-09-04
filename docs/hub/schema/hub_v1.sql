@@ -43,6 +43,7 @@ CREATE TABLE quotes (
     extra_recipients        TEXT,   -- JSON array de e-mails extras (CC)
     notes                   TEXT,   -- observações do PDF / wizard passo 3
     title                   TEXT,   -- nome interno (UI); NÃO vai ao PDF
+    internal_notes          TEXT,   -- observações internas (UI/busca); NUNCA vai ao PDF
     tiflux_ticket_number    TEXT,
     vhsys_os_id             TEXT,
     pdf_path                TEXT,   -- UUID filename; fora web root

@@ -100,6 +100,7 @@ class HubDatabase:
             ("extra_recipients", "TEXT"),
             ("notes", "TEXT"),
             ("title", "TEXT"),
+            ("internal_notes", "TEXT"),
         )
         for name, col_type in additions:
             if name not in existing:

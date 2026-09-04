@@ -148,6 +148,29 @@ def test_migrate_quote_module_template_notes_columns(tmp_path: Path) -> None:
     assert "billed_by_name" in cols
 
 
+def test_migrate_quotes_internal_notes_column(tmp_path: Path) -> None:
+    db_path = tmp_path / "hub_legacy_internal.db"
+    import sqlite3
+
+    conn = sqlite3.connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE quotes (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            cnpj TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'draft',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        """
+    )
+    conn.close()
+    db = HubDatabase(db_path)
+    with db.connect() as opened:
+        cols = {str(row[1]) for row in opened.execute("PRAGMA table_info(quotes)")}
+    assert "internal_notes" in cols
+
+
 def test_get_hub_db_uses_settings(hub_env: Path) -> None:
     settings = get_settings()
     assert settings.hub_db_path == str(hub_env)

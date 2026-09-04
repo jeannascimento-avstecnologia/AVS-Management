@@ -53,6 +53,17 @@ def _normalize_optional_notes(value: str | None) -> str | None:
     return cleaned
 
 
+def _normalize_optional_internal_notes(value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = value.strip()
+    if not cleaned:
+        return None
+    if len(cleaned) > 4000:
+        raise ValueError("Observações internas: máximo 4000 caracteres.")
+    return cleaned
+
+
 def _normalize_module_id(value: str) -> str:
     cleaned = value.strip().lower().replace(" ", "_")
     if not cleaned or not _MODULE_ID_RE.fullmatch(cleaned):
@@ -315,6 +326,7 @@ class QuoteWrite(BaseModel):
     extra_recipients: list[str] = Field(default_factory=list)
     monthly_draft_json: str | None = None
     notes: str | None = None
+    internal_notes: str | None = None
     title: str | None = None
     items: list[QuoteItemWrite] = Field(default_factory=list)
 
@@ -355,6 +367,11 @@ class QuoteWrite(BaseModel):
     @classmethod
     def _normalize_notes(cls, value: str | None) -> str | None:
         return _normalize_optional_notes(value)
+
+    @field_validator("internal_notes")
+    @classmethod
+    def _normalize_internal_notes(cls, value: str | None) -> str | None:
+        return _normalize_optional_internal_notes(value)
 
     @field_validator("title")
     @classmethod
@@ -433,6 +450,7 @@ class QuoteUpdate(BaseModel):
     client_email: str | None = None
     extra_recipients: list[str] | None = None
     notes: str | None = None
+    internal_notes: str | None = None
     title: str | None = None
     items: list[QuoteItemWrite] | None = None
 
@@ -477,6 +495,11 @@ class QuoteUpdate(BaseModel):
     @classmethod
     def _normalize_notes(cls, value: str | None) -> str | None:
         return _normalize_optional_notes(value)
+
+    @field_validator("internal_notes")
+    @classmethod
+    def _normalize_internal_notes(cls, value: str | None) -> str | None:
+        return _normalize_optional_internal_notes(value)
 
     @field_validator("title")
     @classmethod
@@ -530,6 +553,7 @@ class QuoteRead(BaseModel):
     extra_recipients: list[str] = Field(default_factory=list)
     monthly_draft_json: str | None = None
     notes: str | None = None
+    internal_notes: str | None = None
     title: str | None = None
     tiflux_ticket_number: str | None
     vhsys_os_id: str | None
@@ -541,6 +565,11 @@ class QuoteRead(BaseModel):
     sent_at: str | None
     approved_at: str | None
     items: list[QuoteItemRead] = Field(default_factory=list)
+
+    @field_validator("internal_notes")
+    @classmethod
+    def _normalize_internal_notes(cls, value: str | None) -> str | None:
+        return _normalize_optional_internal_notes(value)
 
 
 class QuoteMonthlyChargeWrite(BaseModel):

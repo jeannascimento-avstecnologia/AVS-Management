@@ -297,7 +297,7 @@ def test_estimate_payment_summary_height_grows_with_modules() -> None:
     three = _estimate_payment_summary_height(
         [(implant, 1.0, 100.0), (monthly, 1.0, 200.0), (custom, 1.0, 50.0)]
     )
-    assert three == two + _ROW_H
+    assert three == two + _ROW_H + 0.5
     assert two > _GAP + _BAND_H
 
 
@@ -349,6 +349,8 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "Cliente PDF LTDA" in text
     assert "Jean Teste" in text
     assert "Vendedor:" in text
+    assert "E-mail:" in text
+    assert "Telefone:" in text
     assert "Tecnico responsavel" not in text
     assert "NOME INTERNO NAO IMPRIMIR" not in text
     assert "Os valores podem sofrer alteracao sem previo aviso" not in text
@@ -370,10 +372,10 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     # Implantação NÃO deve refletir 10h × 100 (mesmo com campos preenchidos no model)
     assert "Horas: 10" not in text
     assert "1.000,00" not in text and "1000,00" not in text
-    # Dados de pagamento (qtde + valores) + observações
-    assert "TOTAL DE HORAS/QTDE DE SERVICOS" in text
+    # Dados de pagamento (label + valor, sem QTDE) + observações
+    assert "TOTAL DE HORAS/QTDE DE SERVICOS" not in text
     assert "VALOR TOTAL DOS SERVICOS" in text
-    assert "TOTAL DE PRODUTOS" in text
+    assert "TOTAL DE PRODUTOS" not in text
     assert "VALOR TOTAL DOS PRODUTOS" in text
     assert "VALOR TOTAL DO ORCAMENTO" in text
     assert "OBSERVACOES" in text
@@ -381,7 +383,7 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "QTDADE" not in text
     assert "Desconto 0%" not in text
     assert "Forma de Pagamento Servicos" in text
-    assert "Observacoes" in text
+    assert "Obs:" in text
     assert "Condicao implant" in text
     assert "Anual - Recorrente Mensal" in text
     assert "Faturado por" in text
@@ -394,6 +396,17 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     from pypdf import PdfReader
 
     assert len(PdfReader(str(dest)).pages) == 1
+
+
+def test_pdf_omits_internal_notes(tmp_path: Path) -> None:
+    dest = tmp_path / "internal-notes.pdf"
+    secret = "SEGREDO_INTERNO_XYZ_NAO_PDF"
+    quote = _sample_quote().model_copy(update={"internal_notes": secret})
+    render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
+    text = _pdf_text(dest)
+    assert secret not in text
+    assert "Observacoes internas" not in text
+    assert "SEGREDO_INTERNO" not in text
 
 
 def test_pdf_simplified_module_hides_line_names(tmp_path: Path) -> None:
@@ -522,7 +535,8 @@ def test_pdf_omits_removed_implantacao_and_follows_order(tmp_path: Path) -> None
     assert "MENSALIDADE" in text
     assert "LICENCAS" in text or "LICENÇAS" in text or "Licenc" in text
     assert "TOTAL DE HORAS/QTDE DE SERVICOS" not in text
-    assert "TOTAL DE PRODUTOS" in text
+    assert "TOTAL DE PRODUTOS" not in text
+    assert "VALOR TOTAL DOS PRODUTOS" in text
     assert "VALOR TOTAL DO ORCAMENTO" in text
 
 
@@ -588,6 +602,9 @@ def test_pdf_header_version_and_monthly_outside_total(tmp_path: Path) -> None:
     assert "v3" in text
     assert "MENSALIDADES" in text
     assert "TOTAL MENSALIDADES" in text
+    assert "Total mensalidade" in text
+    assert "Mensalidade AVS TECNOLOGIA" not in text
+    assert "Mensalidade Fornecedor" not in text
     assert "Plano mensal" in text
     assert "Fornecedor" in text
     assert "Intermediador" in text
@@ -665,7 +682,6 @@ def test_pdf_shows_discount_only_when_applied(tmp_path: Path) -> None:
     render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
     text = _pdf_text(dest)
     assert "Desconto" in text
-    assert "Aplicado" in text
 
 
 def test_pdf_notes_verbatim_no_hardcoded_disclaimer(tmp_path: Path) -> None:

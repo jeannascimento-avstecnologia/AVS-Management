@@ -30,7 +30,7 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
 
    **Rodapé (todas as páginas):** paginação `Pagina X/{nb}` + logo VEIVO Sistemas (`pdf_icons/veivo-powered-by.png`) no canto inferior direito, opacidade 40%.
 
-2. **Primeiro bloco: DADOS DO CLIENTE** — Nome (`legal_name` / `client_name`), CNPJ, Vendedor (`quotes.created_by` → nome do usuário; fallback usuário logado).
+2. **Primeiro bloco: DADOS DO CLIENTE** — Nome (`legal_name` / `client_name`), CNPJ, Vendedor (`quotes.created_by` → nome do usuário; fallback usuário logado). Contato do cliente (nome/e-mail/telefone) **opcional à direita**, quando disponível.
 
 3. **Módulos (N seções)** — ordem `sort_order` de `quotes.modules_json`:
    - Título = `module.title` (negrito na cor `_BLUE` + barra vertical azul 1.2 mm à esquerda + regra cinza). **Sem** diferenciação de cor por módulo.
@@ -45,15 +45,15 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
 4. Divisórias cinza entre módulos quando houver mais de um.
 
 5. **Dados de pagamento / resumo**:
-   - Uma linha (ou par) de resumo **por módulo presente** (qtde itens + total líquido), rótulo = título do módulo.
+   - Uma linha de resumo **por módulo presente** (apenas label + valor líquido; **sem** coluna QTDE), rótulo = título do módulo (`TOTAL {título}`).
    - Se o módulo tiver linhas marcadas como mensalidade: abaixo do total do grupo, em **fonte menor** (itálico muted), o valor mensal daquele grupo (fornecedor | intermediador).
-   - Se ainda existirem módulos com `legacy_kind` `implantacao` / `mensalidade`, manter também os rótulos OS VHSYS:
-     - `TOTAL DE HORAS/QTDE DE SERVICOS` / `VALOR TOTAL DOS SERVICOS` ← `implantacao`
-     - `TOTAL DE PRODUTOS` / `VALOR TOTAL DOS PRODUTOS` ← `mensalidade`
+   - Se ainda existirem módulos com `legacy_kind` `implantacao` / `mensalidade`, manter os rótulos OS VHSYS de **valor** (sem QTDE):
+     - `VALOR TOTAL DOS SERVICOS` ← `implantacao`
+     - `VALOR TOTAL DOS PRODUTOS` ← `mensalidade`
    - `VALOR TOTAL DO ORCAMENTO` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver). Destaque: box navy, texto branco.
    - Seção **`MENSALIDADES`** (cobranças) **depois** do valor total: fora do `VALOR TOTAL DO ORCAMENTO`. Linhas selecionadas continuam nos módulos originais (duplicate-include). Total da seção: box com outline azul.
 
-6. **OBSERVACOES** — imprime **somente** `quotes.notes`. Sem disclaimer/ticket hardcoded. Bloco mesmo se vazio (`-`). Pré-fill do wizard (aviso + `Ticket no.:`) entra só se o usuário salvou isso em `notes`.
+6. **OBSERVACOES** — imprime **somente** `quotes.notes`. Sem disclaimer/ticket hardcoded. Bloco mesmo se vazio (`-`). Pré-fill do wizard (aviso + `Ticket no.:`) entra só se o usuário salvou isso em `notes`. **`quotes.internal_notes` nunca é impresso** (campo 100% interno).
 
 7. **Assinaturas** — **não** imprimir (removidas).
 

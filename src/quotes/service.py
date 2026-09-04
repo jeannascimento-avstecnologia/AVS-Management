@@ -90,6 +90,7 @@ _QUOTE_COLUMNS = (
     "extra_recipients",
     "monthly_draft_json",
     "notes",
+    "internal_notes",
     "title",
     "tiflux_ticket_number",
     "vhsys_os_id",
@@ -316,6 +317,16 @@ def _optional_notes(row: sqlite3.Row) -> str | None:
     return cleaned or None
 
 
+def _optional_internal_notes(row: sqlite3.Row) -> str | None:
+    if "internal_notes" not in row.keys():
+        return None
+    raw = row["internal_notes"]
+    if raw is None:
+        return None
+    cleaned = str(raw).strip()
+    return cleaned or None
+
+
 def _dump_modules(modules: list[QuoteModule]) -> str:
     return json.dumps([m.model_dump() for m in modules], ensure_ascii=False)
 
@@ -461,6 +472,7 @@ def _row_to_quote(row: sqlite3.Row, items: list[QuoteItemRead]) -> QuoteRead:
         ),
         monthly_draft_json=(str(row["monthly_draft_json"]) if "monthly_draft_json" in row.keys() else None),
         notes=_optional_notes(row),
+        internal_notes=_optional_internal_notes(row),
         title=_optional_title(row),
         tiflux_ticket_number=row["tiflux_ticket_number"],
         vhsys_os_id=row["vhsys_os_id"],
@@ -602,7 +614,7 @@ class QuoteService:
                     monthly_payment_plan, monthly_discount_pct, monthly_discount_value,
                     monthly_labor_hours, monthly_labor_hourly_rate,
                     modules_json,
-                    client_email, extra_recipients, notes, title,
+                    client_email, extra_recipients, notes, internal_notes, title,
                     created_by, created_at, updated_at
                 ) VALUES (
                     ?, ?, ?, ?,
@@ -612,7 +624,7 @@ class QuoteService:
                     ?, ?, ?,
                     ?, ?,
                     ?,
-                    ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?,
                     ?, ?, ?
                 )
                 """,
@@ -638,6 +650,7 @@ class QuoteService:
                     data.client_email,
                     _dump_extra_recipients(data.extra_recipients),
                     seed_quote_notes(data.notes, ticket=None),
+                    (data.internal_notes.strip() if data.internal_notes else None),
                     data.title,
                     created_by,
                     now,
@@ -705,6 +718,7 @@ class QuoteService:
             or_parts = [
                 "LOWER(IFNULL(q.client_name, '')) LIKE LOWER(?)",
                 "LOWER(IFNULL(q.title, '')) LIKE LOWER(?)",
+                "LOWER(IFNULL(q.internal_notes, '')) LIKE LOWER(?)",
                 "CAST(q.id AS TEXT) LIKE ?",
                 "('M' || CAST(q.id AS TEXT)) LIKE UPPER(?)",
                 """EXISTS (
@@ -712,7 +726,7 @@ class QuoteService:
                     WHERE qi.quote_id = q.id AND LOWER(qi.name) LIKE LOWER(?)
                 )""",
             ]
-            q_params: list[Any] = [like, like, like, like, like]
+            q_params: list[Any] = [like, like, like, like, like, like]
             digits = re.sub(r"\D", "", term)
             if digits:
                 or_parts.append("q.cnpj LIKE ?")
@@ -780,6 +794,9 @@ class QuoteService:
             if "notes" in patch:
                 raw_notes = patch["notes"]
                 patch["notes"] = (str(raw_notes).strip() if raw_notes else None) or None
+            if "internal_notes" in patch:
+                raw = patch["internal_notes"]
+                patch["internal_notes"] = (str(raw).strip() if raw else None) or None
 
             typed_items: list[QuoteItemWrite] | None = None
             if items_raw is not None:

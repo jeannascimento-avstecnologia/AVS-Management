@@ -216,6 +216,38 @@ def test_list_search_filters_and_title(quotes_client: TestClient) -> None:
     assert patched.json()["title"] == "Nome interno"
 
 
+def test_internal_notes_persist_and_search(quotes_client: TestClient) -> None:
+    created = quotes_client.post(
+        "/orcamentos",
+        json={**QUOTE_PAYLOAD, "internal_notes": "Cliente pediu desconto se fechar sexta"},
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    assert body["internal_notes"] == "Cliente pediu desconto se fechar sexta"
+    qid = body["id"]
+
+    got = quotes_client.get(f"/orcamentos/{qid}")
+    assert got.status_code == 200
+    assert got.json()["internal_notes"] == "Cliente pediu desconto se fechar sexta"
+
+    by_q = quotes_client.get("/orcamentos", params={"q": "desconto se fechar"})
+    assert by_q.status_code == 200
+    assert {q["id"] for q in by_q.json()["quotes"]} == {qid}
+
+    updated = quotes_client.put(
+        f"/orcamentos/{qid}",
+        json={"internal_notes": "Andre aprovou o desconto"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["internal_notes"] == "Andre aprovou o desconto"
+
+    by_new = quotes_client.get("/orcamentos", params={"q": "Andre aprovou"})
+    assert {q["id"] for q in by_new.json()["quotes"]} == {qid}
+
+    miss_old = quotes_client.get("/orcamentos", params={"q": "desconto se fechar"})
+    assert miss_old.json()["quotes"] == []
+
+
 def test_list_templates_empty(quotes_client: TestClient) -> None:
     res = quotes_client.get("/orcamentos/templates")
     assert res.status_code == 200
