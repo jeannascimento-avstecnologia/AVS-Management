@@ -399,6 +399,37 @@ def _estimate_section_height(
         h += _GAP + _ROW_H
     h += (_ROW_H + 0.6) + _GAP  # TOTAL LIQUIDO + ln
     h += _module_meta_height(notes, billed_by_name, billed_by_cnpj)
+    # #region agent log
+    try:
+        import time as _t3
+
+        _pe = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
+        _pe.parent.mkdir(parents=True, exist_ok=True)
+        _pe.open("a", encoding="utf-8").write(
+            json.dumps(
+                {
+                    "sessionId": "e0d4ae",
+                    "runId": "pre-fix",
+                    "hypothesisId": "E",
+                    "location": "pdf.py:_estimate_section_height",
+                    "message": "height budget payment+meta",
+                    "data": {
+                        "discount": float(discount),
+                        "pay_budget_mm": (_GAP + 3.6 + _ROW_H + _GAP + _ROW_H)
+                        if discount <= 0
+                        else (_GAP + 3.6 + _ROW_H + _GAP + _ROW_H + _ROW_H),
+                        "meta_budget_mm": _module_meta_height(notes, billed_by_name, billed_by_cnpj),
+                        "final_gap": _GAP,
+                    },
+                    "timestamp": int(_t3.time() * 1000),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
     return h
 
 
@@ -510,7 +541,7 @@ def render_quote_pdf(
                 item = by_item.get(iid)
                 product = (item.name if item else "") or f"Item {iid}"
                 line_total = float(item.total_value) if item else 0.0
-                monthly_rows.append({"role": "product", "name": product, "amount": line_total})
+                monthly_rows.append({"role": "product", "name": product, "amount": line_total, "item_id": iid})
                 forn_amt = float(a.get("fornecedor_amount") or 0.0)
                 inter_amt = float(a.get("intermediador_amount") or 0.0)
                 forn_name = str(a.get("fornecedor_name") or "Fornecedor")
@@ -613,6 +644,8 @@ def render_quote_pdf(
         )
         module_nets.append((mod, _section_qty_total(mod_items), net))
 
+    modules_by_id: dict[str, QuoteModule] = {m.id: m for m in modules}
+
     _ensure_space(pdf, _estimate_payment_summary_height(module_nets, monthly_by_module))
     _write_payment_summary(
         pdf,
@@ -622,8 +655,17 @@ def render_quote_pdf(
     )
 
     if monthly_rows:
-        _ensure_space(pdf, _estimate_monthly_charges_height(monthly_rows))
-        _write_monthly_charges_section(pdf, rows=monthly_rows)
+        _ensure_space(
+            pdf,
+            _estimate_monthly_charges_height(monthly_rows, modules_by_id, quote.items, issuer.name),
+        )
+        _write_monthly_charges_section(
+            pdf,
+            rows=monthly_rows,
+            modules_by_id=modules_by_id,
+            items=quote.items,
+            issuer_name=issuer.name,
+        )
 
     notes_for_pdf = _notes_with_disclaimer_and_ticket(quote)
     _ensure_space(pdf, _estimate_observations_height(notes_for_pdf))
@@ -968,8 +1010,13 @@ def _write_section(
     discount, net = apply_section_discount(section_subtotal, discount_pct, discount_value)
 
     pay = _safe(format_payment_plan_label(payment_plan)).strip()
+    # #region agent log
+    _y_after_items = float(pdf.get_y())
+    # #endregion
     pdf.ln(_GAP)
+    _pay_branch = "none"
     if discount > 0:
+        _pay_branch = "discount_and_pay"
         pdf.set_font("Helvetica", "B", _FS_BODY)
         pdf.set_text_color(*_INK)
         pdf.cell(0, 3.6, "Desconto / Pagamento", new_x="LMARGIN", new_y="NEXT")
@@ -986,12 +1033,49 @@ def _write_section(
         pdf.cell(0, _ROW_H, " | ".join(discount_bits), new_x="LMARGIN", new_y="NEXT")
         pdf.ln(_GAP)
     elif pay and pay != "-":
+        _pay_branch = "pay_only"
         pdf.set_font("Helvetica", "B", _FS_BODY)
         pdf.set_text_color(*_INK)
         pdf.cell(0, 3.6, "Pagamento", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", "", _FS_BODY)
         pdf.cell(0, _ROW_H, pay, new_x="LMARGIN", new_y="NEXT")
         pdf.ln(_GAP)
+    # #region agent log
+    try:
+        import time as _t
+
+        _y_before_sub = float(pdf.get_y())
+        _p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
+        _p.parent.mkdir(parents=True, exist_ok=True)
+        _p.open("a", encoding="utf-8").write(
+            json.dumps(
+                {
+                    "sessionId": "e0d4ae",
+                    "runId": "pre-fix",
+                    "hypothesisId": "A",
+                    "location": "pdf.py:_write_section:pay_block",
+                    "message": "gap last-item to subtotal",
+                    "data": {
+                        "title": title[:80],
+                        "branch": _pay_branch,
+                        "pay": pay[:80],
+                        "discount": float(discount),
+                        "y_after_items": _y_after_items,
+                        "y_before_subtotal": _y_before_sub,
+                        "dy_mm": round(_y_before_sub - _y_after_items, 2),
+                        "row_h": _ROW_H,
+                        "gap": _GAP,
+                        "cell_w": 0,
+                    },
+                    "timestamp": int(_t.time() * 1000),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
 
     pdf.set_font("Helvetica", "", _FS_BODY)
     subtotal_label = "Subtotal (itens + mao de obra)" if include_labor and labor > 0 else "Subtotal (itens)"
@@ -1022,12 +1106,18 @@ def _write_section(
     notes_clean = (notes or "").strip()
     billed_clean = (billed_by_name or "").strip()
     cnpj_clean = (billed_by_cnpj or "").strip()
+    # #region agent log
+    _y_after_total = float(pdf.get_y())
+    # #endregion
     if notes_clean:
         pdf.ln(_GAP)
         pdf.set_font("Helvetica", "B", _FS_BODY)
         pdf.cell(0, _ROW_H, "Observacoes", new_x="LMARGIN", new_y="NEXT")
         pdf.set_font("Helvetica", "", _FS_BODY)
         pdf.multi_cell(_CONTENT_W, 4.0, _safe(notes_clean))
+    # #region agent log
+    _y_after_notes = float(pdf.get_y())
+    # #endregion
     if billed_clean or cnpj_clean:
         billed_label = billed_clean
         if cnpj_clean:
@@ -1038,6 +1128,41 @@ def _write_section(
         pdf.cell(0, _ROW_H, f"Faturado por: {_safe(billed_label)[:90]}", new_x="LMARGIN", new_y="NEXT")
 
     pdf.ln(_GAP)
+    # #region agent log
+    try:
+        import time as _t2
+
+        _y_end = float(pdf.get_y())
+        _p2 = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
+        _p2.parent.mkdir(parents=True, exist_ok=True)
+        _p2.open("a", encoding="utf-8").write(
+            json.dumps(
+                {
+                    "sessionId": "e0d4ae",
+                    "runId": "pre-fix",
+                    "hypothesisId": "C",
+                    "location": "pdf.py:_write_section:meta",
+                    "message": "notes billed final gaps",
+                    "data": {
+                        "title": title[:80],
+                        "has_notes": bool(notes_clean),
+                        "has_billed": bool(billed_clean or cnpj_clean),
+                        "y_after_total": _y_after_total,
+                        "y_after_notes": _y_after_notes,
+                        "y_end": _y_end,
+                        "dy_notes_mm": round(_y_after_notes - _y_after_total, 2),
+                        "dy_billed_and_final_mm": round(_y_end - _y_after_notes, 2),
+                        "est_meta": _module_meta_height(notes, billed_by_name, billed_by_cnpj),
+                    },
+                    "timestamp": int(_t2.time() * 1000),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
     pdf.c_margin = original_c_margin
 
 
@@ -1183,59 +1308,173 @@ def _write_payment_summary(
     pdf.c_margin = original_c_margin
 
 
-def _estimate_monthly_charges_height(rows: list[dict[str, Any]]) -> float:
+def _estimate_monthly_charges_height(
+    rows: list[dict[str, Any]],
+    modules_by_id: dict[str, Any] | None = None,
+    items: list[Any] | None = None,
+    issuer_name: str = "AVS TECNOLOGIA",
+) -> float:
     if not rows:
         return 0.0
-    # produto longo pode quebrar ~3 linhas; + total
-    extra = 0
-    for r in rows:
-        n = len(str(r.get("name") or ""))
-        extra += max(0, (n // 50))
-    return _GAP + _BAND_H + (_ROW_H * (len(rows) + 1 + extra)) + _GAP + (_ROW_H + 5.0)
+    # Estimar número de grupos (fornecedores distintos)
+    n_suppliers = 1  # mínimo 1 grupo
+    if modules_by_id and items:
+        items_by_id = {int(i.id): i for i in items}
+        suppliers_seen: set[str] = set()
+        for r in rows:
+            if r.get("role") == "product" and r.get("item_id"):
+                item = items_by_id.get(int(r["item_id"]))
+                if item:
+                    mod = modules_by_id.get(item.section)
+                    billed = (mod.billed_by_name or "").strip() if mod and hasattr(mod, "billed_by_name") else ""
+                    suppliers_seen.add(billed or issuer_name)
+        if suppliers_seen:
+            n_suppliers = len(suppliers_seen)
+
+    n_products = sum(1 for r in rows if r.get("role") == "product")
+    extra = sum(max(0, len(str(r.get("name") or "")) // 50) for r in rows)
+    # Cada grupo: header (BAND_H) + itens + subtotal + gap
+    per_group = _BAND_H + _GAP * 2 + _ROW_H  # header + subtotal
+    return (_GAP + _BAND_H +  # section band "MENSALIDADES"
+            n_suppliers * per_group +  # group headers + subtotals
+            (n_products + extra) * _ROW_H +  # item rows
+            _ROW_H + (_ROW_H + 5.0) +  # total row + box
+            _GAP * 4)
 
 
 def _write_monthly_charges_section(
     pdf: _QuotePdf,
     *,
     rows: list[dict[str, Any]],
+    modules_by_id: dict[str, Any] | None = None,
+    items: list[Any] | None = None,
+    issuer_name: str = "AVS TECNOLOGIA",
 ) -> float:
-    """Renderiza seção 'MENSALIDADES' (produto + fornecedor/intermediador)."""
+    """Renderiza seção 'MENSALIDADES' agrupada por fornecedor (billed_by_name)."""
     if not rows:
         return 0.0
-    wrap_counts: list[int] = []
+
+    modules_by_id = modules_by_id or {}
+    items_by_id: dict[int, Any] = {}
+    if items:
+        items_by_id = {int(i.id): i for i in items}
+
+    # ── Passo 1: Extrair product rows com seus item_ids ──
+    # Cada product row corresponde a um item de licença.
+    # Precisamos mapear: product → item.section → module.billed_by_name → supplier
+    product_entries: list[dict[str, Any]] = []
+    for r in rows:
+        if r.get("role") == "product":
+            product_entries.append({
+                "name": str(r.get("name") or "-"),
+                "amount": float(r.get("amount") or 0.0),
+                "item_id": r.get("item_id"),  # pode não existir em dados legados
+            })
+
+    # ── Passo 2: Agrupar por fornecedor ──
+    supplier_groups: dict[str, dict[str, Any]] = {}
+    supplier_order: list[str] = []  # manter ordem de aparição
+
+    for entry in product_entries:
+        # Determinar o fornecedor
+        supplier = issuer_name  # fallback: AVS
+        item_id = entry.get("item_id")
+        if item_id is not None and items_by_id:
+            item = items_by_id.get(int(item_id))
+            if item:
+                mod = modules_by_id.get(item.section)
+                if mod and hasattr(mod, "billed_by_name"):
+                    billed = (mod.billed_by_name or "").strip()
+                    if billed:
+                        supplier = billed
+
+        if supplier not in supplier_groups:
+            supplier_groups[supplier] = {"items": [], "total": 0.0}
+            supplier_order.append(supplier)
+        supplier_groups[supplier]["items"].append(entry)
+        supplier_groups[supplier]["total"] = round_money(
+            supplier_groups[supplier]["total"] + entry["amount"]
+        )
+
+    # Se não conseguiu agrupar (dados legados sem item_id), fallback para layout flat
+    if not product_entries:
+        # Fallback: itens sem role=product (formato charges legado)
+        total = 0.0
+        for r in rows:
+            amount = float(r.get("amount") or 0.0)
+            total += amount
+        supplier_groups = {issuer_name: {
+            "items": [{"name": str(r.get("name") or "-"), "amount": float(r.get("amount") or 0.0)} for r in rows],
+            "total": round_money(total),
+        }}
+        supplier_order = [issuer_name]
+
+    # ── Passo 3: Renderizar ──
     _section_band(pdf, "MENSALIDADES", _NAVY)
     original_c_margin = pdf.c_margin
     pdf.c_margin = _CELL_PAD
-    total = 0.0
-    pdf.set_text_color(*_INK)
-    line_h = _LINE_H
-    name_w = _COL_ITEM - _CELL_PAD
-    x_amt = pdf.l_margin + _LABEL_W
-    for r in rows:
-        role = str(r.get("role") or "split")
-        raw = (str(r.get("name") or "")).replace("\n", " ").strip() or "-"
-        amount = float(r.get("amount") or 0.0)
-        label = raw if role == "product" else f"  {raw}"
-        if role == "product":
-            pdf.set_font("Helvetica", "B", _FS_BODY)
-        else:
+    grand_total = 0.0
+
+    for supplier in supplier_order:
+        data = supplier_groups[supplier]
+        grand_total += data["total"]
+
+        # Sub-header com fundo cinza
+        pdf.ln(_GAP)
+        y_hdr = pdf.get_y()
+        pdf.set_fill_color(*_HEADER_FILL)
+        pdf.rect(pdf.l_margin, y_hdr, _CONTENT_W, _ROW_H + 1.0, style="F")
+        pdf.set_draw_color(*_RULE)
+        pdf.set_line_width(0.3)
+        pdf.line(pdf.l_margin, y_hdr + _ROW_H + 1.0, pdf.l_margin + _CONTENT_W, y_hdr + _ROW_H + 1.0)
+        pdf.set_xy(pdf.l_margin + _CELL_PAD, y_hdr + 0.4)
+        pdf.set_font("Helvetica", "B", _FS_BODY)
+        pdf.set_text_color(*_INK)
+        pdf.cell(_CONTENT_W - _CELL_PAD, _ROW_H, _safe(f"Mensalidade {supplier}"))
+        pdf.set_xy(pdf.l_margin, y_hdr + _ROW_H + 1.0)
+        pdf.ln(0.5)
+
+        # Itens com zebra
+        for idx, entry in enumerate(data["items"]):
+            y0 = pdf.get_y()
+            name = _safe(str(entry["name"]).replace("\n", " ").strip() or "-")
+            amount = float(entry["amount"])
+
+            # Zebra
+            if idx % 2 == 1:
+                pdf.set_fill_color(*_ROW_ALT)
+                pdf.rect(pdf.l_margin, y0, _CONTENT_W, _ROW_H + 0.6, style="F")
+
             pdf.set_font("Helvetica", "", _FS_BODY)
-            total += amount
-        wrapped = _wrap_text_lines(pdf, _safe(label), name_w)
-        wrap_counts.append(len(wrapped))
-        row_h = max(_ROW_H + 1.0, len(wrapped) * line_h + 1.0)
-        y0 = pdf.get_y()
-        x_amt_col = pdf.l_margin + _LABEL_W
-        pdf.set_xy(pdf.l_margin + _CELL_PAD, y0 + 0.6)
-        pdf.multi_cell(name_w, line_h, "\n".join(wrapped))
-        pdf.set_xy(x_amt_col, y0)
-        pdf.cell(_COL_TOTAL, row_h, _brl(amount) + " ", align="R")
-        pdf.set_xy(pdf.l_margin, y0 + row_h)
-    monthly_total = round_money(total)
+            pdf.set_text_color(*_INK)
+            name_w = _LABEL_W - _CELL_PAD * 2
+            wrapped = _wrap_text_lines(pdf, name, name_w)
+            row_h = max(_ROW_H + 0.6, len(wrapped) * _LINE_H + 0.6)
+
+            pdf.set_xy(pdf.l_margin + _CELL_PAD * 2, y0 + 0.3)
+            pdf.multi_cell(name_w, _LINE_H, "\n".join(wrapped))
+            pdf.set_xy(pdf.l_margin + _LABEL_W, y0)
+            pdf.cell(_COL_TOTAL, row_h, _brl(amount) + " ", align="R")
+            pdf.set_xy(pdf.l_margin, y0 + row_h)
+
+        # Subtotal do fornecedor
+        pdf.set_draw_color(*_RULE)
+        pdf.set_line_width(0.3)
+        pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + _CONTENT_W, pdf.get_y())
+        pdf.ln(0.5)
+        pdf.set_font("Helvetica", "B", _FS_BODY)
+        pdf.set_text_color(*_INK)
+        pdf.cell(_LABEL_W, _ROW_H, _safe(f"Total Mensalidade {supplier}"), align="L")
+        pdf.cell(_COL_TOTAL, _ROW_H, _brl(data["total"]) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(_GAP)
+
+    # ── Grand total ──
+    grand_total = round_money(grand_total)
     pdf.set_font("Helvetica", "B", _FS_BODY)
     pdf.cell(_LABEL_W, _ROW_H, "TOTAL MENSALIDADES", align="L")
-    pdf.cell(_COL_TOTAL, _ROW_H, _brl(monthly_total) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
-    # Box outline azul para total mensalidades
+    pdf.cell(_COL_TOTAL, _ROW_H, _brl(grand_total) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
+
+    # Box outline azul
     pdf.ln(_GAP)
     y_box = pdf.get_y()
     box_h = _ROW_H + 3.0
@@ -1247,25 +1486,12 @@ def _write_monthly_charges_section(
     pdf.set_text_color(*_BLUE)
     pdf.set_xy(pdf.l_margin + 3.0, y_box + 0.8)
     pdf.cell(_LABEL_W - 3.0, box_h - 1.6, "TOTAL MENSALIDADES", align="R")
-    pdf.cell(_COL_TOTAL, box_h - 1.6, _brl(monthly_total), align="R")
+    pdf.cell(_COL_TOTAL, box_h - 1.6, _brl(grand_total), align="R")
     pdf.set_xy(pdf.l_margin, y_box + box_h)
     pdf.set_text_color(*_INK)
     pdf.set_draw_color(0, 0, 0)
     pdf.ln(_GAP)
-    # #region agent log
-    _agent_dbg(
-        "D",
-        "pdf.py:_write_monthly_charges_section",
-        "monthly section rows",
-        {
-            "roles": [str(r.get("role")) for r in rows],
-            "names": [str(r.get("name") or "")[:80] for r in rows],
-            "amounts": [float(r.get("amount") or 0) for r in rows],
-            "wrap_counts": wrap_counts,
-            "name_w": name_w,
-        },
-    )
-    # #endregion
+
     pdf.c_margin = original_c_margin
     return 0.0
 
