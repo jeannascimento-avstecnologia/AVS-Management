@@ -396,19 +396,14 @@ def _estimate_section_height(
     n_right = 2 + (1 if discount > 0 else 0)  # subtotal + total [+ desconto]
     pay_est = _safe(format_payment_plan_label(payment_plan)).strip()
     billed_est = bool((billed_by_name or "").strip() or (billed_by_cnpj or "").strip())
-    n_extra = (
+    n_right += (
         (1 if pay_est and pay_est != "-" else 0)
         + (1 if notes_clean_est else 0)
         + (1 if billed_est else 0)
     )
-    n_installments = len(installments or [])
-    h += (
-        _GAP * 0.5
-        + n_right * _ROW_H
-        + n_extra * (_ROW_H - 1.0)
-        + n_installments * (_ROW_H - 1.0)
-        + _GAP * 0.5
-    )
+    n_left = len(installments or [])
+    n_pair_est = max(n_left, n_right)
+    h += _GAP * 0.5 + n_pair_est * _ROW_H + _GAP * 0.5
     # #region agent log
     try:
         import time as _t3
@@ -425,9 +420,9 @@ def _estimate_section_height(
                     "message": "height budget payment+meta",
                     "data": {
                         "discount": float(discount),
-                        "pay_budget_mm": n_extra * (_ROW_H - 1.0),
-                        "meta_budget_mm": n_extra * (_ROW_H - 1.0),
-                        "paired_rows": n_right,
+                        "pay_budget_mm": n_pair_est * _ROW_H,
+                        "meta_budget_mm": 0.0,
+                        "paired_rows": n_pair_est,
                         "final_gap": _GAP * 0.5,
                     },
                     "timestamp": int(_t3.time() * 1000),
@@ -1113,7 +1108,19 @@ def _write_section(
 
     pay = _safe(format_payment_plan_label(payment_plan)).strip()
     notes_clean = (notes or "").strip()
+    installment_rows = installments or []
     lefts: list[str] = []
+    for idx_inst, line in enumerate(installment_rows):
+        due = str(line.get("due_date", "") if isinstance(line, dict) else "")
+        amt = float(line.get("amount", 0) if isinstance(line, dict) else 0)
+        due_fmt = due
+        if due and len(due) == 10:
+            try:
+                parts = due.split("-")
+                due_fmt = f"{parts[2]}/{parts[1]}/{parts[0]}"
+            except (IndexError, ValueError):
+                pass
+        lefts.append(f"Parcela {idx_inst + 1} ({due_fmt}) {_brl(amt)}")
     subtotal_label = "Subtotal (itens + mao de obra)" if include_labor and labor > 0 else "Subtotal (itens)"
     rights: list[tuple[str, str, str]] = [
         (subtotal_label, _brl(section_subtotal) + " ", "body"),
@@ -1122,6 +1129,12 @@ def _write_section(
         rights.append(("Desconto", f"- {_brl(discount)} ", "body"))
     rights.append(("TOTAL LIQUIDO", _brl(net) + " ", "bold"))
     _pay_compact = bool(pay and pay != "-")
+    if _pay_compact:
+        rights.append((f"Pagamento: {pay}", "", "muted"))
+    if notes_clean:
+        rights.append((f"Obs: {_safe(notes_clean)[:90]}", "", "muted"))
+    if billed_clean or cnpj_clean:
+        rights.append((f"Faturado por: {_safe(billed_label)[:90]}", "", "muted"))
     # #region agent log
     _y_after_items = float(pdf.get_y())
     # #endregion
@@ -1141,66 +1154,24 @@ def _write_section(
             row_h = _ROW_H - 1.0
         else:
             row_h = _ROW_H
+        if style == "muted":
+            pdf.set_font("Helvetica", "", _FS_MUTED)
+            pdf.set_text_color(*_MUTED)
+            pdf.cell(meta_w, row_h, left_txt, align="L")
+            pdf.cell(tot_lab_w + _COL_TOTAL, row_h, rlab + " ", align="R", new_x="LMARGIN", new_y="NEXT")
+            pdf.set_text_color(*_INK)
+            continue
         pdf.set_font("Helvetica", "", _FS_MUTED)
         pdf.set_text_color(*_MUTED)
         pdf.cell(meta_w, row_h, left_txt, align="L")
         if style == "bold":
             pdf.set_font("Helvetica", "B", _FS_BODY)
             pdf.set_text_color(*_INK)
-        elif style == "muted":
-            pdf.set_font("Helvetica", "", _FS_MUTED)
-            pdf.set_text_color(*_MUTED)
         else:
             pdf.set_font("Helvetica", "", _FS_BODY)
             pdf.set_text_color(*_INK)
         pdf.cell(tot_lab_w, row_h, rlab, align="R")
         pdf.cell(_COL_TOTAL, row_h, rval, align="R", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(*_INK)
-    full_w = _LABEL_W + _COL_TOTAL
-    installment_rows = installments or []
-    if installment_rows:
-        pdf.set_font("Helvetica", "", _FS_MUTED)
-        pdf.set_text_color(*_MUTED)
-        for idx_inst, line in enumerate(installment_rows):
-            due = str(line.get("due_date", "") if isinstance(line, dict) else "")
-            amt = float(line.get("amount", 0) if isinstance(line, dict) else 0)
-            due_fmt = due
-            if due and len(due) == 10:
-                try:
-                    parts = due.split("-")
-                    due_fmt = f"{parts[2]}/{parts[1]}/{parts[0]}"
-                except (IndexError, ValueError):
-                    pass
-            pdf.cell(
-                full_w,
-                _ROW_H - 1.0,
-                f"Parcela {idx_inst + 1} ({due_fmt})  {_brl(amt)} ",
-                align="R",
-                new_x="LMARGIN",
-                new_y="NEXT",
-            )
-        pdf.set_text_color(*_INK)
-    if pay and pay != "-":
-        pdf.set_font("Helvetica", "", _FS_MUTED)
-        pdf.set_text_color(*_MUTED)
-        pdf.cell(full_w, _ROW_H - 1.0, f"Pagamento: {pay} ", align="R", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(*_INK)
-    if notes_clean:
-        pdf.set_font("Helvetica", "", _FS_MUTED)
-        pdf.set_text_color(*_MUTED)
-        pdf.cell(full_w, _ROW_H - 1.0, f"Obs: {_safe(notes_clean)[:90]} ", align="R", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(*_INK)
-    if billed_clean or cnpj_clean:
-        pdf.set_font("Helvetica", "", _FS_MUTED)
-        pdf.set_text_color(*_MUTED)
-        pdf.cell(
-            full_w,
-            _ROW_H - 1.0,
-            f"Faturado por: {_safe(billed_label)[:90]} ",
-            align="R",
-            new_x="LMARGIN",
-            new_y="NEXT",
-        )
         pdf.set_text_color(*_INK)
     # #region agent log
     _agent_dbg(
@@ -1232,6 +1203,7 @@ def _write_section(
                         "n_left": len(lefts),
                         "n_right": len(rights),
                         "n_pair": n_pair,
+                        "n_installments": len(installment_rows),
                         "pay": pay[:80],
                         "discount": float(discount),
                         "y_after_items": _y_after_items,
