@@ -391,14 +391,19 @@ def _estimate_section_height(
     discount, _net = apply_section_discount(section_subtotal, discount_pct, discount_value)
 
     if discount > 0:
-        h += _GAP + 3.6 + _ROW_H  # Desconto / Pagamento
-        h += _GAP + _ROW_H  # subtotal
+        h += _GAP * 0.5 + _ROW_H  # subtotal
         h += _ROW_H  # Desconto (linha extra)
     else:
-        h += _GAP + 3.6 + _ROW_H  # Pagamento (se houver) + subtotal
-        h += _GAP + _ROW_H
-    h += (_ROW_H + 0.6) + _GAP  # TOTAL LIQUIDO + ln
-    h += _module_meta_height(notes, billed_by_name, billed_by_cnpj)
+        h += _GAP * 0.5 + _ROW_H  # subtotal
+    h += (_ROW_H + 0.6)  # TOTAL LIQUIDO
+    h += _ROW_H  # Pagamento nota inline
+    notes_clean_est = (notes or "").strip()
+    billed_clean_est = (billed_by_name or "").strip()
+    if notes_clean_est:
+        h += _ROW_H
+    if billed_clean_est or (billed_by_cnpj or "").strip():
+        h += _ROW_H
+    h += _GAP * 0.5
     # #region agent log
     try:
         import time as _t3
@@ -409,17 +414,16 @@ def _estimate_section_height(
             json.dumps(
                 {
                     "sessionId": "e0d4ae",
-                    "runId": "pre-fix",
+                    "runId": "post-fix",
                     "hypothesisId": "E",
                     "location": "pdf.py:_estimate_section_height",
                     "message": "height budget payment+meta",
                     "data": {
                         "discount": float(discount),
-                        "pay_budget_mm": (_GAP + 3.6 + _ROW_H + _GAP + _ROW_H)
-                        if discount <= 0
-                        else (_GAP + 3.6 + _ROW_H + _GAP + _ROW_H + _ROW_H),
-                        "meta_budget_mm": _module_meta_height(notes, billed_by_name, billed_by_cnpj),
-                        "final_gap": _GAP,
+                        "pay_budget_mm": _ROW_H,
+                        "meta_budget_mm": (_ROW_H if notes_clean_est else 0.0)
+                        + (_ROW_H if (billed_clean_est or (billed_by_cnpj or "").strip()) else 0.0),
+                        "final_gap": _GAP * 0.5,
                     },
                     "timestamp": int(_t3.time() * 1000),
                 },
@@ -1013,68 +1017,9 @@ def _write_section(
     # #region agent log
     _y_after_items = float(pdf.get_y())
     # #endregion
-    pdf.ln(_GAP)
-    _pay_branch = "none"
-    if discount > 0:
-        _pay_branch = "discount_and_pay"
-        pdf.set_font("Helvetica", "B", _FS_BODY)
-        pdf.set_text_color(*_INK)
-        pdf.cell(0, 3.6, "Desconto / Pagamento", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(*_INK)
-        pdf.set_font("Helvetica", "", _FS_BODY)
-        pct_label = f"{float(discount_pct or 0):g}%" if discount_pct is not None else "0%"
-        val_label = _brl(float(discount_value or 0.0))
-        discount_bits = [
-            f"Desconto {pct_label} ({val_label})",
-            f"Aplicado {_brl(discount)}",
-        ]
-        if pay and pay != "-":
-            discount_bits.append(pay)
-        pdf.cell(0, _ROW_H, " | ".join(discount_bits), new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(_GAP)
-    elif pay and pay != "-":
-        _pay_branch = "pay_only"
-        pdf.set_font("Helvetica", "B", _FS_BODY)
-        pdf.set_text_color(*_INK)
-        pdf.cell(0, 3.6, "Pagamento", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font("Helvetica", "", _FS_BODY)
-        pdf.cell(0, _ROW_H, pay, new_x="LMARGIN", new_y="NEXT")
-        pdf.ln(_GAP)
+    pdf.ln(_GAP * 0.5)
     # #region agent log
-    try:
-        import time as _t
-
-        _y_before_sub = float(pdf.get_y())
-        _p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
-        _p.parent.mkdir(parents=True, exist_ok=True)
-        _p.open("a", encoding="utf-8").write(
-            json.dumps(
-                {
-                    "sessionId": "e0d4ae",
-                    "runId": "pre-fix",
-                    "hypothesisId": "A",
-                    "location": "pdf.py:_write_section:pay_block",
-                    "message": "gap last-item to subtotal",
-                    "data": {
-                        "title": title[:80],
-                        "branch": _pay_branch,
-                        "pay": pay[:80],
-                        "discount": float(discount),
-                        "y_after_items": _y_after_items,
-                        "y_before_subtotal": _y_before_sub,
-                        "dy_mm": round(_y_before_sub - _y_after_items, 2),
-                        "row_h": _ROW_H,
-                        "gap": _GAP,
-                        "cell_w": 0,
-                    },
-                    "timestamp": int(_t.time() * 1000),
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-    except Exception:
-        pass
+    _y_before_sub = float(pdf.get_y())
     # #endregion
 
     pdf.set_font("Helvetica", "", _FS_BODY)
@@ -1093,6 +1038,39 @@ def _write_section(
             "value": _brl(section_subtotal),
         },
     )
+    try:
+        import time as _t
+
+        _p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
+        _p.parent.mkdir(parents=True, exist_ok=True)
+        _p.open("a", encoding="utf-8").write(
+            json.dumps(
+                {
+                    "sessionId": "e0d4ae",
+                    "runId": "post-fix",
+                    "hypothesisId": "A",
+                    "location": "pdf.py:_write_section:pay_block",
+                    "message": "gap last-item to subtotal",
+                    "data": {
+                        "title": title[:80],
+                        "branch": "compact_after_total",
+                        "pay": pay[:80],
+                        "discount": float(discount),
+                        "y_after_items": _y_after_items,
+                        "y_before_subtotal": _y_before_sub,
+                        "dy_mm": round(_y_before_sub - _y_after_items, 2),
+                        "row_h": _ROW_H,
+                        "gap": _GAP * 0.5,
+                        "has_pagamento_header": False,
+                    },
+                    "timestamp": int(_t.time() * 1000),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    except Exception:
+        pass
     # #endregion
     if discount > 0:
         pdf.cell(_LABEL_W, _ROW_H, "Desconto", align="R")
@@ -1103,6 +1081,14 @@ def _write_section(
     pdf.cell(_COL_TOTAL, _ROW_H + 0.6, _brl(net) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
     pdf.set_text_color(*_INK)
 
+    _pay_compact = bool(pay and pay != "-")
+    if _pay_compact:
+        pdf.set_font("Helvetica", "", _FS_MUTED)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(_LABEL_W, _ROW_H - 1.0, f"Pagamento: {pay}", align="R")
+        pdf.cell(_COL_TOTAL, _ROW_H - 1.0, "", align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*_INK)
+
     notes_clean = (notes or "").strip()
     billed_clean = (billed_by_name or "").strip()
     cnpj_clean = (billed_by_cnpj or "").strip()
@@ -1110,11 +1096,10 @@ def _write_section(
     _y_after_total = float(pdf.get_y())
     # #endregion
     if notes_clean:
-        pdf.ln(_GAP)
-        pdf.set_font("Helvetica", "B", _FS_BODY)
-        pdf.cell(0, _ROW_H, "Observacoes", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_font("Helvetica", "", _FS_BODY)
-        pdf.multi_cell(_CONTENT_W, 4.0, _safe(notes_clean))
+        pdf.set_font("Helvetica", "", _FS_MUTED)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(0, _ROW_H - 1.0, f"Obs: {_safe(notes_clean)[:90]}", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*_INK)
     # #region agent log
     _y_after_notes = float(pdf.get_y())
     # #endregion
@@ -1123,11 +1108,12 @@ def _write_section(
         if cnpj_clean:
             pretty = format_cnpj(cnpj_clean) or cnpj_clean
             billed_label = f"{billed_clean} | CNPJ {pretty}" if billed_clean else f"CNPJ {pretty}"
-        pdf.ln(_GAP)
-        pdf.set_font("Helvetica", "", _FS_BODY)
-        pdf.cell(0, _ROW_H, f"Faturado por: {_safe(billed_label)[:90]}", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", _FS_MUTED)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(0, _ROW_H - 1.0, f"Faturado por: {_safe(billed_label)[:90]}", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*_INK)
 
-    pdf.ln(_GAP)
+    pdf.ln(_GAP * 0.5)
     # #region agent log
     try:
         import time as _t2
@@ -1139,7 +1125,7 @@ def _write_section(
             json.dumps(
                 {
                     "sessionId": "e0d4ae",
-                    "runId": "pre-fix",
+                    "runId": "post-fix",
                     "hypothesisId": "C",
                     "location": "pdf.py:_write_section:meta",
                     "message": "notes billed final gaps",
@@ -1147,12 +1133,13 @@ def _write_section(
                         "title": title[:80],
                         "has_notes": bool(notes_clean),
                         "has_billed": bool(billed_clean or cnpj_clean),
+                        "has_observacoes_header": False,
+                        "pay_compact": _pay_compact,
                         "y_after_total": _y_after_total,
                         "y_after_notes": _y_after_notes,
                         "y_end": _y_end,
                         "dy_notes_mm": round(_y_after_notes - _y_after_total, 2),
                         "dy_billed_and_final_mm": round(_y_end - _y_after_notes, 2),
-                        "est_meta": _module_meta_height(notes, billed_by_name, billed_by_cnpj),
                     },
                     "timestamp": int(_t2.time() * 1000),
                 },
