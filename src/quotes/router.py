@@ -851,6 +851,16 @@ def build_quotes_router() -> APIRouter:
         try:
             version = _service().get_version(quote_id, version_id)
             path = _service().get_version_pdf_file(quote_id, version_id)
+            # #region agent log
+            from src.quotes.service import _dbg_e0
+
+            _dbg_e0(
+                "G",
+                "router.py:download_quote_version_pdf",
+                "GET version pdf",
+                {"quote_id": quote_id, "version_id": version_id},
+            )
+            # #endregion
         except QuoteNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except QuoteConflictError as exc:
@@ -880,6 +890,16 @@ def build_quotes_router() -> APIRouter:
                 from_live=True,
                 technician_name=_technician_name(quote, user),
             )
+            # #region agent log
+            from src.quotes.service import _dbg_e0
+
+            _dbg_e0(
+                "K",
+                "router.py:generate_quote_pdf",
+                "POST generate",
+                {"quote_id": quote_id, "from_live": True, "path": str(path.name)},
+            )
+            # #endregion
         except QuoteNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except QuoteConflictError as exc:

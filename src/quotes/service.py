@@ -42,6 +42,27 @@ _UUID_PDF_RE = re.compile(
     re.IGNORECASE,
 )
 
+
+def _dbg_e0(hypothesis_id: str, location: str, message: str, data: dict[str, Any]) -> None:
+    # #region agent log
+    try:
+        payload = {
+            "sessionId": "e0d4ae",
+            "runId": "old-pdf",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "message": message,
+            "data": data,
+            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
+        }
+        p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with p.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    # #endregion
+
 _QUOTE_COLUMNS = (
     "id",
     "cnpj",
@@ -1727,6 +1748,18 @@ class QuoteService:
                 "render_item_sections": [i.section for i in quote.items],
             },
         )
+        _dbg_e0(
+            "I",
+            "service.py:generate_pdf",
+            "render path",
+            {
+                "quote_id": quote_id,
+                "from_live": from_live,
+                "used": used,
+                "target_version_id": target_version_id,
+                "will_render": True,
+            },
+        )
         # #endregion
 
         render_quote_pdf(
@@ -1799,6 +1832,14 @@ class QuoteService:
     def get_pdf_file(self, quote_id: int) -> Path:
         """Retorna Path do PDF já gerado; 404 se orçamento ou arquivo inexistente."""
         quote = self.get(quote_id)
+        # #region agent log
+        _dbg_e0(
+            "H",
+            "service.py:get_pdf_file",
+            "serve stored quote pdf",
+            {"quote_id": quote_id, "pdf_path": quote.pdf_path, "regenerate": False},
+        )
+        # #endregion
         if not quote.pdf_path:
             raise QuoteNotFoundError(f"PDF do orçamento {quote_id} ainda não foi gerado.")
         path = self._resolve_stored_pdf(quote.pdf_path)
@@ -1820,6 +1861,14 @@ class QuoteService:
             raise QuoteNotFoundError(f"Versão {version_id} não encontrada no orçamento {quote_id}.")
         pdf_path = row["pdf_path"]
         if not pdf_path:
+            # #region agent log
+            _dbg_e0(
+                "G",
+                "service.py:get_version_pdf_file",
+                "no stored version pdf, generate",
+                {"quote_id": quote_id, "version_id": version_id, "cached": False},
+            )
+            # #endregion
             _, dest = self.generate_pdf(quote_id, version_id=version_id)
             return dest
         path = self._resolve_stored_pdf(str(pdf_path))
@@ -1827,4 +1876,18 @@ class QuoteService:
             raise QuoteNotFoundError(
                 f"PDF da versão {version_id} não encontrado no disco."
             )
+        # #region agent log
+        _dbg_e0(
+            "G",
+            "service.py:get_version_pdf_file",
+            "serve cached version pdf",
+            {
+                "quote_id": quote_id,
+                "version_id": version_id,
+                "pdf_path": str(pdf_path),
+                "cached": True,
+                "regenerate": False,
+            },
+        )
+        # #endregion
         return path
