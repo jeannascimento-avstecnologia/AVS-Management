@@ -390,20 +390,14 @@ def _estimate_section_height(
     section_subtotal = round_money(items_total + labor)
     discount, _net = apply_section_discount(section_subtotal, discount_pct, discount_value)
 
-    if discount > 0:
-        h += _GAP * 0.5 + _ROW_H  # subtotal
-        h += _ROW_H  # Desconto (linha extra)
-    else:
-        h += _GAP * 0.5 + _ROW_H  # subtotal
-    h += (_ROW_H + 0.6)  # TOTAL LIQUIDO
-    h += _ROW_H  # Pagamento nota inline
     notes_clean_est = (notes or "").strip()
     billed_clean_est = (billed_by_name or "").strip()
-    if notes_clean_est:
-        h += _ROW_H
-    if billed_clean_est or (billed_by_cnpj or "").strip():
-        h += _ROW_H
-    h += _GAP * 0.5
+    n_right = 2 + (1 if discount > 0 else 0)  # subtotal + total [+ desconto]
+    n_right += 1  # pagamento (or empty slot)
+    n_left = (1 if notes_clean_est else 0) + (
+        1 if billed_clean_est or (billed_by_cnpj or "").strip() else 0
+    )
+    h += _GAP * 0.5 + max(n_left, n_right) * _ROW_H + _GAP * 0.5
     # #region agent log
     try:
         import time as _t3
@@ -420,9 +414,9 @@ def _estimate_section_height(
                     "message": "height budget payment+meta",
                     "data": {
                         "discount": float(discount),
-                        "pay_budget_mm": _ROW_H,
-                        "meta_budget_mm": (_ROW_H if notes_clean_est else 0.0)
-                        + (_ROW_H if (billed_clean_est or (billed_by_cnpj or "").strip()) else 0.0),
+                        "pay_budget_mm": max(n_left, n_right) * _ROW_H,
+                        "meta_budget_mm": 0.0,
+                        "paired_rows": max(n_left, n_right),
                         "final_gap": _GAP * 0.5,
                     },
                     "timestamp": int(_t3.time() * 1000),
@@ -1014,6 +1008,28 @@ def _write_section(
     discount, net = apply_section_discount(section_subtotal, discount_pct, discount_value)
 
     pay = _safe(format_payment_plan_label(payment_plan)).strip()
+    notes_clean = (notes or "").strip()
+    billed_clean = (billed_by_name or "").strip()
+    cnpj_clean = (billed_by_cnpj or "").strip()
+    billed_label = billed_clean
+    if cnpj_clean:
+        pretty = format_cnpj(cnpj_clean) or cnpj_clean
+        billed_label = f"{billed_clean} | CNPJ {pretty}" if billed_clean else f"CNPJ {pretty}"
+    lefts: list[str] = []
+    if notes_clean:
+        lefts.append(f"Obs: {_safe(notes_clean)[:90]}")
+    if billed_clean or cnpj_clean:
+        lefts.append(f"Faturado por: {_safe(billed_label)[:90]}")
+    subtotal_label = "Subtotal (itens + mao de obra)" if include_labor and labor > 0 else "Subtotal (itens)"
+    rights: list[tuple[str, str, str]] = [
+        (subtotal_label, _brl(section_subtotal) + " ", "body"),
+    ]
+    if discount > 0:
+        rights.append(("Desconto", f"- {_brl(discount)} ", "body"))
+    rights.append(("TOTAL LIQUIDO", _brl(net) + " ", "bold"))
+    _pay_compact = bool(pay and pay != "-")
+    if _pay_compact:
+        rights.append((f"Pagamento: {pay}", "", "muted"))
     # #region agent log
     _y_after_items = float(pdf.get_y())
     # #endregion
@@ -1021,11 +1037,33 @@ def _write_section(
     # #region agent log
     _y_before_sub = float(pdf.get_y())
     # #endregion
-
-    pdf.set_font("Helvetica", "", _FS_BODY)
-    subtotal_label = "Subtotal (itens + mao de obra)" if include_labor and labor > 0 else "Subtotal (itens)"
-    pdf.cell(_LABEL_W, _ROW_H, subtotal_label, align="R")
-    pdf.cell(_COL_TOTAL, _ROW_H, _brl(section_subtotal) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
+    meta_w = round(_LABEL_W * 0.55, 2)
+    tot_lab_w = round(_LABEL_W - meta_w, 2)
+    n_pair = max(len(lefts), len(rights))
+    for i in range(n_pair):
+        left_txt = lefts[i] if i < len(lefts) else ""
+        rlab, rval, style = rights[i] if i < len(rights) else ("", "", "body")
+        if style == "bold":
+            row_h = _ROW_H + 0.6
+        elif style == "muted":
+            row_h = _ROW_H - 1.0
+        else:
+            row_h = _ROW_H
+        pdf.set_font("Helvetica", "", _FS_MUTED)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(meta_w, row_h, left_txt, align="L")
+        if style == "bold":
+            pdf.set_font("Helvetica", "B", _FS_BODY)
+            pdf.set_text_color(*_INK)
+        elif style == "muted":
+            pdf.set_font("Helvetica", "", _FS_MUTED)
+            pdf.set_text_color(*_MUTED)
+        else:
+            pdf.set_font("Helvetica", "", _FS_BODY)
+            pdf.set_text_color(*_INK)
+        pdf.cell(tot_lab_w, row_h, rlab, align="R")
+        pdf.cell(_COL_TOTAL, row_h, rval, align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*_INK)
     # #region agent log
     _agent_dbg(
         "H1",
@@ -1047,21 +1085,22 @@ def _write_section(
             json.dumps(
                 {
                     "sessionId": "e0d4ae",
-                    "runId": "post-fix",
-                    "hypothesisId": "A",
+                    "runId": "post-fix-pair",
+                    "hypothesisId": "F",
                     "location": "pdf.py:_write_section:pay_block",
-                    "message": "gap last-item to subtotal",
+                    "message": "paired left meta + right totals",
                     "data": {
                         "title": title[:80],
-                        "branch": "compact_after_total",
+                        "n_left": len(lefts),
+                        "n_right": len(rights),
+                        "n_pair": n_pair,
                         "pay": pay[:80],
                         "discount": float(discount),
                         "y_after_items": _y_after_items,
                         "y_before_subtotal": _y_before_sub,
                         "dy_mm": round(_y_before_sub - _y_after_items, 2),
-                        "row_h": _ROW_H,
-                        "gap": _GAP * 0.5,
                         "has_pagamento_header": False,
+                        "has_observacoes_header": False,
                     },
                     "timestamp": int(_t.time() * 1000),
                 },
@@ -1072,47 +1111,6 @@ def _write_section(
     except Exception:
         pass
     # #endregion
-    if discount > 0:
-        pdf.cell(_LABEL_W, _ROW_H, "Desconto", align="R")
-        pdf.cell(_COL_TOTAL, _ROW_H, f"- {_brl(discount)} ", align="R", new_x="LMARGIN", new_y="NEXT")
-
-    pdf.set_font("Helvetica", "B", _FS_BODY)
-    pdf.cell(_LABEL_W, _ROW_H + 0.6, "TOTAL LIQUIDO", align="R")
-    pdf.cell(_COL_TOTAL, _ROW_H + 0.6, _brl(net) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_text_color(*_INK)
-
-    _pay_compact = bool(pay and pay != "-")
-    if _pay_compact:
-        pdf.set_font("Helvetica", "", _FS_MUTED)
-        pdf.set_text_color(*_MUTED)
-        pdf.cell(_LABEL_W, _ROW_H - 1.0, f"Pagamento: {pay}", align="R")
-        pdf.cell(_COL_TOTAL, _ROW_H - 1.0, "", align="R", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(*_INK)
-
-    notes_clean = (notes or "").strip()
-    billed_clean = (billed_by_name or "").strip()
-    cnpj_clean = (billed_by_cnpj or "").strip()
-    # #region agent log
-    _y_after_total = float(pdf.get_y())
-    # #endregion
-    if notes_clean:
-        pdf.set_font("Helvetica", "", _FS_MUTED)
-        pdf.set_text_color(*_MUTED)
-        pdf.cell(0, _ROW_H - 1.0, f"Obs: {_safe(notes_clean)[:90]}", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(*_INK)
-    # #region agent log
-    _y_after_notes = float(pdf.get_y())
-    # #endregion
-    if billed_clean or cnpj_clean:
-        billed_label = billed_clean
-        if cnpj_clean:
-            pretty = format_cnpj(cnpj_clean) or cnpj_clean
-            billed_label = f"{billed_clean} | CNPJ {pretty}" if billed_clean else f"CNPJ {pretty}"
-        pdf.set_font("Helvetica", "", _FS_MUTED)
-        pdf.set_text_color(*_MUTED)
-        pdf.cell(0, _ROW_H - 1.0, f"Faturado por: {_safe(billed_label)[:90]}", new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(*_INK)
-
     pdf.ln(_GAP * 0.5)
     # #region agent log
     try:
@@ -1125,21 +1123,18 @@ def _write_section(
             json.dumps(
                 {
                     "sessionId": "e0d4ae",
-                    "runId": "post-fix",
-                    "hypothesisId": "C",
+                    "runId": "post-fix-pair",
+                    "hypothesisId": "F",
                     "location": "pdf.py:_write_section:meta",
-                    "message": "notes billed final gaps",
+                    "message": "notes billed paired into totals rows",
                     "data": {
                         "title": title[:80],
                         "has_notes": bool(notes_clean),
                         "has_billed": bool(billed_clean or cnpj_clean),
-                        "has_observacoes_header": False,
                         "pay_compact": _pay_compact,
-                        "y_after_total": _y_after_total,
-                        "y_after_notes": _y_after_notes,
+                        "extra_meta_rows": max(0, len(lefts) - len(rights)),
                         "y_end": _y_end,
-                        "dy_notes_mm": round(_y_after_notes - _y_after_total, 2),
-                        "dy_billed_and_final_mm": round(_y_end - _y_after_notes, 2),
+                        "block_h_mm": round(_y_end - _y_before_sub, 2),
                     },
                     "timestamp": int(_t2.time() * 1000),
                 },
