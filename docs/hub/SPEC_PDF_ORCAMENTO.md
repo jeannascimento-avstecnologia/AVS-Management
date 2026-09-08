@@ -42,15 +42,15 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
    - Senão: uma linha por item (`quote_items.section = module.id`).
    - Mão de obra só se `module.show_labor` e horas×taxa > 0.
    - Por módulo: desconto **somente se o aplicado for > 0**; forma de pagamento; uma linha **TOTAL** (sem `Subtotal (itens)`; sem `LÍQUIDO`).
-   - Opcionais: `module.notes`; `module.billed_by_name` + `module.billed_by_cnpj` (**Faturado por** só na banda do módulo, azul — **não** repetir abaixo da tabela). **Não** imprimir Faturado por global.
+   - Opcionais: `module.notes`; `module.billed_by_name` + `module.billed_by_cnpj` (**Faturado por** abaixo da forma de pagamento, **não** na banda do título). **Não** imprimir Faturado por global.
    - Create inicia canvas **vazio**; PDF só lista módulos presentes.
 
 4. Divisórias cinza entre módulos quando houver mais de um.
 
 5. **Resumo (sem banda `DADOS DE PAGAMENTO`)**:
    - Sem linhas `TOTAL {título}` por módulo. Sem rótulos OS VHSYS (`VALOR TOTAL DOS SERVICOS` / `VALOR TOTAL DOS PRODUTOS`). Sem linha `Mensalidade: … (Fornecedor | AVS)`.
-   - `VALOR TOTAL DO ORCAMENTO (SEM MENSALIDADE)` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver). Box navy, texto branco.
-   - Seção **`MENSALIDADES`** **depois** do valor total. **Sem** linha `Total` por grupo. Box `TOTAL MENSALIDADES` **igual** ao do orçamento (navy, texto branco).
+   - `VALOR TOTAL DO ORCAMENTO (SEM MENSALIDADE)` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver). Box navy, texto branco, **altura `_ROW_H`** (igual ao header `ITEM` / `QTDE` / `V. UNIT.` / `V. TOTAL`).
+   - Seção **`MENSALIDADES`** **depois** do valor total. **Sem** linha `Total` por grupo. Box `TOTAL MENSALIDADES` **igual** (navy, branco, altura `_ROW_H`).
 
 6. **OBSERVACOES** — imprime **somente** `quotes.notes`. Sem disclaimer/ticket hardcoded. Bloco mesmo se vazio (`-`). Pré-fill do wizard (aviso + `Ticket no.:`) entra só se o usuário salvou isso em `notes`. **`quotes.internal_notes` nunca é impresso** (campo 100% interno).
 

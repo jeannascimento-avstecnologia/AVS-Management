@@ -334,7 +334,7 @@ def _module_meta_height(
     billed_by_name: str | None,
     billed_by_cnpj: str | None = None,
 ) -> float:
-    """Altura extra de observações no módulo (Faturado por fica só na banda)."""
+    """Altura extra de observações no módulo (Faturado por vai abaixo do pagamento)."""
     _ = billed_by_name, billed_by_cnpj
     h = 0.0
     notes_clean = (notes or "").strip()
@@ -389,8 +389,10 @@ def _estimate_section_height(
     notes_clean_est = (notes or "").strip()
     n_right = 1 + (1 if discount > 0 else 0)  # TOTAL [+ desconto]
     pay_est = _safe(format_payment_plan_label(payment_plan)).strip()
-    n_right += (1 if pay_est and pay_est != "-" else 0) + (1 if notes_clean_est else 0)
-    _ = billed_by_name, billed_by_cnpj
+    billed_est = bool((billed_by_name or "").strip() or (billed_by_cnpj or "").strip())
+    n_right += (1 if pay_est and pay_est != "-" else 0) + (1 if billed_est else 0) + (
+        1 if notes_clean_est else 0
+    )
     n_left = len(installments or [])
     n_pair_est = max(n_left, n_right)
     h += _GAP * 0.5 + n_pair_est * _ROW_H + _GAP * 0.5
@@ -405,7 +407,7 @@ def _estimate_payment_summary_height(
 ) -> float:
     """Altura do box VALOR TOTAL (sem banda / linhas TOTAL por módulo)."""
     _ = module_nets
-    box_h = _ROW_H + 4.0
+    box_h = _ROW_H
     return _GAP * 2 + box_h + _GAP * 2
 
 
@@ -879,7 +881,39 @@ def _write_section(
     billed_right = (
         f"Faturado por: {_safe(billed_label)[:78]}" if (billed_clean or cnpj_clean) else None
     )
-    _section_band(pdf, title, accent, right=billed_right)
+    # region agent log
+    try:
+        import json as _json
+        import time as _t
+
+        with open(
+            "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log",
+            "a",
+            encoding="utf-8",
+        ) as _fh:
+            _fh.write(
+                _json.dumps(
+                    {
+                        "sessionId": "718b43",
+                        "runId": "pre-fix",
+                        "hypothesisId": "H1-H3",
+                        "location": "pdf.py:_write_section",
+                        "message": "billed_right before band",
+                        "data": {
+                            "hasName": bool(billed_clean),
+                            "hasCnpj": bool(cnpj_clean),
+                            "hasLine": bool(billed_right),
+                            "titleLen": len(title or ""),
+                        },
+                        "timestamp": int(_t.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # endregion
+    _section_band(pdf, title, accent)
 
     original_c_margin = pdf.c_margin
     pdf.c_margin = _CELL_PAD
@@ -995,9 +1029,39 @@ def _write_section(
     _pay_compact = bool(pay and pay != "-")
     if _pay_compact:
         rights.append((f"Pagamento: {pay}", "", "muted"))
-    if notes_clean:
-        rights.append((f"Obs: {_safe(notes_clean)[:90]}", "", "muted"))
     pdf.ln(_GAP * 0.5)
+    # region agent log
+    try:
+        import json as _json
+        import time as _t
+
+        with open(
+            "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log",
+            "a",
+            encoding="utf-8",
+        ) as _fh:
+            _fh.write(
+                _json.dumps(
+                    {
+                        "sessionId": "718b43",
+                        "runId": "pre-fix",
+                        "hypothesisId": "H2-H3",
+                        "location": "pdf.py:_write_section:rights",
+                        "message": "rights styles",
+                        "data": {
+                            "nLeft": len(lefts),
+                            "nRight": len(rights),
+                            "styles": [s for _a, _b, s in rights],
+                            "billedInRights": any("Faturado" in r[0] for r in rights),
+                        },
+                        "timestamp": int(_t.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # endregion
     meta_w = round(_LABEL_W * 0.55, 2)
     tot_lab_w = round(_LABEL_W - meta_w, 2)
     n_pair = max(len(lefts), len(rights))
@@ -1029,8 +1093,92 @@ def _write_section(
         pdf.cell(tot_lab_w, row_h, rlab, align="R")
         pdf.cell(_COL_TOTAL, row_h, rval, align="R", new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(*_INK)
+    if billed_right:
+        pdf.set_font("Helvetica", "", _FS_BODY)
+        pdf.set_text_color(*_BLUE)
+        pdf.cell(0, _ROW_H, billed_right, align="R", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*_INK)
+        # region agent log
+        try:
+            import json as _json
+            import time as _t
+
+            with open(
+                "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log",
+                "a",
+                encoding="utf-8",
+            ) as _fh:
+                _fh.write(
+                    _json.dumps(
+                        {
+                            "sessionId": "718b43",
+                            "runId": "post-fix",
+                            "hypothesisId": "H2",
+                            "location": "pdf.py:_write_section:faturado",
+                            "message": "faturado full-width",
+                            "data": {"wrote": True, "align": "R", "y": round(pdf.get_y(), 2)},
+                            "timestamp": int(_t.time() * 1000),
+                        }
+                    )
+                    + "\n"
+                )
+        except Exception:
+            pass
+        # endregion
+    if notes_clean:
+        pdf.set_font("Helvetica", "", _FS_MUTED)
+        pdf.set_text_color(*_MUTED)
+        pdf.cell(0, _ROW_H - 1.0, f"Obs: {_safe(notes_clean)[:90]}", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*_INK)
     pdf.ln(_GAP * 0.5)
     pdf.c_margin = original_c_margin
+
+
+def _write_navy_total_bar(pdf: _QuotePdf, label: str, amount: float) -> None:
+    """Tarja navy na mesma altura do header ITEM/QTDE/V.UNIT/V.TOTAL."""
+    y_box = pdf.get_y()
+    box_h = _ROW_H
+    pdf.set_fill_color(*_NAVY)
+    pdf.rect(pdf.l_margin, y_box, _CONTENT_W, box_h, style="F")
+    pdf.set_font("Helvetica", "B", _FS_SECTION + 2)
+    pdf.set_text_color(*_WHITE)
+    # region agent log
+    try:
+        import json as _json
+        import time as _t
+
+        with open(
+            "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log",
+            "a",
+            encoding="utf-8",
+        ) as _fh:
+            _fh.write(
+                _json.dumps(
+                    {
+                        "sessionId": "718b43",
+                        "runId": "pre-fix",
+                        "hypothesisId": "H4",
+                        "location": "pdf.py:_write_navy_total_bar",
+                        "message": "bar metrics",
+                        "data": {
+                            "boxH": box_h,
+                            "rowH": _ROW_H,
+                            "font": _FS_SECTION + 2,
+                            "labelPrefix": _safe(label)[:24],
+                        },
+                        "timestamp": int(_t.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # endregion
+    pdf.set_xy(pdf.l_margin + 3.0, y_box)
+    pdf.cell(_LABEL_W - 3.0, box_h, _safe(label), align="R")
+    pdf.cell(_COL_TOTAL, box_h, _brl(amount), align="R")
+    pdf.set_xy(pdf.l_margin, y_box + box_h)
+    pdf.set_text_color(*_INK)
 
 
 def _write_payment_summary(
@@ -1043,17 +1191,7 @@ def _write_payment_summary(
     quote_total = round_money(max(0.0, sum(net for _m, _q, net in module_nets) - float(exclude_total)))
 
     pdf.ln(_GAP * 2)
-    y_box = pdf.get_y()
-    box_h = _ROW_H + 4.0
-    pdf.set_fill_color(*_NAVY)
-    pdf.rect(pdf.l_margin, y_box, _CONTENT_W, box_h, style="F")
-    pdf.set_font("Helvetica", "B", _FS_SECTION + 2)
-    pdf.set_text_color(*_WHITE)
-    pdf.set_xy(pdf.l_margin + 3.0, y_box + 1.0)
-    pdf.cell(_LABEL_W - 3.0, box_h - 2.0, _QUOTE_TOTAL_LABEL, align="R")
-    pdf.cell(_COL_TOTAL, box_h - 2.0, _brl(quote_total), align="R")
-    pdf.set_xy(pdf.l_margin, y_box + box_h)
-    pdf.set_text_color(*_INK)
+    _write_navy_total_bar(pdf, _QUOTE_TOTAL_LABEL, quote_total)
     pdf.ln(_GAP * 2)
 
 
@@ -1087,7 +1225,7 @@ def _estimate_monthly_charges_height(
     return (_GAP + _BAND_H +  # section band "MENSALIDADES"
             n_suppliers * per_group +  # group headers
             (n_products + extra) * _ROW_H +  # item rows
-            _ROW_H + (_ROW_H + 5.0) +  # total row + box
+            _ROW_H + _ROW_H +  # total row + box (mesma altura do header ITEM)
             _GAP * 4)
 
 
@@ -1212,17 +1350,7 @@ def _write_monthly_charges_section(
     grand_total = round_money(grand_total)
 
     pdf.ln(_GAP)
-    y_box = pdf.get_y()
-    box_h = _ROW_H + 4.0
-    pdf.set_fill_color(*_NAVY)
-    pdf.rect(pdf.l_margin, y_box, _CONTENT_W, box_h, style="F")
-    pdf.set_font("Helvetica", "B", _FS_SECTION + 2)
-    pdf.set_text_color(*_WHITE)
-    pdf.set_xy(pdf.l_margin + 3.0, y_box + 1.0)
-    pdf.cell(_LABEL_W - 3.0, box_h - 2.0, "TOTAL MENSALIDADES", align="R")
-    pdf.cell(_COL_TOTAL, box_h - 2.0, _brl(grand_total), align="R")
-    pdf.set_xy(pdf.l_margin, y_box + box_h)
-    pdf.set_text_color(*_INK)
+    _write_navy_total_bar(pdf, "TOTAL MENSALIDADES", grand_total)
     pdf.ln(_GAP)
 
     pdf.c_margin = original_c_margin

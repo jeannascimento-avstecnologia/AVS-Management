@@ -300,7 +300,7 @@ def test_estimate_payment_summary_height_is_constant() -> None:
         [(implant, 1.0, 100.0), (monthly, 1.0, 200.0), (custom, 1.0, 50.0)]
     )
     assert three == two
-    assert two == _GAP * 2 + (_ROW_H + 4.0) + _GAP * 2
+    assert two == _GAP * 2 + _ROW_H + _GAP * 2
 
 
 def test_ensure_space_adds_page_near_bottom() -> None:
