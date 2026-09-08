@@ -1337,7 +1337,24 @@ export function QuoteWizardPage() {
                 disabled={!canEdit}
                 value={form.title}
                 maxLength={120}
-                onChange={(e) => patchForm((prev) => ({ ...prev, title: e.target.value }))}
+                onChange={(e) => {
+                  patchForm((prev) => ({ ...prev, title: e.target.value }))
+                  // #region agent log
+                  fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '718b43' },
+                    body: JSON.stringify({
+                      sessionId: '718b43',
+                      runId: 'post-fix',
+                      hypothesisId: 'F',
+                      location: 'QuoteWizardPage.tsx:referencia',
+                      message: 'referencia input change',
+                      data: { valueLen: e.target.value.trim().length, preview: e.target.value.trim().slice(0, 40) },
+                      timestamp: Date.now(),
+                    }),
+                  }).catch(() => {})
+                  // #endregion
+                }}
                 aria-label="Referência do orçamento"
               />
             </div>

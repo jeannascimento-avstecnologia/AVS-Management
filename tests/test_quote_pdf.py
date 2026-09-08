@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 from src.quotes.pdf import (
     _BAND_H,
     _GAP,
+    _ICON_WHATSAPP,
     _ROW_H,
     _ensure_space,
     _estimate_payment_summary_height,
@@ -297,7 +298,7 @@ def test_estimate_payment_summary_height_grows_with_modules() -> None:
     three = _estimate_payment_summary_height(
         [(implant, 1.0, 100.0), (monthly, 1.0, 200.0), (custom, 1.0, 50.0)]
     )
-    assert three == two + _ROW_H + 0.5
+    assert three == two
     assert two > _GAP + _BAND_H
 
 
@@ -372,12 +373,14 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     # Implantação NÃO deve refletir 10h × 100 (mesmo com campos preenchidos no model)
     assert "Horas: 10" not in text
     assert "1.000,00" not in text and "1000,00" not in text
-    # Dados de pagamento (label + valor, sem QTDE) + observações
+    # Dados de pagamento: só o grand total (sem linhas por módulo / split fornecedor)
     assert "TOTAL DE HORAS/QTDE DE SERVICOS" not in text
-    assert "VALOR TOTAL DOS SERVICOS" in text
+    assert "VALOR TOTAL DOS SERVICOS" not in text
     assert "TOTAL DE PRODUTOS" not in text
-    assert "VALOR TOTAL DOS PRODUTOS" in text
+    assert "VALOR TOTAL DOS PRODUTOS" not in text
     assert "VALOR TOTAL DO ORCAMENTO" in text
+    assert "Subtotal (itens)" not in text
+    assert "TOTAL LIQUIDO" not in text
     assert "OBSERVACOES" in text
     assert "QTDE" in text
     assert "QTDADE" not in text
@@ -386,12 +389,14 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "Obs:" in text
     assert "Condicao implant" in text
     assert "Recorrente" in text
-    assert "Faturado por" in text
+    assert text.count("Faturado por") == 1
     assert "Fornecedor Modulo" in text
     assert "Parceiro X" not in text
     assert "1.500,00" in text or "1500,00" in text
     assert "459,90" in text
     assert "1.959,90" in text or "1959,90" in text
+    assert "https://avstecnologia.cloud/" not in text
+    assert "https://avstecnologia.cloud" in text
 
     from pypdf import PdfReader
 
@@ -557,7 +562,7 @@ def test_pdf_omits_removed_implantacao_and_follows_order(tmp_path: Path) -> None
     assert "LICENCAS" in text or "LICENÇAS" in text or "Licenc" in text
     assert "TOTAL DE HORAS/QTDE DE SERVICOS" not in text
     assert "TOTAL DE PRODUTOS" not in text
-    assert "VALOR TOTAL DOS PRODUTOS" in text
+    assert "VALOR TOTAL DOS PRODUTOS" not in text
     assert "VALOR TOTAL DO ORCAMENTO" in text
 
 
@@ -623,14 +628,13 @@ def test_pdf_header_version_and_monthly_outside_total(tmp_path: Path) -> None:
     assert "v3" in text
     assert "MENSALIDADES" in text
     assert "TOTAL MENSALIDADES" in text
-    assert "Total mensalidade" in text
+    assert "Total mensalidade" not in text
+    assert not any(line.strip() == "Total" for line in text.splitlines())
     assert "Mensalidade AVS TECNOLOGIA" not in text
     assert "Mensalidade Fornecedor" not in text
     assert "Plano mensal" in text
-    assert "Fornecedor" in text
-    assert "Intermediador" in text
+    assert "Mensalidade:" not in text
     assert "VALOR TOTAL DO ORCAMENTO" in text
-    assert "Mensalidade:" in text
     assert "1.660,00" in text or "1660,00" in text
     assert "1.959,90" not in text and "1959,90" not in text
 
@@ -658,7 +662,7 @@ def test_pdf_monthly_omits_zero_party_amount(tmp_path: Path) -> None:
     )
     text = _pdf_text(dest)
     assert "Plano mensal" in text
-    assert "Fornecedor" in text
+    assert "Mensalidade:" not in text
     assert "Intermediador" not in text
 
 
@@ -745,3 +749,48 @@ def test_pdf_veivo_logo_on_every_page(tmp_path: Path) -> None:
     assert len(reader.pages) >= 2
     for i, page in enumerate(reader.pages):
         assert len(page.images) >= 1, f"pagina {i + 1} sem imagem (logo VEIVO)"
+
+
+def test_pdf_whatsapp_icon_exists() -> None:
+    assert _ICON_WHATSAPP.is_file()
+
+
+def test_pdf_client_name_wraps_not_truncated(tmp_path: Path) -> None:
+    dest = tmp_path / "long-name.pdf"
+    long_name = (
+        "UNITY SERVICOS DE FACILITIES LTDA COMERCIAL INDUSTRIAL E PARTICIPACOES"
+    )
+    assert len(long_name) > 60
+    client = _client()
+    client = QuotePdfClient(
+        legal_name=long_name,
+        cnpj=client.cnpj,
+        email=client.email,
+        phone=client.phone,
+        street=client.street,
+        number=client.number,
+        complement=client.complement,
+        district=client.district,
+        zip_code=client.zip_code,
+        city=client.city,
+        state=client.state,
+    )
+    render_quote_pdf(_sample_quote(), dest, issuer=_issuer(), client=client)
+    text = _pdf_text(dest)
+    assert "PARTICIPACOES" in text
+    assert "UNITY SERVICOS" in text
+    assert long_name[:60] + "..." not in text
+
+
+def test_pdf_payment_has_only_grand_total(tmp_path: Path) -> None:
+    dest = tmp_path / "pay-only.pdf"
+    render_quote_pdf(_sample_quote(), dest, issuer=_issuer(), client=_client())
+    text = _pdf_text(dest)
+    assert "VALOR TOTAL DO ORCAMENTO" in text
+    assert "TOTAL IMPLANTACAO" not in text
+    assert "VALOR TOTAL DOS SERVICOS" not in text
+    assert "VALOR TOTAL DOS PRODUTOS" not in text
+    assert "Subtotal (itens)" not in text
+    assert "TOTAL LIQUIDO" not in text
+    assert "Mensalidade:" not in text
+

@@ -295,7 +295,36 @@ def build_quotes_router() -> APIRouter:
         client = TifluxClient(settings)
         try:
             digits = normalize_cnpj(term)
-            if len(digits) >= 11:
+            use_cnpj = len(digits) >= 11
+            # #region agent log
+            try:
+                import json as _json, time as _t
+                from pathlib import Path as _P
+                _p = _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log")
+                _p.open("a", encoding="utf-8").write(
+                    _json.dumps(
+                        {
+                            "sessionId": "718b43",
+                            "runId": "pre-fix",
+                            "hypothesisId": "D",
+                            "location": "quotes/router.py:search_tiflux_clients",
+                            "message": "search branch",
+                            "data": {
+                                "termLen": len(term),
+                                "digitsLen": len(digits),
+                                "useCnpj": use_cnpj,
+                                "termPreview": term[:40],
+                            },
+                            "timestamp": int(_t.time() * 1000),
+                        },
+                        ensure_ascii=False,
+                    )
+                    + "\n"
+                )
+            except Exception:
+                pass
+            # #endregion
+            if use_cnpj:
                 raw = await client.find_matches_by_cnpj(digits, limit=limit)
             else:
                 raw = await client.find_by_name(term, limit=limit)

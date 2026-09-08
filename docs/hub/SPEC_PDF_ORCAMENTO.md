@@ -21,16 +21,18 @@
 AVS TECNOLOGIA - CNPJ: 08.354.533/0001-83 | Insc Estadual: 795.275.950.117
 ```
 
-   Abaixo do CNPJ/IE, no mesmo banner: endereço + telefone/e-mail/site (ícones). Cabeçalho **não** segue o tenant/parte de Faturado por.
+   Abaixo do CNPJ/IE, no mesmo banner: endereço + WhatsApp/e-mail/site (ícones). Cabeçalho **não** segue o tenant/parte de Faturado por.
 
 ```
 Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.087-240
-(ícone tel) (19) 3243-9559 | (ícone e-mail) comercial@avstecnologia.cloud | (ícone site) https://avstecnologia.cloud/
+(ícone WhatsApp) (19) 3243-9559 | (ícone e-mail) comercial@avstecnologia.cloud | (ícone site) https://avstecnologia.cloud
 ```
+
+   Separador `|` **somente entre** itens de contato (nunca depois do último). Site **sem** `/` final. Número impresso = `QUOTE_ISSUER_PHONE` (fixo). Celular (`QUOTE_ISSUER_MOBILE`) **não** entra.
 
    **Rodapé (todas as páginas):** paginação `Pagina X/{nb}` + logo VEIVO Sistemas (`pdf_icons/veivo-powered-by.png`) no canto inferior direito, opacidade 40%.
 
-2. **Primeiro bloco: DADOS DO CLIENTE** — Nome (`legal_name` / `client_name`), CNPJ, Vendedor (`quotes.created_by` → nome do usuário; fallback usuário logado). Contato do cliente (nome/e-mail/telefone) **opcional à direita**, quando disponível.
+2. **Primeiro bloco: DADOS DO CLIENTE** — Nome (`legal_name` / `client_name`), CNPJ, Vendedor (`quotes.created_by` → nome do usuário; fallback usuário logado). Nome com **quebra de linha** (não truncar). Contato do cliente (nome/e-mail/telefone) **opcional à direita**, quando disponível.
 
 3. **Módulos (N seções)** — ordem `sort_order` de `quotes.modules_json`:
    - Título = `module.title` (negrito na cor `_BLUE` + barra vertical azul 1.2 mm à esquerda + regra cinza). **Sem** diferenciação de cor por módulo.
@@ -38,20 +40,16 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
    - Se `module.simplified`: uma linha de dados com `display_name` (fallback `title`); qtde `1`; v. unit. = v. total = soma das linhas. **Não** imprimir nomes das linhas originais.
    - Senão: uma linha por item (`quote_items.section = module.id`).
    - Mão de obra só se `module.show_labor` e horas×taxa > 0.
-   - Por módulo: desconto **somente se o aplicado for > 0**; forma de pagamento; total líquido.
-   - Opcionais: `module.notes`; `module.billed_by_name` + `module.billed_by_cnpj` (Faturado por). **Não** imprimir Faturado por global.
+   - Por módulo: desconto **somente se o aplicado for > 0**; forma de pagamento; uma linha **TOTAL** (sem `Subtotal (itens)`; sem `LÍQUIDO`).
+   - Opcionais: `module.notes`; `module.billed_by_name` + `module.billed_by_cnpj` (**Faturado por** só na banda do módulo, azul — **não** repetir abaixo da tabela). **Não** imprimir Faturado por global.
    - Create inicia canvas **vazio**; PDF só lista módulos presentes.
 
 4. Divisórias cinza entre módulos quando houver mais de um.
 
 5. **Dados de pagamento / resumo**:
-   - Uma linha de resumo **por módulo presente** (apenas label + valor líquido; **sem** coluna QTDE), rótulo = título do módulo (`TOTAL {título}`).
-   - Se o módulo tiver linhas marcadas como mensalidade: abaixo do total do grupo, em **fonte menor** (itálico muted), o valor mensal daquele grupo (fornecedor | intermediador).
-   - Se ainda existirem módulos com `legacy_kind` `implantacao` / `mensalidade`, manter os rótulos OS VHSYS de **valor** (sem QTDE):
-     - `VALOR TOTAL DOS SERVICOS` ← `implantacao`
-     - `VALOR TOTAL DOS PRODUTOS` ← `mensalidade`
-   - `VALOR TOTAL DO ORCAMENTO` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver). Destaque: box navy, texto branco.
-   - Seção **`MENSALIDADES`** (cobranças) **depois** do valor total: fora do `VALOR TOTAL DO ORCAMENTO`. Linhas selecionadas continuam nos módulos originais (duplicate-include). Total da seção: box com outline azul.
+   - Imprime **somente** `VALOR TOTAL DO ORCAMENTO` (box navy, texto branco). Sem linhas `TOTAL {título}` por módulo. Sem rótulos OS VHSYS (`VALOR TOTAL DOS SERVICOS` / `VALOR TOTAL DOS PRODUTOS`). Sem linha `Mensalidade: … (Fornecedor | AVS)`.
+   - `VALOR TOTAL DO ORCAMENTO` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver).
+   - Seção **`MENSALIDADES`** (cobranças) **depois** do valor total: fora do `VALOR TOTAL DO ORCAMENTO`. Linhas selecionadas continuam nos módulos originais (duplicate-include). **Sem** linha `Total` por grupo. Total da seção: box com outline azul (`TOTAL MENSALIDADES`).
 
 6. **OBSERVACOES** — imprime **somente** `quotes.notes`. Sem disclaimer/ticket hardcoded. Bloco mesmo se vazio (`-`). Pré-fill do wizard (aviso + `Ticket no.:`) entra só se o usuário salvou isso em `notes`. **`quotes.internal_notes` nunca é impresso** (campo 100% interno).
 
@@ -80,11 +78,11 @@ Cabeçalho comercial usa **defaults Settings/env** (AVS). TiFlux issuer continua
 | Endereço | `QUOTE_ISSUER_ADDRESS` | Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.087-240 |
 | Telefone | `QUOTE_ISSUER_PHONE` | `(19) 3243-9559` |
 | E-mail | `QUOTE_ISSUER_EMAIL` | `comercial@avstecnologia.cloud` |
-| Site | `QUOTE_ISSUER_SITE` | `https://avstecnologia.cloud/` |
+| Site | `QUOTE_ISSUER_SITE` | `https://avstecnologia.cloud` (imprimir **sem** `/` final) |
 
 Celular (`QUOTE_ISSUER_MOBILE`) **não** entra no cabeçalho.
 
-Ícones de telefone/e-mail/site: PNGs pequenos (fpdf2 + Helvetica não renderiza emoji).
+Ícones de WhatsApp/e-mail/site: PNGs pequenos (fpdf2 + Helvetica não renderiza emoji).
 
 ## Mão de obra
 

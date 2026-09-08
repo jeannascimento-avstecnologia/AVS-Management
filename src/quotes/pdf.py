@@ -65,7 +65,7 @@ _BOX_LINE = 0.3
 
 _LOGO_PATH = Path(__file__).resolve().parents[1] / "cropped-AVS-SemArco-Colorido_2024.png"
 _ICON_DIR = Path(__file__).resolve().parent / "pdf_icons"
-_ICON_PHONE = _ICON_DIR / "phone.png"
+_ICON_WHATSAPP = _ICON_DIR / "whatsapp.png"
 _ICON_MAIL = _ICON_DIR / "mail.png"
 _ICON_GLOBE = _ICON_DIR / "globe.png"
 _VEIVO_LOGO_PATH = _ICON_DIR / "veivo-powered-by.png"
@@ -338,15 +338,13 @@ def _module_meta_height(
     billed_by_name: str | None,
     billed_by_cnpj: str | None = None,
 ) -> float:
-    """Altura extra de observações / faturado por no módulo (só se preenchidos)."""
+    """Altura extra de observações no módulo (Faturado por fica só na banda)."""
+    _ = billed_by_name, billed_by_cnpj
     h = 0.0
     notes_clean = (notes or "").strip()
-    billed_clean = (billed_by_name or "").strip()
     if notes_clean:
         lines = max(1, (len(notes_clean) + 89) // 90)
         h += _GAP + _ROW_H + lines * 4.0
-    if billed_clean or (billed_by_cnpj or "").strip():
-        h += _GAP + _ROW_H
     return h
 
 
@@ -365,7 +363,7 @@ def _estimate_section_height(
     payment_plan: str | None = None,
     installments: list[dict[str, Any]] | None = None,
 ) -> float:
-    """Altura estimada de `_write_section` (banda → total líquido + gap final)."""
+    """Altura estimada de `_write_section` (banda → TOTAL + gap final)."""
     h = _BAND_H + _GAP  # section band
     h += _ROW_H  # header ITEM/QTDE/...
     if simplified:
@@ -393,14 +391,10 @@ def _estimate_section_height(
     discount, _net = apply_section_discount(section_subtotal, discount_pct, discount_value)
 
     notes_clean_est = (notes or "").strip()
-    n_right = 2 + (1 if discount > 0 else 0)  # subtotal + total [+ desconto]
+    n_right = 1 + (1 if discount > 0 else 0)  # TOTAL [+ desconto]
     pay_est = _safe(format_payment_plan_label(payment_plan)).strip()
-    billed_est = bool((billed_by_name or "").strip() or (billed_by_cnpj or "").strip())
-    n_right += (
-        (1 if pay_est and pay_est != "-" else 0)
-        + (1 if notes_clean_est else 0)
-        + (1 if billed_est else 0)
-    )
+    n_right += (1 if pay_est and pay_est != "-" else 0) + (1 if notes_clean_est else 0)
+    _ = billed_by_name, billed_by_cnpj
     n_left = len(installments or [])
     n_pair_est = max(n_left, n_right)
     h += _GAP * 0.5 + n_pair_est * _ROW_H + _GAP * 0.5
@@ -438,36 +432,18 @@ def _estimate_section_height(
 
 
 def _payment_summary_row_count(module_nets: list[tuple[QuoteModule, float, float]]) -> int:
-    implant = any(m.legacy_kind == "implantacao" for m, _q, _n in module_nets)
-    monthly = any(m.legacy_kind == "mensalidade" for m, _q, _n in module_nets)
-    customs = sum(
-        1 for m, _q, _n in module_nets if m.legacy_kind not in ("implantacao", "mensalidade")
-    )
-    if implant and monthly:
-        return 2 + customs
-    if implant:
-        return 1 + (len(module_nets) - 1)  # implant pair + demais
-    if monthly:
-        return 1 + (len(module_nets) - 1)
-    return len(module_nets)
+    """DADOS DE PAGAMENTO só imprime o box de total — 0 linhas por módulo."""
+    _ = module_nets
+    return 0
 
 
 def _estimate_payment_summary_height(
     module_nets: list[tuple[QuoteModule, float, float]],
     monthly_by_module: dict[str, dict[str, Any]] | None = None,
 ) -> float:
-    """Altura estimada de `_write_payment_summary`."""
-    monthly_by_module = monthly_by_module or {}
-    n_rows = len(module_nets)
-    n_monthly = sum(1 for m, _, _ in module_nets if m.id in monthly_by_module)
-    return (
-        _BAND_H + _GAP * 2
-        + n_rows * (_ROW_H + 0.5)
-        + n_monthly * _ROW_H
-        + _GAP * 2
-        + _ROW_H + 5.0
-        + _GAP * 4
-    )
+    """Altura estimada de `_write_payment_summary` (banda + box, sem linhas por módulo)."""
+    _ = module_nets, monthly_by_module
+    return _BAND_H + _GAP * 2 + _GAP * 2 + _ROW_H + 5.0 + _GAP * 4
 
 
 def _estimate_observations_height(notes: str | None) -> float:
@@ -526,7 +502,6 @@ def render_quote_pdf(
     client = client or client_from_quote(quote)
     monthly_exclude_total = 0.0
     monthly_rows: list[dict[str, Any]] = []
-    monthly_by_module: dict[str, dict[str, Any]] = {}
     if monthly_draft_json:
         try:
             draft = json.loads(str(monthly_draft_json))
@@ -548,30 +523,6 @@ def render_quote_pdf(
                 product = (item.name if item else "") or f"Item {iid}"
                 line_total = float(item.total_value) if item else 0.0
                 monthly_rows.append({"role": "product", "name": product, "amount": line_total, "item_id": iid})
-                forn_amt = float(a.get("fornecedor_amount") or 0.0)
-                inter_amt = float(a.get("intermediador_amount") or 0.0)
-                forn_name = str(a.get("fornecedor_name") or "Fornecedor")
-                inter_name = str(a.get("intermediador_name") or "Intermediador")
-                for party_name, party_amt in ((forn_name, forn_amt), (inter_name, inter_amt)):
-                    if round_money(party_amt) <= 0:
-                        continue
-                    monthly_rows.append({"role": "split", "name": party_name, "amount": party_amt})
-                if item is not None:
-                    bucket = monthly_by_module.setdefault(
-                        item.section,
-                        {
-                            "fornecedor": 0.0,
-                            "intermediador": 0.0,
-                            "total": 0.0,
-                            "fornecedor_name": forn_name,
-                            "intermediador_name": inter_name,
-                        },
-                    )
-                    bucket["fornecedor"] = round_money(float(bucket["fornecedor"]) + forn_amt)
-                    bucket["intermediador"] = round_money(float(bucket["intermediador"]) + inter_amt)
-                    bucket["total"] = round_money(float(bucket["total"]) + line_total)
-                    bucket["fornecedor_name"] = forn_name
-                    bucket["intermediador_name"] = inter_name
         else:
             license_item_ids = draft.get("license_item_ids") or []
             try:
@@ -597,7 +548,8 @@ def render_quote_pdf(
     pdf.add_page()
 
     _write_header(pdf, quote, issuer, version_number=version_number)
-    _ensure_space(pdf, _estimate_client_block_height())
+    client_name = (client.legal_name or quote.client_name or "").strip() or "-"
+    _ensure_space(pdf, _estimate_client_block_height(name=client_name))
     _write_client_block(pdf, quote, client, technician_name=technician_name)
 
     modules = _ordered_modules(quote)
@@ -665,12 +617,11 @@ def render_quote_pdf(
 
     modules_by_id: dict[str, QuoteModule] = {m.id: m for m in modules}
 
-    _ensure_space(pdf, _estimate_payment_summary_height(module_nets, monthly_by_module))
+    _ensure_space(pdf, _estimate_payment_summary_height(module_nets))
     _write_payment_summary(
         pdf,
         module_nets=module_nets,
         exclude_total=monthly_exclude_total,
-        monthly_by_module=monthly_by_module,
     )
 
     if monthly_rows:
@@ -702,7 +653,7 @@ def _draw_contact_line(
     *,
     show_page: bool = True,
 ) -> None:
-    """Telefone | e-mail | site com ícones, a partir de (x, y)."""
+    """WhatsApp | e-mail | site com ícones, a partir de (x, y). Sem `|` no último item."""
     pdf.set_text_color(*_INK)
     pdf.set_font("Helvetica", "", _FS_SMALL)
     icon_h = 3.2
@@ -719,11 +670,11 @@ def _draw_contact_line(
 
     items: list[tuple[Path, str]] = []
     if issuer.phone:
-        items.append((_ICON_PHONE, _safe(issuer.phone)))
+        items.append((_ICON_WHATSAPP, _safe(issuer.phone).rstrip("|").strip()))
     if issuer.email:
-        items.append((_ICON_MAIL, _safe(issuer.email)))
+        items.append((_ICON_MAIL, _safe(issuer.email).rstrip("|").strip()))
     if issuer.site:
-        items.append((_ICON_GLOBE, _safe(issuer.site)))
+        items.append((_ICON_GLOBE, _safe(issuer.site).rstrip("/").rstrip("|").strip()))
     for i, (icon, label) in enumerate(items):
         _contact_item(icon, label)
         if i < len(items) - 1:
@@ -814,8 +765,11 @@ def _write_header(
     _rule(pdf, color=_RULE, width=0.35)
 
 
-def _estimate_client_block_height() -> float:
-    return _BAND_H + (_ROW_H * 3) + _GAP * 2
+def _estimate_client_block_height(name: str | None = None) -> float:
+    cleaned = (name or "").strip()
+    n_lines = max(1, min(4, (len(cleaned) + 39) // 40)) if cleaned else 1
+    name_h = max(_ROW_H, n_lines * _LINE_H)
+    return _BAND_H + name_h + (_ROW_H * 2) + _GAP * 2
 
 
 def _write_client_block(
@@ -829,29 +783,31 @@ def _write_client_block(
     name = (client.legal_name or quote.client_name or "").strip() or "-"
     cnpj = client.cnpj or format_cnpj(quote.cnpj) or quote.cnpj
     tech = (technician_name or "").strip() or "-"
-    left_rows = (
-        ("Cliente:", name),
-        ("CNPJ:", cnpj),
-        ("Vendedor:", tech),
-    )
     label_w = 25.0
     left_w = _CONTENT_W * 0.50
-    # #region agent log
-    _agent_dbg(
-        "H6",
-        "pdf.py:_write_client_block",
-        "client label width",
-        {"label_w": label_w, "c_margin": float(pdf.c_margin)},
-    )
-    # #endregion
+    value_w = left_w - label_w
     y_start = pdf.get_y()
-    for label, value in left_rows:
+
+    pdf.set_font("Helvetica", "", _FS_BODY)
+    name_lines = _wrap_text_lines(pdf, _dash(name), value_w)
+    name_h = max(_ROW_H, len(name_lines) * _LINE_H)
+    y_name = pdf.get_y()
+    pdf.set_font("Helvetica", "B", _FS_SMALL)
+    pdf.set_text_color(*_BLUE)
+    pdf.cell(label_w, name_h, _safe("Cliente:"))
+    pdf.set_font("Helvetica", "", _FS_BODY)
+    pdf.set_text_color(*_INK)
+    pdf.set_xy(pdf.l_margin + label_w, y_name)
+    pdf.multi_cell(value_w, _LINE_H, "\n".join(name_lines))
+    pdf.set_xy(pdf.l_margin, y_name + name_h)
+
+    for label, value in (("CNPJ:", cnpj), ("Vendedor:", tech)):
         pdf.set_font("Helvetica", "B", _FS_SMALL)
         pdf.set_text_color(*_BLUE)
         pdf.cell(label_w, _ROW_H, _safe(label))
         pdf.set_font("Helvetica", "", _FS_BODY)
         pdf.set_text_color(*_INK)
-        pdf.cell(left_w - label_w, _ROW_H, _dash(value)[:60], new_x="LMARGIN", new_y="NEXT")
+        pdf.cell(left_w - label_w, _ROW_H, _dash(value), new_x="LMARGIN", new_y="NEXT")
     y_after_left = pdf.get_y()
 
     contact_name = getattr(quote, "contact_name", None) or ""
@@ -1121,20 +1077,15 @@ def _write_section(
             except (IndexError, ValueError):
                 pass
         lefts.append(f"Parcela {idx_inst + 1} ({due_fmt}) {_brl(amt)}")
-    subtotal_label = "Subtotal (itens + mao de obra)" if include_labor and labor > 0 else "Subtotal (itens)"
-    rights: list[tuple[str, str, str]] = [
-        (subtotal_label, _brl(section_subtotal) + " ", "body"),
-    ]
+    rights: list[tuple[str, str, str]] = []
     if discount > 0:
         rights.append(("Desconto", f"- {_brl(discount)} ", "body"))
-    rights.append(("TOTAL LIQUIDO", _brl(net) + " ", "bold"))
+    rights.append(("TOTAL", _brl(net) + " ", "bold"))
     _pay_compact = bool(pay and pay != "-")
     if _pay_compact:
         rights.append((f"Pagamento: {pay}", "", "muted"))
     if notes_clean:
         rights.append((f"Obs: {_safe(notes_clean)[:90]}", "", "muted"))
-    if billed_clean or cnpj_clean:
-        rights.append((f"Faturado por: {_safe(billed_label)[:90]}", "", "muted"))
     # #region agent log
     _y_after_items = float(pdf.get_y())
     # #endregion
@@ -1263,10 +1214,8 @@ def _write_payment_summary(
     *,
     module_nets: list[tuple[QuoteModule, float, float]],
     exclude_total: float = 0.0,
-    monthly_by_module: dict[str, dict[str, Any]] | None = None,
 ) -> None:
-    """Resumo por módulo presente + rótulos OS VHSYS se legacy implant/mensal existirem."""
-    monthly_by_module = monthly_by_module or {}
+    """DADOS DE PAGAMENTO: somente VALOR TOTAL DO ORCAMENTO."""
     quote_total = round_money(max(0.0, sum(net for _m, _q, net in module_nets) - float(exclude_total)))
 
     pdf.ln(_GAP)
@@ -1274,74 +1223,6 @@ def _write_payment_summary(
     original_c_margin = pdf.c_margin
     pdf.c_margin = _CELL_PAD
 
-    def _monthly_under(mod_id: str) -> None:
-        extra = monthly_by_module.get(mod_id)
-        if not extra:
-            return
-        total = float(extra.get("total") or 0.0)
-        parts: list[str] = []
-        forn = float(extra.get("fornecedor") or 0.0)
-        inter = float(extra.get("intermediador") or 0.0)
-        if forn > 0:
-            parts.append(f"{extra.get('fornecedor_name') or 'Fornecedor'} {_brl(forn)}")
-        if inter > 0:
-            parts.append(f"{extra.get('intermediador_name') or 'Intermediador'} {_brl(inter)}")
-        label = f"Mensalidade: {_brl(total)}"
-        if parts:
-            label = f"{label} ({' | '.join(parts)})"
-        pdf.set_font("Helvetica", "I", _FS_MUTED)
-        pdf.set_text_color(*_MUTED)
-        pdf.cell(0, _ROW_H, _safe(label)[:120], new_x="LMARGIN", new_y="NEXT")
-        pdf.set_text_color(*_INK)
-
-    def _amount_row(label: str, value: float) -> None:
-        pdf.set_font("Helvetica", "", _FS_BODY)
-        pdf.set_text_color(*_INK)
-        pdf.cell(_LABEL_W, _ROW_H, _safe(label)[:60])
-        pdf.set_font("Helvetica", "B", _FS_BODY)
-        pdf.cell(_COL_TOTAL, _ROW_H, _brl(value) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
-
-    implant = next(
-        ((m, q, n) for m, q, n in module_nets if m.legacy_kind == "implantacao"),
-        None,
-    )
-    monthly = next(
-        ((m, q, n) for m, q, n in module_nets if m.legacy_kind == "mensalidade"),
-        None,
-    )
-
-    if implant is not None and monthly is not None:
-        _amount_row("VALOR TOTAL DOS SERVICOS", implant[2])
-        _monthly_under(implant[0].id)
-        _amount_row("VALOR TOTAL DOS PRODUTOS", monthly[2])
-        _monthly_under(monthly[0].id)
-        for mod, _qty, net in module_nets:
-            if mod.legacy_kind in ("implantacao", "mensalidade"):
-                continue
-            _amount_row(f"TOTAL {_module_band_title(mod)}", net)
-            _monthly_under(mod.id)
-    elif implant is not None:
-        _amount_row("VALOR TOTAL DOS SERVICOS", implant[2])
-        _monthly_under(implant[0].id)
-        for mod, _qty, net in module_nets:
-            if mod.legacy_kind == "implantacao":
-                continue
-            _amount_row(f"TOTAL {_module_band_title(mod)}", net)
-            _monthly_under(mod.id)
-    elif monthly is not None:
-        _amount_row("VALOR TOTAL DOS PRODUTOS", monthly[2])
-        _monthly_under(monthly[0].id)
-        for mod, _qty, net in module_nets:
-            if mod.legacy_kind == "mensalidade":
-                continue
-            _amount_row(f"TOTAL {_module_band_title(mod)}", net)
-            _monthly_under(mod.id)
-    else:
-        for mod, _qty, net in module_nets:
-            _amount_row(f"TOTAL {_module_band_title(mod)}", net)
-            _monthly_under(mod.id)
-
-    # Box navy com texto branco para total geral
     pdf.ln(_GAP * 2)
     y_box = pdf.get_y()
     box_h = _ROW_H + 4.0
@@ -1383,10 +1264,10 @@ def _estimate_monthly_charges_height(
 
     n_products = sum(1 for r in rows if r.get("role") == "product")
     extra = sum(max(0, len(str(r.get("name") or "")) // 50) for r in rows)
-    # Cada grupo: header (BAND_H) + itens + subtotal + gap
-    per_group = _BAND_H + _GAP * 2 + _ROW_H  # header + subtotal
+    # Cada grupo: header (BAND_H) + itens + gap (sem subtotal por grupo)
+    per_group = _BAND_H + _GAP * 2
     return (_GAP + _BAND_H +  # section band "MENSALIDADES"
-            n_suppliers * per_group +  # group headers + subtotals
+            n_suppliers * per_group +  # group headers
             (n_products + extra) * _ROW_H +  # item rows
             _ROW_H + (_ROW_H + 5.0) +  # total row + box
             _GAP * 4)
@@ -1507,15 +1388,6 @@ def _write_monthly_charges_section(
             pdf.cell(_COL_TOTAL, row_h, _brl(amount) + " ", align="R")
             pdf.set_xy(pdf.l_margin, y0 + row_h)
 
-        # Subtotal do fornecedor
-        pdf.set_draw_color(*_RULE)
-        pdf.set_line_width(0.3)
-        pdf.line(pdf.l_margin, pdf.get_y(), pdf.l_margin + _CONTENT_W, pdf.get_y())
-        pdf.ln(0.5)
-        pdf.set_font("Helvetica", "B", _FS_BODY)
-        pdf.set_text_color(*_INK)
-        pdf.cell(_LABEL_W, _ROW_H, _safe("Total mensalidade"), align="L")
-        pdf.cell(_COL_TOTAL, _ROW_H, _brl(data["total"]) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
         pdf.ln(_GAP)
 
     # ── Grand total ──
