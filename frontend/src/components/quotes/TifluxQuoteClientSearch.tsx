@@ -36,21 +36,6 @@ export function TifluxQuoteClientSearch({
   useEffect(() => {
     function onDoc(e: MouseEvent) {
       const inside = Boolean(rootRef.current?.contains(e.target as Node))
-      // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '718b43' },
-        body: JSON.stringify({
-          sessionId: '718b43',
-          runId: 'post-fix',
-          hypothesisId: 'G',
-          location: 'TifluxQuoteClientSearch.tsx:onDoc',
-          message: 'document mousedown',
-          data: { inside, willClose: !inside },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-      // #endregion
       if (!inside) setOpen(false)
     }
     document.addEventListener('mousedown', onDoc)
@@ -58,81 +43,15 @@ export function TifluxQuoteClientSearch({
   }, [])
 
   const enabled = !disabled && debounced.trim().length >= 2
-  // #region agent log
-  useEffect(() => {
-    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '718b43' },
-      body: JSON.stringify({
-        sessionId: '718b43',
-        runId: 'pre-fix',
-        hypothesisId: 'A',
-        location: 'TifluxQuoteClientSearch.tsx:enabled',
-        message: 'search enabled flags',
-        data: {
-          open,
-          disabled: Boolean(disabled),
-          valueLen: value.trim().length,
-          debouncedLen: debounced.trim().length,
-          enabled,
-          valuePreview: value.trim().slice(0, 40),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-  }, [open, disabled, value, debounced, enabled])
-  // #endregion
   const query = useQuery({
     queryKey: ['tiflux-quote-clients', debounced],
-    queryFn: () => {
-      // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '718b43' },
-        body: JSON.stringify({
-          sessionId: '718b43',
-          runId: 'pre-fix',
-          hypothesisId: 'C',
-          location: 'TifluxQuoteClientSearch.tsx:queryFn',
-          message: 'calling searchTifluxQuoteClients',
-          data: { q: debounced.trim().slice(0, 40), qLen: debounced.trim().length },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {})
-      // #endregion
-      return api.searchTifluxQuoteClients(debounced, 20)
-    },
+    queryFn: () => api.searchTifluxQuoteClients(debounced, 20),
     enabled,
     staleTime: 30_000,
   })
 
   const clients = query.data?.clients ?? []
   const showList = !disabled && debounced.trim().length >= 2
-  // #region agent log
-  useEffect(() => {
-    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '718b43' },
-      body: JSON.stringify({
-        sessionId: '718b43',
-        runId: 'pre-fix',
-        hypothesisId: 'C',
-        location: 'TifluxQuoteClientSearch.tsx:queryStatus',
-        message: 'react-query status',
-        data: {
-          fetchStatus: query.fetchStatus,
-          status: query.status,
-          isFetching: query.isFetching,
-          isError: query.isError,
-          n: clients.length,
-          open,
-          showList,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-  }, [query.fetchStatus, query.status, query.isFetching, query.isError, clients.length, open, showList])
-  // #endregion
 
   return (
     <div ref={rootRef} className={cn('relative', showList && 'z-50')}>
@@ -149,40 +68,10 @@ export function TifluxQuoteClientSearch({
           className="pl-8"
           onFocus={() => {
             setOpen(true)
-            // #region agent log
-            fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '718b43' },
-              body: JSON.stringify({
-                sessionId: '718b43',
-                runId: 'post-fix',
-                hypothesisId: 'H',
-                location: 'TifluxQuoteClientSearch.tsx:onFocus',
-                message: 'search input focused',
-                data: { valueLen: value.trim().length },
-                timestamp: Date.now(),
-              }),
-            }).catch(() => {})
-            // #endregion
           }}
           onChange={(e) => {
             onChange(e.target.value)
             setOpen(true)
-            // #region agent log
-            fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '718b43' },
-              body: JSON.stringify({
-                sessionId: '718b43',
-                runId: 'post-fix',
-                hypothesisId: 'B',
-                location: 'TifluxQuoteClientSearch.tsx:onChange',
-                message: 'search input change',
-                data: { valueLen: e.target.value.trim().length, preview: e.target.value.trim().slice(0, 40) },
-                timestamp: Date.now(),
-              }),
-            }).catch(() => {})
-            // #endregion
           }}
         />
         {query.isFetching && (

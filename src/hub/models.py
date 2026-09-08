@@ -223,28 +223,6 @@ class HubDatabase:
                 )
         finally:
             conn.execute("PRAGMA foreign_keys = ON")
-        # #region agent log
-        try:
-            import json
-            import time
-            from pathlib import Path
-
-            payload = {
-                "sessionId": "ae8776",
-                "runId": "post-fix",
-                "hypothesisId": "F",
-                "location": "models.py:_migrate_repair_stale_quote_fks",
-                "message": "repaired stale quote FKs",
-                "data": {"items_broken": items_broken, "tokens_broken": tokens_broken},
-                "timestamp": int(time.time() * 1000),
-            }
-            p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-ae8776.log")
-            p.parent.mkdir(parents=True, exist_ok=True)
-            with p.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
-        except Exception:
-            pass
-        # #endregion
 
     def _migrate_quote_items_columns(self, conn: sqlite3.Connection) -> None:
         exists = conn.execute(

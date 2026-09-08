@@ -1,33 +1,9 @@
 import asyncio
-import json
 import logging
-import time
-from pathlib import Path
 
 import httpx
 
 _log = logging.getLogger(__name__)
-
-
-def _agent_dbg(hypothesis_id: str, location: str, message: str, data: dict) -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "35fefc",
-            "runId": "pre-fix",
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-35fefc.log")
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-    # #endregion
 
 from src.config import Settings
 from src.mapping.canonical import CompanyPayload
@@ -265,22 +241,6 @@ class VhsysClient:
         if response.status_code == 401:
             raise VhsysApiError("Tokens VHSYS inválidos.", 401, response.text)
         empty = _is_not_found_response(response)
-        # #region agent log
-        _agent_dbg(
-            "A",
-            "vhsys_client.py:_get_produtos_page",
-            "GET /produtos response",
-            {
-                "http_status": response.status_code,
-                "body_head": (response.text or "")[:400],
-                "param_keys": sorted(str(k) for k in params.keys()),
-                "has_desc_filter": "desc_produto" in params,
-                "not_found": empty,
-                "limit": params.get("limit"),
-                "offset": params.get("offset"),
-            },
-        )
-        # #endregion
         if empty:
             return []
         if response.status_code >= 400:
@@ -314,19 +274,6 @@ class VhsysClient:
         if response.status_code == 401:
             raise VhsysApiError("Tokens VHSYS inválidos.", 401, response.text)
         empty = _is_not_found_response(response) or response.status_code == 404
-        # #region agent log
-        _agent_dbg(
-            "B",
-            "vhsys_client.py:get_product",
-            "GET /produtos/{id} response",
-            {
-                "product_id": int(product_id),
-                "http_status": response.status_code,
-                "body_head": (response.text or "")[:400],
-                "not_found": empty,
-            },
-        )
-        # #endregion
         if empty:
             return None
         if response.status_code >= 400:

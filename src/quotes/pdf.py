@@ -23,29 +23,6 @@ from src.quotes.totals import (
     round_money,
 )
 
-
-def _agent_dbg(hypothesis_id: str, location: str, message: str, data: dict[str, Any]) -> None:
-    # #region agent log
-    try:
-        import time
-
-        payload = {
-            "sessionId": "53c421",
-            "runId": "post-fix",
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-53c421.log")
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
 # Aurora / AVS (RGB) — azul + vermelho da logo (sem roxo; P&B: fills escuros → cinza legível)
 _NAVY = (12, 30, 58)
 _BLUE = (26, 79, 140)
@@ -229,28 +206,8 @@ class _QuotePdf(FPDF):
         veivo_w = veivo_h * (2000 / 617)
         veivo_x = self.w - self.r_margin - veivo_w
         veivo_y = self.h - _FOOTER_MARGIN + 3.5
-        # #region agent log
-        _agent_dbg(
-            "H2-H4",
-            "pdf.py:_QuotePdf.footer",
-            "veivo footer draw",
-            {
-                "exists": exists,
-                "path": str(_VEIVO_LOGO_PATH),
-                "size_bytes": _VEIVO_LOGO_PATH.stat().st_size if exists else 0,
-                "page": int(self.page_no()),
-                "page_h": float(self.h),
-                "veivo_x": veivo_x,
-                "veivo_y": veivo_y,
-                "veivo_w": veivo_w,
-                "veivo_h": veivo_h,
-                "bottom": veivo_y + veivo_h,
-            },
-        )
-        # #endregion
         if exists:
             try:
-                # Logo oficial (RGBA) — opacidade 40% deixava o placeholder invisível (H3)
                 self.image(
                     str(_VEIVO_LOGO_PATH),
                     x=veivo_x,
@@ -258,26 +215,8 @@ class _QuotePdf(FPDF):
                     w=veivo_w,
                     h=veivo_h,
                 )
-                # #region agent log
-                _agent_dbg(
-                    "H3",
-                    "pdf.py:_QuotePdf.footer",
-                    "veivo image ok full opacity",
-                    {
-                        "page": int(self.page_no()),
-                        "size_bytes": _VEIVO_LOGO_PATH.stat().st_size,
-                    },
-                )
-                # #endregion
-            except Exception as exc:
-                # #region agent log
-                _agent_dbg(
-                    "H3",
-                    "pdf.py:_QuotePdf.footer",
-                    "veivo image failed",
-                    {"page": int(self.page_no()), "err": type(exc).__name__, "msg": str(exc)[:200]},
-                )
-                # #endregion
+            except Exception:
+                pass
 
 
 def _section_net_total(
@@ -398,36 +337,6 @@ def _estimate_section_height(
     n_left = len(installments or [])
     n_pair_est = max(n_left, n_right)
     h += _GAP * 0.5 + n_pair_est * _ROW_H + _GAP * 0.5
-    # #region agent log
-    try:
-        import time as _t3
-
-        _pe = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
-        _pe.parent.mkdir(parents=True, exist_ok=True)
-        _pe.open("a", encoding="utf-8").write(
-            json.dumps(
-                {
-                    "sessionId": "e0d4ae",
-                    "runId": "post-fix",
-                    "hypothesisId": "E",
-                    "location": "pdf.py:_estimate_section_height",
-                    "message": "height budget payment+meta",
-                    "data": {
-                        "discount": float(discount),
-                        "pay_budget_mm": n_pair_est * _ROW_H,
-                        "meta_budget_mm": 0.0,
-                        "paired_rows": n_pair_est,
-                        "final_gap": _GAP * 0.5,
-                    },
-                    "timestamp": int(_t3.time() * 1000),
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-    except Exception:
-        pass
-    # #endregion
     return h
 
 
@@ -471,23 +380,9 @@ def _estimate_observations_height(notes: str | None) -> float:
 def _notes_with_disclaimer_and_ticket(quote: QuoteRead) -> str:
     """Retorna apenas as observações do orçamento, sem disclaimer hardcoded."""
     notes = (quote.notes or "").strip()
-    # Seed do wizard não é observação do cliente (H5: M13 notes_preview = DEFAULT_QUOTE_NOTES)
+    # Seed do wizard não é observação do cliente
     if notes == DEFAULT_QUOTE_NOTES.strip():
         notes = ""
-    # #region agent log
-    _agent_dbg(
-        "H5",
-        "pdf.py:_notes_with_disclaimer_and_ticket",
-        "notes source",
-        {
-            "quote_id": int(quote.id),
-            "notes_len": len(notes),
-            "notes_preview": notes[:160],
-            "has_disclaimer": "Os valores podem sofrer alteracao" in notes,
-            "has_ticket": "Ticket no." in notes,
-        },
-    )
-    # #endregion
     return notes or "-"
 
 
@@ -566,53 +461,6 @@ def render_quote_pdf(
         item = items_by_id.get(iid)
         if item:
             monthly_section_ids.add(item.section)
-
-    # #region agent log
-    try:
-        import time as _t_pay
-
-        _draft_keys: list[str] = []
-        _n_alloc = 0
-        _n_chg = 0
-        _lic: list[int] = []
-        if monthly_draft_json:
-            try:
-                _d0 = json.loads(str(monthly_draft_json))
-                _draft_keys = list(_d0.keys()) if isinstance(_d0, dict) else []
-                _n_alloc = len(_d0.get("allocations") or []) if isinstance(_d0.get("allocations"), list) else 0
-                _n_chg = len(_d0.get("charges") or []) if isinstance(_d0.get("charges"), list) else 0
-                _lic = [int(x) for x in (_d0.get("license_item_ids") or [])]
-            except (ValueError, TypeError):
-                pass
-        Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log").open("a", encoding="utf-8").write(
-            json.dumps(
-                {
-                    "sessionId": "718b43",
-                    "runId": "post-fix",
-                    "hypothesisId": "H1",
-                    "location": "pdf.py:render_quote_pdf",
-                    "message": "payment monthly_section_ids",
-                    "data": {
-                        "has_draft": bool(monthly_draft_json),
-                        "draft_keys": _draft_keys,
-                        "n_alloc": _n_alloc,
-                        "n_charges": _n_chg,
-                        "license_item_ids": _lic,
-                        "row_roles": [str(r.get("role")) for r in monthly_rows],
-                        "row_item_ids": [r.get("item_id") for r in monthly_rows],
-                        "resolved_license_ids": sorted(license_ids),
-                        "monthly_section_ids": sorted(monthly_section_ids),
-                        "module_ids": [m.id for m in _ordered_modules(quote)],
-                    },
-                    "timestamp": int(_t_pay.time() * 1000),
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-    except Exception:
-        pass
-    # #endregion
 
     pdf = _QuotePdf(format="A4", issuer=issuer)
     pdf.alias_nb_pages()
@@ -997,51 +845,9 @@ def _write_section(
         f"Faturado por: {_safe(billed_label)[:78]}" if (billed_clean or cnpj_clean) else None
     )
     _section_band(pdf, title, accent, right=billed_right)
-    # #region agent log
-    try:
-        import time as _tb
-
-        _pb = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
-        _pb.parent.mkdir(parents=True, exist_ok=True)
-        _pb.open("a", encoding="utf-8").write(
-            json.dumps(
-                {
-                    "sessionId": "e0d4ae",
-                    "runId": "billed-band",
-                    "hypothesisId": "L",
-                    "location": "pdf.py:_write_section:band",
-                    "message": "billed on section band",
-                    "data": {
-                        "title": title[:80],
-                        "has_billed_right": bool(billed_right),
-                        "billed_preview": (billed_right or "")[:80],
-                    },
-                    "timestamp": int(_tb.time() * 1000),
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-    except Exception:
-        pass
-    # #endregion
 
     original_c_margin = pdf.c_margin
     pdf.c_margin = _CELL_PAD
-    # #region agent log
-    _agent_dbg(
-        "H1",
-        "pdf.py:_write_section",
-        "cell padding before table",
-        {
-            "c_margin": float(pdf.c_margin),
-            "l_margin": float(pdf.l_margin),
-            "col_item": _COL_ITEM,
-            "col_total": _COL_TOTAL,
-            "line_h": _LINE_H,
-        },
-    )
-    # #endregion
 
     pdf.set_fill_color(*_HEADER_FILL)
     pdf.set_text_color(*_INK)
@@ -1050,11 +856,7 @@ def _write_section(
 
     items_total = sum(float(i.total_value) for i in items)
     pdf.cell(_COL_ITEM, _ROW_H, "ITEM", fill=True)
-    qty_header = "QTDE"
-    # #region agent log
-    _agent_dbg("E", "pdf.py:_write_section", "qty column header", {"qty_header": qty_header})
-    # #endregion
-    pdf.cell(_COL_QTY, _ROW_H, qty_header, align="C", fill=True)
+    pdf.cell(_COL_QTY, _ROW_H, "QTDE", align="C", fill=True)
     pdf.cell(_COL_UNIT, _ROW_H, "V. UNIT.", align="R", fill=True)
     pdf.cell(_COL_TOTAL, _ROW_H, "V. TOTAL", align="R", fill=True, new_x="LMARGIN", new_y="NEXT")
     pdf.set_draw_color(*_RULE)
@@ -1160,13 +962,7 @@ def _write_section(
         rights.append((f"Pagamento: {pay}", "", "muted"))
     if notes_clean:
         rights.append((f"Obs: {_safe(notes_clean)[:90]}", "", "muted"))
-    # #region agent log
-    _y_after_items = float(pdf.get_y())
-    # #endregion
     pdf.ln(_GAP * 0.5)
-    # #region agent log
-    _y_before_sub = float(pdf.get_y())
-    # #endregion
     meta_w = round(_LABEL_W * 0.55, 2)
     tot_lab_w = round(_LABEL_W - meta_w, 2)
     n_pair = max(len(lefts), len(rights))
@@ -1198,88 +994,7 @@ def _write_section(
         pdf.cell(tot_lab_w, row_h, rlab, align="R")
         pdf.cell(_COL_TOTAL, row_h, rval, align="R", new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(*_INK)
-    # #region agent log
-    _agent_dbg(
-        "H1",
-        "pdf.py:_write_section",
-        "subtotal cell",
-        {
-            "c_margin": float(pdf.c_margin),
-            "label_w": _LABEL_W,
-            "col_total": _COL_TOTAL,
-            "value": _brl(section_subtotal),
-        },
-    )
-    try:
-        import time as _t
-
-        _p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
-        _p.parent.mkdir(parents=True, exist_ok=True)
-        _p.open("a", encoding="utf-8").write(
-            json.dumps(
-                {
-                    "sessionId": "e0d4ae",
-                    "runId": "post-fix-pair",
-                    "hypothesisId": "F",
-                    "location": "pdf.py:_write_section:pay_block",
-                    "message": "paired left meta + right totals",
-                    "data": {
-                        "title": title[:80],
-                        "n_left": len(lefts),
-                        "n_right": len(rights),
-                        "n_pair": n_pair,
-                        "n_installments": len(installment_rows),
-                        "pay": pay[:80],
-                        "discount": float(discount),
-                        "y_after_items": _y_after_items,
-                        "y_before_subtotal": _y_before_sub,
-                        "dy_mm": round(_y_before_sub - _y_after_items, 2),
-                        "has_pagamento_header": False,
-                        "has_observacoes_header": False,
-                    },
-                    "timestamp": int(_t.time() * 1000),
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-    except Exception:
-        pass
-    # #endregion
     pdf.ln(_GAP * 0.5)
-    # #region agent log
-    try:
-        import time as _t2
-
-        _y_end = float(pdf.get_y())
-        _p2 = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
-        _p2.parent.mkdir(parents=True, exist_ok=True)
-        _p2.open("a", encoding="utf-8").write(
-            json.dumps(
-                {
-                    "sessionId": "e0d4ae",
-                    "runId": "post-fix-pair",
-                    "hypothesisId": "F",
-                    "location": "pdf.py:_write_section:meta",
-                    "message": "notes billed paired into totals rows",
-                    "data": {
-                        "title": title[:80],
-                        "has_notes": bool(notes_clean),
-                        "has_billed": bool(billed_clean or cnpj_clean),
-                        "pay_compact": _pay_compact,
-                        "extra_meta_rows": max(0, len(lefts) - len(rights)),
-                        "y_end": _y_end,
-                        "block_h_mm": round(_y_end - _y_before_sub, 2),
-                    },
-                    "timestamp": int(_t2.time() * 1000),
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-    except Exception:
-        pass
-    # #endregion
     pdf.c_margin = original_c_margin
 
 
@@ -1306,41 +1021,10 @@ def _write_payment_summary(
         pdf.set_font("Helvetica", "B", _FS_BODY)
         pdf.cell(_COL_TOTAL, _ROW_H, _brl(value) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
 
-    printed_labels: list[str] = []
     for mod, _qty, net in module_nets:
         if mod.id not in monthly_section_ids:
             continue
-        label = f"TOTAL {_module_band_title(mod)}"
-        printed_labels.append(label)
-        _amount_row(label, net)
-
-    # #region agent log
-    try:
-        import time as _t_ps
-
-        Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log").open("a", encoding="utf-8").write(
-            json.dumps(
-                {
-                    "sessionId": "718b43",
-                    "runId": "post-fix",
-                    "hypothesisId": "H1",
-                    "location": "pdf.py:_write_payment_summary",
-                    "message": "payment TOTAL rows",
-                    "data": {
-                        "monthly_section_ids": sorted(monthly_section_ids),
-                        "printed_labels": printed_labels,
-                        "n_module_nets": len(module_nets),
-                        "quote_box_fill": list(_NAVY),
-                    },
-                    "timestamp": int(_t_ps.time() * 1000),
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-    except Exception:
-        pass
-    # #endregion
+        _amount_row(f"TOTAL {_module_band_title(mod)}", net)
 
     pdf.ln(_GAP * 2)
     y_box = pdf.get_y()
@@ -1516,28 +1200,6 @@ def _write_monthly_charges_section(
     y_box = pdf.get_y()
     box_h = _ROW_H + 4.0
     pdf.set_fill_color(*_NAVY)
-    # #region agent log
-    try:
-        import time as _t_mb
-
-        Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log").open("a", encoding="utf-8").write(
-            json.dumps(
-                {
-                    "sessionId": "718b43",
-                    "runId": "post-fix",
-                    "hypothesisId": "H5",
-                    "location": "pdf.py:_write_monthly_charges_section",
-                    "message": "TOTAL MENSALIDADES box fill",
-                    "data": {"fill": list(_NAVY), "text": list(_WHITE), "matches_quote_total_box": True},
-                    "timestamp": int(_t_mb.time() * 1000),
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
-    except Exception:
-        pass
-    # #endregion
     pdf.rect(pdf.l_margin, y_box, _CONTENT_W, box_h, style="F")
     pdf.set_font("Helvetica", "B", _FS_SECTION + 2)
     pdf.set_text_color(*_WHITE)

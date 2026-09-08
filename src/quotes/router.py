@@ -17,7 +17,6 @@ from src.integrations.tiflux_client import TifluxApiError, TifluxClient
 from src.integrations.vhsys_client import (
     VhsysApiError,
     VhsysClient,
-    _agent_dbg,
     normalize_vhsys_party,
 )
 from src.quotes.schemas import (
@@ -55,6 +54,18 @@ def _user_id(user: dict[str, Any]) -> int | None:
 
 def _service() -> QuoteService:
     return QuoteService(get_hub_db())
+
+
+def _pdf_download(path: Any, filename: str) -> FileResponse:
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=filename,
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate",
+            "Pragma": "no-cache",
+        },
+    )
 
 
 def _technician_name(quote: Any, user: dict[str, Any]) -> str:
@@ -296,34 +307,6 @@ def build_quotes_router() -> APIRouter:
         try:
             digits = normalize_cnpj(term)
             use_cnpj = len(digits) >= 11
-            # #region agent log
-            try:
-                import json as _json, time as _t
-                from pathlib import Path as _P
-                _p = _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log")
-                _p.open("a", encoding="utf-8").write(
-                    _json.dumps(
-                        {
-                            "sessionId": "718b43",
-                            "runId": "pre-fix",
-                            "hypothesisId": "D",
-                            "location": "quotes/router.py:search_tiflux_clients",
-                            "message": "search branch",
-                            "data": {
-                                "termLen": len(term),
-                                "digitsLen": len(digits),
-                                "useCnpj": use_cnpj,
-                                "termPreview": term[:40],
-                            },
-                            "timestamp": int(_t.time() * 1000),
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n"
-                )
-            except Exception:
-                pass
-            # #endregion
             if use_cnpj:
                 raw = await client.find_matches_by_cnpj(digits, limit=limit)
             else:
@@ -372,36 +355,6 @@ def build_quotes_router() -> APIRouter:
                     or None,
                 }
             )
-        # #region agent log
-        try:
-            import json as _json, time as _t
-            from pathlib import Path as _P
-            _p = _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log")
-            keys = list(contacts[0].keys())[:20] if contacts and isinstance(contacts[0], dict) else []
-            _p.open("a", encoding="utf-8").write(
-                _json.dumps(
-                    {
-                        "sessionId": "718b43",
-                        "runId": "post-fix",
-                        "hypothesisId": "I",
-                        "location": "quotes/router.py:list_tiflux_client_contacts",
-                        "message": "contacts normalized",
-                        "data": {
-                            "clientId": int(client_id),
-                            "rawN": len(contacts),
-                            "outN": len(result),
-                            "named": sum(1 for r in result if r.get("name")),
-                            "rawKeys": keys,
-                        },
-                        "timestamp": int(_t.time() * 1000),
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         return result
 
     @router.get("/tiflux/clients/{client_id}")
@@ -484,19 +437,6 @@ def build_quotes_router() -> APIRouter:
             )
         except VhsysApiError as exc:
             status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
-            # #region agent log
-            _agent_dbg(
-                "A",
-                "router.py:search_vhsys_catalog",
-                "catalog endpoint error",
-                {
-                    "http_status": status,
-                    "detail": str(exc),
-                    "body_head": (exc.body or "")[:400],
-                    "q_len": len(q.strip()),
-                },
-            )
-            # #endregion
             if status == 401:
                 raise HTTPException(status_code=502, detail="Tokens VHSYS inválidos.") from exc
             raise HTTPException(status_code=status, detail=str(exc)) from exc
@@ -654,8 +594,40 @@ def build_quotes_router() -> APIRouter:
     @router.get("/{quote_id}")
     async def get_quote(
         quote_id: int,
+        request: Request,
         _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
     ) -> dict[str, Any]:
+        # #region agent log
+        try:
+            import json as _json
+            import time as _t
+            from pathlib import Path as _P
+
+            _acc = (request.headers.get("accept") or "")[:120]
+            _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log").open(
+                "a", encoding="utf-8"
+            ).write(
+                _json.dumps(
+                    {
+                        "sessionId": "718b43",
+                        "runId": "pre-fix",
+                        "hypothesisId": "A",
+                        "location": "router.py:get_quote",
+                        "message": "GET /orcamentos/{id}",
+                        "data": {
+                            "quote_id": quote_id,
+                            "accept": _acc,
+                            "html_nav": "text/html" in _acc.lower(),
+                        },
+                        "timestamp": int(_t.time() * 1000),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
         try:
             quote = _service().get(quote_id)
         except QuoteNotFoundError as exc:
@@ -823,27 +795,11 @@ def build_quotes_router() -> APIRouter:
         issuer_name = (settings.quote_issuer_name or "AVS TECNOLOGIA").strip() or "AVS TECNOLOGIA"
         vhsys = VhsysClient(settings)
         allocations = []
-        # #region agent log
-        _agent_dbg(
-            "C",
-            "router.py:suggest_quote_monthly",
-            "suggest start",
-            {
-                "quote_id": quote_id,
-                "item_ids": [i.id for i in items],
-                "vhsys_product_ids": [i.vhsys_product_id for i in items],
-                "has_access_token": bool(settings.vhsys_access_token),
-                "has_secret": bool(settings.vhsys_secret_access_token),
-            },
-        )
-        # #endregion
         try:
             for item in items:
                 product = None
-                lookup = "none"
                 if item.vhsys_product_id:
                     product = await vhsys.get_product(item.vhsys_product_id)
-                    lookup = "by_id" if product else "by_id_miss"
                 if product is None and (item.name or "").strip():
                     found = await vhsys.search_catalog_items(item.name.strip(), limit=20)
                     needle = item.name.strip().casefold()
@@ -851,38 +807,12 @@ def build_quotes_router() -> APIRouter:
                         (p for p in found if str(p.get("name") or "").strip().casefold() == needle),
                         None,
                     )
-                    lookup = "by_name" if product else "by_name_miss"
                 alloc = build_monthly_suggestion(
                     item, product, intermediador_name=issuer_name
                 )
-                # #region agent log
-                _agent_dbg(
-                    "C",
-                    "router.py:suggest_quote_monthly",
-                    "monthly suggestion per item",
-                    {
-                        "item_id": item.id,
-                        "has_vhsys_product_id": item.vhsys_product_id is not None,
-                        "lookup": lookup,
-                        "product_found": product is not None,
-                        "cost_value": None if product is None else product.get("cost_value"),
-                        "fornecedor_amount": alloc.fornecedor_amount,
-                        "intermediador_amount": alloc.intermediador_amount,
-                        "source": alloc.source,
-                    },
-                )
-                # #endregion
                 allocations.append(alloc.model_dump())
         except VhsysApiError as exc:
             status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
-            # #region agent log
-            _agent_dbg(
-                "A",
-                "router.py:suggest_quote_monthly",
-                "suggest endpoint error",
-                {"http_status": status, "detail": str(exc), "body_head": (exc.body or "")[:400]},
-            )
-            # #endregion
             if status == 401:
                 raise HTTPException(status_code=502, detail="Tokens VHSYS inválidos.") from exc
             raise HTTPException(status_code=status, detail=str(exc)) from exc
@@ -950,24 +880,13 @@ def build_quotes_router() -> APIRouter:
         try:
             version = _service().get_version(quote_id, version_id)
             path = _service().get_version_pdf_file(quote_id, version_id)
-            # #region agent log
-            from src.quotes.service import _dbg_e0
-
-            _dbg_e0(
-                "G",
-                "router.py:download_quote_version_pdf",
-                "GET version pdf",
-                {"quote_id": quote_id, "version_id": version_id},
-            )
-            # #endregion
         except QuoteNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except QuoteConflictError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return FileResponse(
+        return _pdf_download(
             path,
-            media_type="application/pdf",
-            filename=f"orcamento-M{quote_id}-v{version.version_number}.pdf",
+            f"orcamento-M{quote_id}-v{version.version_number}-{path.stem[:8]}.pdf",
         )
 
     @router.post("/{quote_id}/pdf")
@@ -989,16 +908,6 @@ def build_quotes_router() -> APIRouter:
                 from_live=True,
                 technician_name=_technician_name(quote, user),
             )
-            # #region agent log
-            from src.quotes.service import _dbg_e0
-
-            _dbg_e0(
-                "K",
-                "router.py:generate_quote_pdf",
-                "POST generate",
-                {"quote_id": quote_id, "from_live": True, "path": str(path.name)},
-            )
-            # #endregion
         except QuoteNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except QuoteConflictError as exc:
@@ -1010,27 +919,30 @@ def build_quotes_router() -> APIRouter:
             detail={"pdf_path": quote.pdf_path},
             user=user,
         )
-        return FileResponse(
-            path,
-            media_type="application/pdf",
-            filename=f"orcamento-M{quote.id}.pdf",
-        )
+        return _pdf_download(path, f"orcamento-M{quote.id}-{path.stem[:8]}.pdf")
 
     @router.get("/{quote_id}/pdf")
     async def download_quote_pdf(
         quote_id: int,
-        _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
     ) -> FileResponse:
-        """Baixa PDF já gerado. 404 se inexistente."""
+        """Regenera PDF (layout atual) e devolve o arquivo."""
+        from src.quotes.pdf_parties import resolve_pdf_parties
+
         try:
             quote = _service().get(quote_id)
-            path = _service().get_pdf_file(quote_id)
+            issuer, client = await resolve_pdf_parties(quote, get_settings())
+            quote, path = _service().generate_pdf(
+                quote_id,
+                issuer=issuer,
+                client=client,
+                from_live=True,
+                technician_name=_technician_name(quote, user),
+            )
         except QuoteNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
-        return FileResponse(
-            path,
-            media_type="application/pdf",
-            filename=f"orcamento-M{quote.id}.pdf",
-        )
+        except QuoteConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        return _pdf_download(path, f"orcamento-M{quote.id}-{path.stem[:8]}.pdf")
 
     return router

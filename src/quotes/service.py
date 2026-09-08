@@ -42,27 +42,6 @@ _UUID_PDF_RE = re.compile(
     re.IGNORECASE,
 )
 
-
-def _dbg_e0(hypothesis_id: str, location: str, message: str, data: dict[str, Any]) -> None:
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "e0d4ae",
-            "runId": "old-pdf",
-            "hypothesisId": hypothesis_id,
-            "location": location,
-            "message": message,
-            "data": data,
-            "timestamp": int(datetime.now(timezone.utc).timestamp() * 1000),
-        }
-        p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-e0d4ae.log")
-        p.parent.mkdir(parents=True, exist_ok=True)
-        with p.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
 _QUOTE_COLUMNS = (
     "id",
     "cnpj",
@@ -1528,48 +1507,14 @@ class QuoteService:
                     raise QuoteNotFoundError(
                         "Mensalidades: alguns quote_items selecionados não pertencem ao orçamento."
                     )
-                per_item: list[dict[str, Any]] = []
                 for a in allocs:
                     line_total = round(by_id[a.item_id], 2)
                     split = round(float(a.fornecedor_amount) + float(a.intermediador_amount), 2)
-                    per_item.append(
-                        {
-                            "item_id": a.item_id,
-                            "line_total": line_total,
-                            "split": split,
-                            "ok": abs(line_total - split) <= 0.01,
-                        }
-                    )
                     if abs(line_total - split) > 0.01:
                         raise QuoteConflictError(
                             f"Mensalidades inválidas: fornecedor+intermediador ({split}) "
                             f"deve bater com a linha {a.item_id} ({line_total})."
                         )
-                # #region agent log
-                try:
-                    import time as _t
-
-                    _p = Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-ae8776.log")
-                    _p.parent.mkdir(parents=True, exist_ok=True)
-                    with _p.open("a", encoding="utf-8") as _fh:
-                        _fh.write(
-                            json.dumps(
-                                {
-                                    "sessionId": "ae8776",
-                                    "runId": "post-fix",
-                                    "hypothesisId": "C",
-                                    "location": "service.py:update_monthly_draft",
-                                    "message": "backend validates per-line split",
-                                    "data": {"per_item": per_item, "per_item_mode": True},
-                                    "timestamp": int(_t.time() * 1000),
-                                },
-                                ensure_ascii=False,
-                            )
-                            + "\n"
-                        )
-                except Exception:
-                    pass
-                # #endregion
                 monthly_json = json.dumps(draft.model_dump(), ensure_ascii=False)
             else:
                 monthly_json = None
@@ -1711,23 +1656,16 @@ class QuoteService:
     ) -> tuple[QuoteRead, Path]:
         """Gera PDF da versão pedida (default: ativa) e salva UUID sob HUB_PDF_DIR."""
         quote = self.get(quote_id)
-        live_item_n = len(quote.items)
-        live_mod_ids = [m.id for m in quote.modules]
-        live_item_sections = [i.section for i in quote.items]
         if from_live:
             target_version_id = None
             version_number = quote.current_version_number
             snapshot_monthly_json = quote.monthly_draft_json
             old_version_pdf = None
-            overlay_item_n = live_item_n
-            used = "live"
         else:
             target_version_id = version_id if version_id is not None else quote.active_quote_version_id
             version_number = None
             snapshot_monthly_json = quote.monthly_draft_json
             old_version_pdf = None
-            overlay_item_n = -1
-            used = "snapshot"
             if target_version_id is not None:
                 with self._db.connect() as conn:
                     v = conn.execute(
@@ -1750,7 +1688,6 @@ class QuoteService:
                         items_raw = json.loads(str(v["snapshot_items_json"] or "[]"))
                         modules = [QuoteModule.model_validate(m) for m in modules_raw]
                         items = [QuoteItemRead.model_validate(i) for i in items_raw]
-                        overlay_item_n = len(items)
                         quote = quote.model_copy(
                             update={
                                 "modules": modules,
@@ -1758,47 +1695,13 @@ class QuoteService:
                                 "notes": snapshot_notes,
                             }
                         )
-            else:
-                overlay_item_n = live_item_n
-                used = "live-fallback"
         root = self._pdf_root()
         filename = f"{uuid.uuid4()}.pdf"
         dest = (root / filename).resolve()
         if not dest.is_relative_to(root):
             raise QuoteConflictError("Falha ao resolver path do PDF.")
 
-        from src.quotes.pdf import _agent_dbg, render_quote_pdf
-
-        # #region agent log
-        _agent_dbg(
-            "F",
-            "service.py:generate_pdf",
-            "pdf source live vs snapshot",
-            {
-                "from_live": from_live,
-                "used": used,
-                "live_item_n": live_item_n,
-                "overlay_item_n": overlay_item_n,
-                "render_item_n": len(quote.items),
-                "live_mod_ids": live_mod_ids,
-                "render_mod_ids": [m.id for m in quote.modules],
-                "live_item_sections": live_item_sections,
-                "render_item_sections": [i.section for i in quote.items],
-            },
-        )
-        _dbg_e0(
-            "I",
-            "service.py:generate_pdf",
-            "render path",
-            {
-                "quote_id": quote_id,
-                "from_live": from_live,
-                "used": used,
-                "target_version_id": target_version_id,
-                "will_render": True,
-            },
-        )
-        # #endregion
+        from src.quotes.pdf import render_quote_pdf
 
         render_quote_pdf(
             quote,
@@ -1868,22 +1771,9 @@ class QuoteService:
         return updated, dest
 
     def get_pdf_file(self, quote_id: int) -> Path:
-        """Retorna Path do PDF já gerado; 404 se orçamento ou arquivo inexistente."""
-        quote = self.get(quote_id)
-        # #region agent log
-        _dbg_e0(
-            "H",
-            "service.py:get_pdf_file",
-            "serve stored quote pdf",
-            {"quote_id": quote_id, "pdf_path": quote.pdf_path, "regenerate": False},
-        )
-        # #endregion
-        if not quote.pdf_path:
-            raise QuoteNotFoundError(f"PDF do orçamento {quote_id} ainda não foi gerado.")
-        path = self._resolve_stored_pdf(quote.pdf_path)
-        if not path.is_file():
-            raise QuoteNotFoundError(f"PDF do orçamento {quote_id} não encontrado no disco.")
-        return path
+        """Regenera PDF live e devolve o Path (layout sempre atual)."""
+        _, dest = self.generate_pdf(quote_id, from_live=True)
+        return dest
 
     def get_version_pdf_file(self, quote_id: int, version_id: int) -> Path:
         with self._db.connect() as conn:
@@ -1897,35 +1787,5 @@ class QuoteService:
             ).fetchone()
         if row is None:
             raise QuoteNotFoundError(f"Versão {version_id} não encontrada no orçamento {quote_id}.")
-        pdf_path = row["pdf_path"]
-        if not pdf_path:
-            # #region agent log
-            _dbg_e0(
-                "G",
-                "service.py:get_version_pdf_file",
-                "no stored version pdf, generate",
-                {"quote_id": quote_id, "version_id": version_id, "cached": False},
-            )
-            # #endregion
-            _, dest = self.generate_pdf(quote_id, version_id=version_id)
-            return dest
-        path = self._resolve_stored_pdf(str(pdf_path))
-        if not path.is_file():
-            raise QuoteNotFoundError(
-                f"PDF da versão {version_id} não encontrado no disco."
-            )
-        # #region agent log
-        _dbg_e0(
-            "G",
-            "service.py:get_version_pdf_file",
-            "serve cached version pdf",
-            {
-                "quote_id": quote_id,
-                "version_id": version_id,
-                "pdf_path": str(pdf_path),
-                "cached": True,
-                "regenerate": False,
-            },
-        )
-        # #endregion
-        return path
+        _, dest = self.generate_pdf(quote_id, version_id=version_id)
+        return dest

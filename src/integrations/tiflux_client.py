@@ -197,29 +197,6 @@ class TifluxClient:
         term = (name or "").strip()
         if not term:
             return []
-        # #region agent log
-        try:
-            import json as _json, time as _t
-            from pathlib import Path as _P
-            _p = _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log")
-            _p.open("a", encoding="utf-8").write(
-                _json.dumps(
-                    {
-                        "sessionId": "718b43",
-                        "runId": "pre-fix",
-                        "hypothesisId": "E",
-                        "location": "tiflux_client.py:find_by_name",
-                        "message": "find_by_name start",
-                        "data": {"termPreview": term[:40], "limit": int(limit)},
-                        "timestamp": int(_t.time() * 1000),
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
 
         seen: dict[int, dict] = {}
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -248,29 +225,6 @@ class TifluxClient:
                         break
                 if len(seen) >= limit:
                     break
-        # #region agent log
-        try:
-            import json as _json, time as _t
-            from pathlib import Path as _P
-            _p = _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log")
-            _p.open("a", encoding="utf-8").write(
-                _json.dumps(
-                    {
-                        "sessionId": "718b43",
-                        "runId": "pre-fix",
-                        "hypothesisId": "E",
-                        "location": "tiflux_client.py:find_by_name:end",
-                        "message": "find_by_name result",
-                        "data": {"termPreview": term[:40], "n": len(seen)},
-                        "timestamp": int(_t.time() * 1000),
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         return list(seen.values())[:limit]
 
 
@@ -421,35 +375,6 @@ class TifluxClient:
             rows = [row for row in data if isinstance(row, dict)]
         else:
             rows = _extract_client_list(data)
-        # #region agent log
-        try:
-            import json as _json, time as _t
-            from pathlib import Path as _P
-            _p = _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log")
-            _p.open("a", encoding="utf-8").write(
-                _json.dumps(
-                    {
-                        "sessionId": "718b43",
-                        "runId": "post-fix",
-                        "hypothesisId": "J",
-                        "location": "tiflux_client.py:get_client_contacts",
-                        "message": "tiflux contacts raw",
-                        "data": {
-                            "clientId": int(client_id),
-                            "status": int(response.status_code),
-                            "n": len(rows),
-                            "dataType": type(data).__name__,
-                            "keys": list(rows[0].keys())[:20] if rows else [],
-                        },
-                        "timestamp": int(_t.time() * 1000),
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         return rows
 
     async def get_client_requestors(self, client_id: int, *, limit: int = 50) -> list[dict]:
@@ -476,36 +401,6 @@ class TifluxClient:
                 if len(items) < page_size:
                     break
                 offset += 1
-        # #region agent log
-        try:
-            import json as _json, time as _t
-            from pathlib import Path as _P
-            _p = _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log")
-            _p.open("a", encoding="utf-8").write(
-                _json.dumps(
-                    {
-                        "sessionId": "718b43",
-                        "runId": "post-fix",
-                        "hypothesisId": "K",
-                        "location": "tiflux_client.py:get_client_requestors",
-                        "message": "requestors listed",
-                        "data": {
-                            "clientId": int(client_id),
-                            "n": len(collected),
-                            "keys": list(collected[0].keys())[:20] if collected else [],
-                            "named": sum(
-                                1 for r in collected if str(r.get("name") or "").strip()
-                            ),
-                        },
-                        "timestamp": int(_t.time() * 1000),
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         return collected
 
     async def get_client_desks(self, client_id: int) -> list[dict]:
