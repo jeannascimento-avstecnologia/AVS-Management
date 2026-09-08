@@ -439,11 +439,20 @@ def _payment_summary_row_count(module_nets: list[tuple[QuoteModule, float, float
 
 def _estimate_payment_summary_height(
     module_nets: list[tuple[QuoteModule, float, float]],
-    monthly_by_module: dict[str, dict[str, Any]] | None = None,
+    monthly_section_ids: set[str] | None = None,
 ) -> float:
-    """Altura estimada de `_write_payment_summary` (banda + box, sem linhas por módulo)."""
-    _ = module_nets, monthly_by_module
-    return _BAND_H + _GAP * 2 + _GAP * 2 + _ROW_H + 5.0 + _GAP * 4
+    """Altura: linhas TOTAL dos módulos de mensalidade + box VALOR TOTAL."""
+    ids = monthly_section_ids or set()
+    n_rows = sum(1 for m, _q, _n in module_nets if m.id in ids)
+    return (
+        _BAND_H
+        + _GAP * 2
+        + n_rows * (_ROW_H + 0.5)
+        + _GAP * 2
+        + _ROW_H
+        + 5.0
+        + _GAP * 4
+    )
 
 
 def _estimate_observations_height(notes: str | None) -> float:
@@ -502,13 +511,13 @@ def render_quote_pdf(
     client = client or client_from_quote(quote)
     monthly_exclude_total = 0.0
     monthly_rows: list[dict[str, Any]] = []
+    license_ids: set[int] = set()
     if monthly_draft_json:
         try:
             draft = json.loads(str(monthly_draft_json))
         except (ValueError, TypeError):
             draft = {}
         allocs = draft.get("allocations") or []
-        license_ids: set[int] = set()
         if isinstance(allocs, list) and allocs:
             by_item = {int(i.id): i for i in quote.items}
             for a in allocs:
@@ -540,6 +549,70 @@ def render_quote_pdf(
             monthly_exclude_total = round_money(
                 sum(float(i.total_value) for i in quote.items if i.id in license_ids)
             )
+
+    monthly_section_ids: set[str] = set()
+    items_by_id = {int(i.id): i for i in quote.items}
+    for iid in license_ids:
+        item = items_by_id.get(int(iid))
+        if item:
+            monthly_section_ids.add(item.section)
+    for r in monthly_rows:
+        if r.get("role") != "product":
+            continue
+        try:
+            iid = int(r.get("item_id"))
+        except (TypeError, ValueError):
+            continue
+        item = items_by_id.get(iid)
+        if item:
+            monthly_section_ids.add(item.section)
+
+    # #region agent log
+    try:
+        import time as _t_pay
+
+        _draft_keys: list[str] = []
+        _n_alloc = 0
+        _n_chg = 0
+        _lic: list[int] = []
+        if monthly_draft_json:
+            try:
+                _d0 = json.loads(str(monthly_draft_json))
+                _draft_keys = list(_d0.keys()) if isinstance(_d0, dict) else []
+                _n_alloc = len(_d0.get("allocations") or []) if isinstance(_d0.get("allocations"), list) else 0
+                _n_chg = len(_d0.get("charges") or []) if isinstance(_d0.get("charges"), list) else 0
+                _lic = [int(x) for x in (_d0.get("license_item_ids") or [])]
+            except (ValueError, TypeError):
+                pass
+        Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log").open("a", encoding="utf-8").write(
+            json.dumps(
+                {
+                    "sessionId": "718b43",
+                    "runId": "post-fix",
+                    "hypothesisId": "H1",
+                    "location": "pdf.py:render_quote_pdf",
+                    "message": "payment monthly_section_ids",
+                    "data": {
+                        "has_draft": bool(monthly_draft_json),
+                        "draft_keys": _draft_keys,
+                        "n_alloc": _n_alloc,
+                        "n_charges": _n_chg,
+                        "license_item_ids": _lic,
+                        "row_roles": [str(r.get("role")) for r in monthly_rows],
+                        "row_item_ids": [r.get("item_id") for r in monthly_rows],
+                        "resolved_license_ids": sorted(license_ids),
+                        "monthly_section_ids": sorted(monthly_section_ids),
+                        "module_ids": [m.id for m in _ordered_modules(quote)],
+                    },
+                    "timestamp": int(_t_pay.time() * 1000),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
 
     pdf = _QuotePdf(format="A4", issuer=issuer)
     pdf.alias_nb_pages()
@@ -617,11 +690,12 @@ def render_quote_pdf(
 
     modules_by_id: dict[str, QuoteModule] = {m.id: m for m in modules}
 
-    _ensure_space(pdf, _estimate_payment_summary_height(module_nets))
+    _ensure_space(pdf, _estimate_payment_summary_height(module_nets, monthly_section_ids))
     _write_payment_summary(
         pdf,
         module_nets=module_nets,
         exclude_total=monthly_exclude_total,
+        monthly_section_ids=monthly_section_ids,
     )
 
     if monthly_rows:
@@ -1214,14 +1288,59 @@ def _write_payment_summary(
     *,
     module_nets: list[tuple[QuoteModule, float, float]],
     exclude_total: float = 0.0,
+    monthly_section_ids: set[str] | None = None,
 ) -> None:
-    """DADOS DE PAGAMENTO: somente VALOR TOTAL DO ORCAMENTO."""
+    """DADOS DE PAGAMENTO: TOTAL dos módulos de mensalidade + VALOR TOTAL DO ORCAMENTO."""
+    monthly_section_ids = monthly_section_ids or set()
     quote_total = round_money(max(0.0, sum(net for _m, _q, net in module_nets) - float(exclude_total)))
 
     pdf.ln(_GAP)
     _section_band(pdf, "DADOS DE PAGAMENTO", _NAVY)
     original_c_margin = pdf.c_margin
     pdf.c_margin = _CELL_PAD
+
+    def _amount_row(label: str, value: float) -> None:
+        pdf.set_font("Helvetica", "", _FS_BODY)
+        pdf.set_text_color(*_INK)
+        pdf.cell(_LABEL_W, _ROW_H, _safe(label)[:60])
+        pdf.set_font("Helvetica", "B", _FS_BODY)
+        pdf.cell(_COL_TOTAL, _ROW_H, _brl(value) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
+
+    printed_labels: list[str] = []
+    for mod, _qty, net in module_nets:
+        if mod.id not in monthly_section_ids:
+            continue
+        label = f"TOTAL {_module_band_title(mod)}"
+        printed_labels.append(label)
+        _amount_row(label, net)
+
+    # #region agent log
+    try:
+        import time as _t_ps
+
+        Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log").open("a", encoding="utf-8").write(
+            json.dumps(
+                {
+                    "sessionId": "718b43",
+                    "runId": "post-fix",
+                    "hypothesisId": "H1",
+                    "location": "pdf.py:_write_payment_summary",
+                    "message": "payment TOTAL rows",
+                    "data": {
+                        "monthly_section_ids": sorted(monthly_section_ids),
+                        "printed_labels": printed_labels,
+                        "n_module_nets": len(module_nets),
+                        "quote_box_fill": list(_NAVY),
+                    },
+                    "timestamp": int(_t_ps.time() * 1000),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
 
     pdf.ln(_GAP * 2)
     y_box = pdf.get_y()
@@ -1393,22 +1512,40 @@ def _write_monthly_charges_section(
     # ── Grand total ──
     grand_total = round_money(grand_total)
 
-    # Box outline azul
     pdf.ln(_GAP)
     y_box = pdf.get_y()
-    box_h = _ROW_H + 3.0
-    pdf.set_fill_color(*_HEADER_FILL)
-    pdf.set_draw_color(*_BLUE)
-    pdf.set_line_width(0.8)
-    pdf.rect(pdf.l_margin, y_box, _CONTENT_W, box_h, style="DF")
-    pdf.set_font("Helvetica", "B", _FS_SECTION + 1)
-    pdf.set_text_color(*_BLUE)
-    pdf.set_xy(pdf.l_margin + 3.0, y_box + 0.8)
-    pdf.cell(_LABEL_W - 3.0, box_h - 1.6, "TOTAL MENSALIDADES", align="R")
-    pdf.cell(_COL_TOTAL, box_h - 1.6, _brl(grand_total), align="R")
+    box_h = _ROW_H + 4.0
+    pdf.set_fill_color(*_NAVY)
+    # #region agent log
+    try:
+        import time as _t_mb
+
+        Path("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log").open("a", encoding="utf-8").write(
+            json.dumps(
+                {
+                    "sessionId": "718b43",
+                    "runId": "post-fix",
+                    "hypothesisId": "H5",
+                    "location": "pdf.py:_write_monthly_charges_section",
+                    "message": "TOTAL MENSALIDADES box fill",
+                    "data": {"fill": list(_NAVY), "text": list(_WHITE), "matches_quote_total_box": True},
+                    "timestamp": int(_t_mb.time() * 1000),
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    except Exception:
+        pass
+    # #endregion
+    pdf.rect(pdf.l_margin, y_box, _CONTENT_W, box_h, style="F")
+    pdf.set_font("Helvetica", "B", _FS_SECTION + 2)
+    pdf.set_text_color(*_WHITE)
+    pdf.set_xy(pdf.l_margin + 3.0, y_box + 1.0)
+    pdf.cell(_LABEL_W - 3.0, box_h - 2.0, "TOTAL MENSALIDADES", align="R")
+    pdf.cell(_COL_TOTAL, box_h - 2.0, _brl(grand_total), align="R")
     pdf.set_xy(pdf.l_margin, y_box + box_h)
     pdf.set_text_color(*_INK)
-    pdf.set_draw_color(0, 0, 0)
     pdf.ln(_GAP)
 
     pdf.c_margin = original_c_margin

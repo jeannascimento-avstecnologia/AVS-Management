@@ -47,9 +47,10 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
 4. Divisórias cinza entre módulos quando houver mais de um.
 
 5. **Dados de pagamento / resumo**:
-   - Imprime **somente** `VALOR TOTAL DO ORCAMENTO` (box navy, texto branco). Sem linhas `TOTAL {título}` por módulo. Sem rótulos OS VHSYS (`VALOR TOTAL DOS SERVICOS` / `VALOR TOTAL DOS PRODUTOS`). Sem linha `Mensalidade: … (Fornecedor | AVS)`.
-   - `VALOR TOTAL DO ORCAMENTO` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver).
-   - Seção **`MENSALIDADES`** (cobranças) **depois** do valor total: fora do `VALOR TOTAL DO ORCAMENTO`. Linhas selecionadas continuam nos módulos originais (duplicate-include). **Sem** linha `Total` por grupo. Total da seção: box com outline azul (`TOTAL MENSALIDADES`).
+   - Linhas `TOTAL {título}` **somente** para módulos com linhas de mensalidade (ex.: LICENCAS / BACKUP / GESTAO). **Não** repetir implantação quando o líquido já é o `VALOR TOTAL DO ORCAMENTO`.
+   - Sem rótulos OS VHSYS (`VALOR TOTAL DOS SERVICOS` / `VALOR TOTAL DOS PRODUTOS`). Sem linha `Mensalidade: … (Fornecedor | AVS)`.
+   - `VALOR TOTAL DO ORCAMENTO` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver). Box navy, texto branco.
+   - Seção **`MENSALIDADES`** **depois** do valor total. **Sem** linha `Total` por grupo. Box `TOTAL MENSALIDADES` **igual** ao do orçamento (navy, texto branco).
 
 6. **OBSERVACOES** — imprime **somente** `quotes.notes`. Sem disclaimer/ticket hardcoded. Bloco mesmo se vazio (`-`). Pré-fill do wizard (aviso + `Ticket no.:`) entra só se o usuário salvou isso em `notes`. **`quotes.internal_notes` nunca é impresso** (campo 100% interno).
 

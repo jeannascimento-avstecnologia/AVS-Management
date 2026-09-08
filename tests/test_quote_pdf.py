@@ -634,9 +634,114 @@ def test_pdf_header_version_and_monthly_outside_total(tmp_path: Path) -> None:
     assert "Mensalidade Fornecedor" not in text
     assert "Plano mensal" in text
     assert "Mensalidade:" not in text
+    pay_block = text.split("DADOS DE PAGAMENTO", 1)[-1].split("VALOR TOTAL DO ORCAMENTO", 1)[0]
+    assert "TOTAL MENSALIDADE" in pay_block
     assert "VALOR TOTAL DO ORCAMENTO" in text
     assert "1.660,00" in text or "1660,00" in text
     assert "1.959,90" not in text and "1959,90" not in text
+
+
+def test_pdf_payment_lists_monthly_modules_from_license_item_ids(tmp_path: Path) -> None:
+    dest = tmp_path / "m365-pay.pdf"
+    quote = _sample_quote()
+    quote = quote.model_copy(
+        update={
+            "modules": [
+                QuoteModule(
+                    id="implantacao",
+                    title="Implantação",
+                    legacy_kind="implantacao",
+                    show_labor=False,
+                    sort_order=0,
+                ),
+                QuoteModule(
+                    id="lic",
+                    title="M365 - Licenças",
+                    legacy_kind=None,
+                    show_labor=False,
+                    sort_order=1,
+                ),
+                QuoteModule(
+                    id="bak",
+                    title="M365 - Backup",
+                    legacy_kind=None,
+                    show_labor=False,
+                    sort_order=2,
+                ),
+                QuoteModule(
+                    id="ges",
+                    title="M365 - Gestão e suporte",
+                    legacy_kind=None,
+                    show_labor=False,
+                    sort_order=3,
+                ),
+            ],
+            "items": [
+                QuoteItemRead(
+                    id=1,
+                    quote_id=quote.id,
+                    section="implantacao",
+                    name="Setup",
+                    qty=1,
+                    unit_value=1000.0,
+                    total_value=1000.0,
+                    sort_order=0,
+                ),
+                QuoteItemRead(
+                    id=2,
+                    quote_id=quote.id,
+                    section="lic",
+                    name="Lic",
+                    qty=1,
+                    unit_value=100.0,
+                    total_value=100.0,
+                    sort_order=0,
+                ),
+                QuoteItemRead(
+                    id=3,
+                    quote_id=quote.id,
+                    section="bak",
+                    name="Bak",
+                    qty=1,
+                    unit_value=50.0,
+                    total_value=50.0,
+                    sort_order=0,
+                ),
+                QuoteItemRead(
+                    id=4,
+                    quote_id=quote.id,
+                    section="ges",
+                    name="Ges",
+                    qty=1,
+                    unit_value=80.0,
+                    total_value=80.0,
+                    sort_order=0,
+                ),
+            ],
+        }
+    )
+    draft = {
+        "license_item_ids": [2, 3, 4],
+        "charges": [
+            {"name": "Lic", "amount": 100.0},
+            {"name": "Bak", "amount": 50.0},
+            {"name": "Ges", "amount": 80.0},
+        ],
+    }
+    render_quote_pdf(
+        quote,
+        dest,
+        issuer=_issuer(),
+        client=_client(),
+        monthly_draft_json=json.dumps(draft),
+    )
+    text = _pdf_text(dest)
+    pay_block = text.split("DADOS DE PAGAMENTO", 1)[-1].split("VALOR TOTAL DO ORCAMENTO", 1)[0]
+    assert "TOTAL M365 - LICENCAS" in pay_block
+    assert "TOTAL M365 - BACKUP" in pay_block
+    assert "TOTAL M365 - GESTAO E SUPORTE" in pay_block
+    assert "TOTAL IMPLANTACAO" not in pay_block
+    assert "TOTAL MENSALIDADES" in text
 
 
 def test_pdf_monthly_omits_zero_party_amount(tmp_path: Path) -> None:
