@@ -148,8 +148,12 @@ def _site_href(site: str) -> str | None:
         lower = cleaned.lower()
     if not lower.startswith("https://"):
         return None
-    host = cleaned.split("://", 1)[1].split("/", 1)[0]
-    if not host or "." not in host or any(ch.isspace() for ch in host):
+    rest = cleaned.split("://", 1)[1]
+    host = rest.split("/", 1)[0]
+    if "@" in host or not host or any(ch.isspace() for ch in host):
+        return None
+    host_name = host.split(":", 1)[0]
+    if not re.fullmatch(r"[A-Za-z0-9.-]+\.[A-Za-z]{2,}", host_name):
         return None
     return cleaned
 
@@ -617,7 +621,7 @@ def _draw_contact_line(
             pdf.set_text_color(*_BLUE)
         pdf.set_xy(cursor, y)
         text_w = pdf.get_string_width(label) + 1.2
-        pdf.cell(text_w, 3.4, label, link=href or "")
+        pdf.cell(text_w, 3.4, label, **({"link": href} if href else {}))
         if href:
             pdf.set_text_color(*_INK)
             pdf.link(x0, y, (cursor + text_w) - x0, 3.4, href)

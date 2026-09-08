@@ -888,6 +888,7 @@ def test_pdf_contact_href_rejects_unsafe_uris() -> None:
     assert _mailto_href("comercial@avstecnologia.cloud") == "mailto:comercial@avstecnologia.cloud"
     assert _site_href("javascript:alert(1)") is None
     assert _site_href("http://evil.example") is None
+    assert _site_href("https://evil.example@avstecnologia.cloud") is None
     assert _site_href("https://avstecnologia.cloud/") == "https://avstecnologia.cloud"
 
 
