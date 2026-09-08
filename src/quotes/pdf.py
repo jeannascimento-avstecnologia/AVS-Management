@@ -615,6 +615,42 @@ def render_quote_pdf(
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(dest))
+    # region agent log
+    try:
+        import fpdf as _fpdf_mod
+        import json as _json
+        import time as _t
+
+        raw = dest.read_bytes() if dest.is_file() else b""
+        with open(
+            "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log",
+            "a",
+            encoding="utf-8",
+        ) as _fh:
+            _fh.write(
+                _json.dumps(
+                    {
+                        "sessionId": "718b43",
+                        "runId": "post-fix",
+                        "hypothesisId": "H1-H2",
+                        "location": "pdf.py:render_quote_pdf",
+                        "message": "pdf written",
+                        "data": {
+                            "fpdfVersion": getattr(_fpdf_mod, "__version__", "?"),
+                            "fpdfMod": getattr(_fpdf_mod, "__file__", "?")[-80:],
+                            "uriCount": raw.count(b"/URI"),
+                            "hasWame": b"wa.me" in raw,
+                            "hasMailto": b"mailto:" in raw,
+                            "hasAnnots": b"/Annots" in raw,
+                        },
+                        "timestamp": int(_t.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # endregion
 
 
 def _draw_contact_line(
@@ -633,24 +669,19 @@ def _draw_contact_line(
 
     def _contact_item(icon: Path, label: str, href: str | None = None) -> None:
         nonlocal cursor
+        x0 = cursor
         if icon.is_file():
-            if href:
-                pdf.image(str(icon), x=cursor, y=y + 0.1, h=icon_h, link=href)
-            else:
-                pdf.image(str(icon), x=cursor, y=y + 0.1, h=icon_h)
+            pdf.image(str(icon), x=cursor, y=y + 0.1, h=icon_h)
             cursor += icon_h + 1.0
         if href:
             pdf.set_text_color(*_BLUE)
         pdf.set_xy(cursor, y)
-        pdf.cell(
-            pdf.get_string_width(label) + 1.2,
-            3.4,
-            label,
-            link=href or "",
-        )
+        text_w = pdf.get_string_width(label) + 1.2
+        pdf.cell(text_w, 3.4, label)
         if href:
             pdf.set_text_color(*_INK)
-        cursor += pdf.get_string_width(label) + 1.2
+            pdf.link(x0, y, (cursor + text_w) - x0, 3.4, href)
+        cursor += text_w
 
     items: list[tuple[Path, str, str | None]] = []
     if issuer.phone:
@@ -662,6 +693,42 @@ def _draw_contact_line(
     if issuer.site:
         label = _safe(issuer.site).rstrip("/").rstrip("|").strip()
         items.append((_ICON_GLOBE, label, _site_href(label)))
+    # region agent log
+    try:
+        import json as _json
+        import time as _t
+
+        with open(
+            "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log",
+            "a",
+            encoding="utf-8",
+        ) as _fh:
+            _fh.write(
+                _json.dumps(
+                    {
+                        "sessionId": "718b43",
+                        "runId": "post-fix",
+                        "hypothesisId": "H3-H5",
+                        "location": "pdf.py:_draw_contact_line",
+                        "message": "contact hrefs",
+                        "data": {
+                            "phoneDigits": _digits_only(issuer.phone)[-4:] if issuer.phone else "",
+                            "phoneLen": len(_digits_only(issuer.phone)),
+                            "waHref": bool(_whatsapp_href(_safe(issuer.phone).rstrip("|").strip()) if issuer.phone else None),
+                            "mailHref": bool(items[1][2] if len(items) > 1 else None),
+                            "siteHref": bool(items[-1][2] if items else None),
+                            "iconWa": _ICON_WHATSAPP.is_file(),
+                            "nItems": len(items),
+                            "hrefs": [bool(h) for _, _, h in items],
+                        },
+                        "timestamp": int(_t.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # endregion
     for i, (icon, label, href) in enumerate(items):
         _contact_item(icon, label, href)
         if i < len(items) - 1:
