@@ -64,6 +64,9 @@ _COL_QTY = 22.0
 _COL_UNIT = 31.0
 _COL_TOTAL = 31.0  # 104+22+31+31 = 188
 _LABEL_W = _CONTENT_W - _COL_TOTAL
+# Coluna esquerda (Cliente/CNPJ/Vendedor); contato do cliente à direita
+_CLIENT_LEFT_W = 118.0
+
 
 
 def quote_display_id(quote_id: int) -> str:
@@ -390,28 +393,16 @@ def _estimate_section_height(
     return h
 
 
-def _payment_summary_row_count(module_nets: list[tuple[QuoteModule, float, float]]) -> int:
-    """DADOS DE PAGAMENTO só imprime o box de total — 0 linhas por módulo."""
-    _ = module_nets
-    return 0
+_QUOTE_TOTAL_LABEL = "VALOR TOTAL DO ORCAMENTO (SEM MENSALIDADE)"
 
 
 def _estimate_payment_summary_height(
-    module_nets: list[tuple[QuoteModule, float, float]],
-    monthly_section_ids: set[str] | None = None,
+    module_nets: list[tuple[QuoteModule, float, float]] | None = None,
 ) -> float:
-    """Altura: linhas TOTAL dos módulos de mensalidade + box VALOR TOTAL."""
-    ids = monthly_section_ids or set()
-    n_rows = sum(1 for m, _q, _n in module_nets if m.id in ids)
-    return (
-        _BAND_H
-        + _GAP * 2
-        + n_rows * (_ROW_H + 0.5)
-        + _GAP * 2
-        + _ROW_H
-        + 5.0
-        + _GAP * 4
-    )
+    """Altura do box VALOR TOTAL (sem banda / linhas TOTAL por módulo)."""
+    _ = module_nets
+    box_h = _ROW_H + 4.0
+    return _GAP * 2 + box_h + _GAP * 2
 
 
 def _estimate_observations_height(notes: str | None) -> float:
@@ -495,23 +486,6 @@ def render_quote_pdf(
                 sum(float(i.total_value) for i in quote.items if i.id in license_ids)
             )
 
-    monthly_section_ids: set[str] = set()
-    items_by_id = {int(i.id): i for i in quote.items}
-    for iid in license_ids:
-        item = items_by_id.get(int(iid))
-        if item:
-            monthly_section_ids.add(item.section)
-    for r in monthly_rows:
-        if r.get("role") != "product":
-            continue
-        try:
-            iid = int(r.get("item_id"))
-        except (TypeError, ValueError):
-            continue
-        item = items_by_id.get(iid)
-        if item:
-            monthly_section_ids.add(item.section)
-
     pdf = _QuotePdf(format="A4", issuer=issuer)
     pdf.alias_nb_pages()
     pdf.set_auto_page_break(auto=True, margin=_FOOTER_MARGIN)
@@ -588,12 +562,11 @@ def render_quote_pdf(
 
     modules_by_id: dict[str, QuoteModule] = {m.id: m for m in modules}
 
-    _ensure_space(pdf, _estimate_payment_summary_height(module_nets, monthly_section_ids))
+    _ensure_space(pdf, _estimate_payment_summary_height(module_nets))
     _write_payment_summary(
         pdf,
         module_nets=module_nets,
         exclude_total=monthly_exclude_total,
-        monthly_section_ids=monthly_section_ids,
     )
 
     if monthly_rows:
@@ -615,42 +588,6 @@ def render_quote_pdf(
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     pdf.output(str(dest))
-    # region agent log
-    try:
-        import fpdf as _fpdf_mod
-        import json as _json
-        import time as _t
-
-        raw = dest.read_bytes() if dest.is_file() else b""
-        with open(
-            "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log",
-            "a",
-            encoding="utf-8",
-        ) as _fh:
-            _fh.write(
-                _json.dumps(
-                    {
-                        "sessionId": "718b43",
-                        "runId": "post-fix",
-                        "hypothesisId": "H1-H2",
-                        "location": "pdf.py:render_quote_pdf",
-                        "message": "pdf written",
-                        "data": {
-                            "fpdfVersion": getattr(_fpdf_mod, "__version__", "?"),
-                            "fpdfMod": getattr(_fpdf_mod, "__file__", "?")[-80:],
-                            "uriCount": raw.count(b"/URI"),
-                            "hasWame": b"wa.me" in raw,
-                            "hasMailto": b"mailto:" in raw,
-                            "hasAnnots": b"/Annots" in raw,
-                        },
-                        "timestamp": int(_t.time() * 1000),
-                    }
-                )
-                + "\n"
-            )
-    except Exception:
-        pass
-    # endregion
 
 
 def _draw_contact_line(
@@ -671,13 +608,16 @@ def _draw_contact_line(
         nonlocal cursor
         x0 = cursor
         if icon.is_file():
-            pdf.image(str(icon), x=cursor, y=y + 0.1, h=icon_h)
+            if href:
+                pdf.image(str(icon), x=cursor, y=y + 0.1, h=icon_h, link=href)
+            else:
+                pdf.image(str(icon), x=cursor, y=y + 0.1, h=icon_h)
             cursor += icon_h + 1.0
         if href:
             pdf.set_text_color(*_BLUE)
         pdf.set_xy(cursor, y)
         text_w = pdf.get_string_width(label) + 1.2
-        pdf.cell(text_w, 3.4, label)
+        pdf.cell(text_w, 3.4, label, link=href or "")
         if href:
             pdf.set_text_color(*_INK)
             pdf.link(x0, y, (cursor + text_w) - x0, 3.4, href)
@@ -693,42 +633,6 @@ def _draw_contact_line(
     if issuer.site:
         label = _safe(issuer.site).rstrip("/").rstrip("|").strip()
         items.append((_ICON_GLOBE, label, _site_href(label)))
-    # region agent log
-    try:
-        import json as _json
-        import time as _t
-
-        with open(
-            "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log",
-            "a",
-            encoding="utf-8",
-        ) as _fh:
-            _fh.write(
-                _json.dumps(
-                    {
-                        "sessionId": "718b43",
-                        "runId": "post-fix",
-                        "hypothesisId": "H3-H5",
-                        "location": "pdf.py:_draw_contact_line",
-                        "message": "contact hrefs",
-                        "data": {
-                            "phoneDigits": _digits_only(issuer.phone)[-4:] if issuer.phone else "",
-                            "phoneLen": len(_digits_only(issuer.phone)),
-                            "waHref": bool(_whatsapp_href(_safe(issuer.phone).rstrip("|").strip()) if issuer.phone else None),
-                            "mailHref": bool(items[1][2] if len(items) > 1 else None),
-                            "siteHref": bool(items[-1][2] if items else None),
-                            "iconWa": _ICON_WHATSAPP.is_file(),
-                            "nItems": len(items),
-                            "hrefs": [bool(h) for _, _, h in items],
-                        },
-                        "timestamp": int(_t.time() * 1000),
-                    }
-                )
-                + "\n"
-            )
-    except Exception:
-        pass
-    # endregion
     for i, (icon, label, href) in enumerate(items):
         _contact_item(icon, label, href)
         if i < len(items) - 1:
@@ -816,7 +720,7 @@ def _write_header(
 
 def _estimate_client_block_height(name: str | None = None) -> float:
     cleaned = (name or "").strip()
-    n_lines = max(1, min(4, (len(cleaned) + 39) // 40)) if cleaned else 1
+    n_lines = max(1, min(4, (len(cleaned) + 51) // 52)) if cleaned else 1
     name_h = max(_ROW_H, n_lines * _LINE_H)
     return _BAND_H + name_h + (_ROW_H * 2) + _GAP * 2
 
@@ -833,7 +737,7 @@ def _write_client_block(
     cnpj = client.cnpj or format_cnpj(quote.cnpj) or quote.cnpj
     tech = (technician_name or "").strip() or "-"
     label_w = 25.0
-    left_w = _CONTENT_W * 0.50
+    left_w = _CLIENT_LEFT_W
     value_w = left_w - label_w
     y_start = pdf.get_y()
 
@@ -1130,28 +1034,9 @@ def _write_payment_summary(
     *,
     module_nets: list[tuple[QuoteModule, float, float]],
     exclude_total: float = 0.0,
-    monthly_section_ids: set[str] | None = None,
 ) -> None:
-    """DADOS DE PAGAMENTO: TOTAL dos módulos de mensalidade + VALOR TOTAL DO ORCAMENTO."""
-    monthly_section_ids = monthly_section_ids or set()
+    """Box VALOR TOTAL (implementação; mensalidades ficam na seção seguinte)."""
     quote_total = round_money(max(0.0, sum(net for _m, _q, net in module_nets) - float(exclude_total)))
-
-    pdf.ln(_GAP)
-    _section_band(pdf, "DADOS DE PAGAMENTO", _NAVY)
-    original_c_margin = pdf.c_margin
-    pdf.c_margin = _CELL_PAD
-
-    def _amount_row(label: str, value: float) -> None:
-        pdf.set_font("Helvetica", "", _FS_BODY)
-        pdf.set_text_color(*_INK)
-        pdf.cell(_LABEL_W, _ROW_H, _safe(label)[:60])
-        pdf.set_font("Helvetica", "B", _FS_BODY)
-        pdf.cell(_COL_TOTAL, _ROW_H, _brl(value) + " ", align="R", new_x="LMARGIN", new_y="NEXT")
-
-    for mod, _qty, net in module_nets:
-        if mod.id not in monthly_section_ids:
-            continue
-        _amount_row(f"TOTAL {_module_band_title(mod)}", net)
 
     pdf.ln(_GAP * 2)
     y_box = pdf.get_y()
@@ -1161,12 +1046,11 @@ def _write_payment_summary(
     pdf.set_font("Helvetica", "B", _FS_SECTION + 2)
     pdf.set_text_color(*_WHITE)
     pdf.set_xy(pdf.l_margin + 3.0, y_box + 1.0)
-    pdf.cell(_LABEL_W - 3.0, box_h - 2.0, "VALOR TOTAL DO ORCAMENTO", align="R")
+    pdf.cell(_LABEL_W - 3.0, box_h - 2.0, _QUOTE_TOTAL_LABEL, align="R")
     pdf.cell(_COL_TOTAL, box_h - 2.0, _brl(quote_total), align="R")
     pdf.set_xy(pdf.l_margin, y_box + box_h)
     pdf.set_text_color(*_INK)
     pdf.ln(_GAP * 2)
-    pdf.c_margin = original_c_margin
 
 
 def _estimate_monthly_charges_height(

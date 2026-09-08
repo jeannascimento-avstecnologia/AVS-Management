@@ -33,7 +33,7 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
 
    **Rodapé (todas as páginas):** paginação `Pagina X/{nb}` + logo VEIVO Sistemas (`pdf_icons/veivo-powered-by.png`) no canto inferior direito, opacidade 40%.
 
-2. **Primeiro bloco: DADOS DO CLIENTE** — Nome (`legal_name` / `client_name`), CNPJ, Vendedor (`quotes.created_by` → nome do usuário; fallback usuário logado). Nome com **quebra de linha** (não truncar). Contato do cliente (nome/e-mail/telefone) **opcional à direita**, quando disponível.
+2. **Primeiro bloco: DADOS DO CLIENTE** — Nome (`legal_name` / `client_name`), CNPJ, Vendedor (`quotes.created_by` → nome do usuário; fallback usuário logado). Nome com **quebra de linha** (não truncar). Coluna esquerda (~118 mm) para esses três campos. Contato do cliente (nome/e-mail/telefone) **opcional à direita**, quando disponível.
 
 3. **Módulos (N seções)** — ordem `sort_order` de `quotes.modules_json`:
    - Título = `module.title` (negrito na cor `_BLUE` + barra vertical azul 1.2 mm à esquerda + regra cinza). **Sem** diferenciação de cor por módulo.
@@ -47,10 +47,9 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
 
 4. Divisórias cinza entre módulos quando houver mais de um.
 
-5. **Dados de pagamento / resumo**:
-   - Linhas `TOTAL {título}` **somente** para módulos com linhas de mensalidade (ex.: LICENCAS / BACKUP / GESTAO). **Não** repetir implantação quando o líquido já é o `VALOR TOTAL DO ORCAMENTO`.
-   - Sem rótulos OS VHSYS (`VALOR TOTAL DOS SERVICOS` / `VALOR TOTAL DOS PRODUTOS`). Sem linha `Mensalidade: … (Fornecedor | AVS)`.
-   - `VALOR TOTAL DO ORCAMENTO` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver). Box navy, texto branco.
+5. **Resumo (sem banda `DADOS DE PAGAMENTO`)**:
+   - Sem linhas `TOTAL {título}` por módulo. Sem rótulos OS VHSYS (`VALOR TOTAL DOS SERVICOS` / `VALOR TOTAL DOS PRODUTOS`). Sem linha `Mensalidade: … (Fornecedor | AVS)`.
+   - `VALOR TOTAL DO ORCAMENTO (SEM MENSALIDADE)` = soma dos líquidos de **todos** os módulos presentes **menos** o total das linhas marcadas como mensalidades (se houver). Box navy, texto branco.
    - Seção **`MENSALIDADES`** **depois** do valor total. **Sem** linha `Total` por grupo. Box `TOTAL MENSALIDADES` **igual** ao do orçamento (navy, texto branco).
 
 6. **OBSERVACOES** — imprime **somente** `quotes.notes`. Sem disclaimer/ticket hardcoded. Bloco mesmo se vazio (`-`). Pré-fill do wizard (aviso + `Ticket no.:`) entra só se o usuário salvou isso em `notes`. **`quotes.internal_notes` nunca é impresso** (campo 100% interno).
@@ -108,6 +107,6 @@ Inalterada: Implantação seed sem MO; Mensalidade se `show_labor`; custom sem M
   - Exibir o trecho de desconto **somente** quando o usuário preencher `discount_pct` e/ou `discount_value` (e o desconto aplicado for > 0).
 - Mensalidades:
   - Adicionar uma seção exclusiva `MENSALIDADES` no PDF.
-  - Essa seção fica **fora do** `VALOR TOTAL DO ORCAMENTO` (separação implementação vs mensalidade).
+  - Essa seção fica **fora do** `VALOR TOTAL DO ORCAMENTO (SEM MENSALIDADE)` (separação implementação vs mensalidade).
 - Tabela:
   - Aumentar espaço do texto em `ITEM`, melhorar alinhamento e quebrar em linhas quando o texto exceder a caixa.

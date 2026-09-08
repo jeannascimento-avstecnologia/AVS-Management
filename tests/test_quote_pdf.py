@@ -12,6 +12,7 @@ from src.quotes.pdf import (
     _BAND_H,
     _GAP,
     _ICON_WHATSAPP,
+    _QUOTE_TOTAL_LABEL,
     _ROW_H,
     _ensure_space,
     _estimate_payment_summary_height,
@@ -272,7 +273,7 @@ def test_estimate_section_height_scales_with_items() -> None:
     assert with_meta > empty
 
 
-def test_estimate_payment_summary_height_grows_with_modules() -> None:
+def test_estimate_payment_summary_height_is_constant() -> None:
     implant = QuoteModule(
         id="implantacao",
         title="Implantação",
@@ -299,7 +300,7 @@ def test_estimate_payment_summary_height_grows_with_modules() -> None:
         [(implant, 1.0, 100.0), (monthly, 1.0, 200.0), (custom, 1.0, 50.0)]
     )
     assert three == two
-    assert two > _GAP + _BAND_H
+    assert two == _GAP * 2 + (_ROW_H + 4.0) + _GAP * 2
 
 
 def test_ensure_space_adds_page_near_bottom() -> None:
@@ -378,7 +379,7 @@ def test_render_quote_pdf_layout_and_labor_rules(tmp_path: Path) -> None:
     assert "VALOR TOTAL DOS SERVICOS" not in text
     assert "TOTAL DE PRODUTOS" not in text
     assert "VALOR TOTAL DOS PRODUTOS" not in text
-    assert "VALOR TOTAL DO ORCAMENTO" in text
+    assert _QUOTE_TOTAL_LABEL in text
     assert "Subtotal (itens)" not in text
     assert "TOTAL LIQUIDO" not in text
     assert "OBSERVACOES" in text
@@ -478,7 +479,7 @@ def test_pdf_simplified_module_hides_line_names(tmp_path: Path) -> None:
 
 
 def test_pdf_payment_block_not_split_across_pages(tmp_path: Path) -> None:
-    """Com vários módulos, DADOS DE PAGAMENTO começa numa página e fecha nela."""
+    """Com vários módulos, o box VALOR TOTAL começa e fecha na mesma página."""
     dest = tmp_path / "multi.pdf"
     quote = _multi_module_quote(extra_modules=4, items_per=6)
     render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
@@ -488,20 +489,13 @@ def test_pdf_payment_block_not_split_across_pages(tmp_path: Path) -> None:
     reader = PdfReader(str(dest))
     assert len(reader.pages) >= 2
 
-    payment_pages = [
-        i
-        for i, page in enumerate(reader.pages)
-        if "DADOS DE PAGAMENTO" in (page.extract_text() or "")
-    ]
     total_pages = [
         i
         for i, page in enumerate(reader.pages)
-        if "VALOR TOTAL DO ORCAMENTO" in (page.extract_text() or "")
+        if _QUOTE_TOTAL_LABEL in (page.extract_text() or "")
     ]
-    assert payment_pages, "banda DADOS DE PAGAMENTO ausente"
-    assert total_pages, "VALOR TOTAL DO ORCAMENTO ausente"
-    # Bloco inteiro na mesma página (keep-together)
-    assert payment_pages[0] == total_pages[0]
+    assert total_pages, f"{_QUOTE_TOTAL_LABEL} ausente"
+    assert len(total_pages) == 1
 
 
 def test_pdf_omits_removed_implantacao_and_follows_order(tmp_path: Path) -> None:
@@ -563,7 +557,7 @@ def test_pdf_omits_removed_implantacao_and_follows_order(tmp_path: Path) -> None
     assert "TOTAL DE HORAS/QTDE DE SERVICOS" not in text
     assert "TOTAL DE PRODUTOS" not in text
     assert "VALOR TOTAL DOS PRODUTOS" not in text
-    assert "VALOR TOTAL DO ORCAMENTO" in text
+    assert _QUOTE_TOTAL_LABEL in text
 
 
 def test_pdf_legacy_without_modules_synthesizes_seed(tmp_path: Path) -> None:
@@ -597,7 +591,8 @@ def test_pdf_legacy_without_modules_synthesizes_seed(tmp_path: Path) -> None:
     )
     text = _pdf_text(dest)
     assert "IMPLANTACAO" not in text
-    assert "MENSALIDADE" not in text
+    assert _QUOTE_TOTAL_LABEL in text
+    assert "MENSALIDADE" not in text.replace(_QUOTE_TOTAL_LABEL, "")
     assert "OBSERVACOES" in text
     assert "Ticket no." not in text
 
@@ -634,9 +629,8 @@ def test_pdf_header_version_and_monthly_outside_total(tmp_path: Path) -> None:
     assert "Mensalidade Fornecedor" not in text
     assert "Plano mensal" in text
     assert "Mensalidade:" not in text
-    pay_block = text.split("DADOS DE PAGAMENTO", 1)[-1].split("VALOR TOTAL DO ORCAMENTO", 1)[0]
-    assert "TOTAL MENSALIDADE" in pay_block
-    assert "VALOR TOTAL DO ORCAMENTO" in text
+    assert "DADOS DE PAGAMENTO" not in text
+    assert _QUOTE_TOTAL_LABEL in text
     assert "1.660,00" in text or "1660,00" in text
     assert "1.959,90" not in text and "1959,90" not in text
 
@@ -736,11 +730,12 @@ def test_pdf_payment_lists_monthly_modules_from_license_item_ids(tmp_path: Path)
         monthly_draft_json=json.dumps(draft),
     )
     text = _pdf_text(dest)
-    pay_block = text.split("DADOS DE PAGAMENTO", 1)[-1].split("VALOR TOTAL DO ORCAMENTO", 1)[0]
-    assert "TOTAL M365 - LICENCAS" in pay_block
-    assert "TOTAL M365 - BACKUP" in pay_block
-    assert "TOTAL M365 - GESTAO E SUPORTE" in pay_block
-    assert "TOTAL IMPLANTACAO" not in pay_block
+    assert "DADOS DE PAGAMENTO" not in text
+    assert "TOTAL M365 - LICENCAS" not in text
+    assert "TOTAL M365 - BACKUP" not in text
+    assert "TOTAL M365 - GESTAO E SUPORTE" not in text
+    assert "TOTAL IMPLANTACAO" not in text
+    assert _QUOTE_TOTAL_LABEL in text
     assert "TOTAL MENSALIDADES" in text
 
 
@@ -927,7 +922,7 @@ def test_pdf_payment_has_only_grand_total(tmp_path: Path) -> None:
     dest = tmp_path / "pay-only.pdf"
     render_quote_pdf(_sample_quote(), dest, issuer=_issuer(), client=_client())
     text = _pdf_text(dest)
-    assert "VALOR TOTAL DO ORCAMENTO" in text
+    assert _QUOTE_TOTAL_LABEL in text
     assert "TOTAL IMPLANTACAO" not in text
     assert "VALOR TOTAL DOS SERVICOS" not in text
     assert "VALOR TOTAL DOS PRODUTOS" not in text
