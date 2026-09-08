@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, CheckCircle2, Loader2, Landmark } from 'lucide-react'
@@ -13,6 +13,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { usePermission } from '@/hooks/useAuth'
 import { formatCnpj, formatDate } from '@/lib/format'
+import { groupHomePath } from '@/lib/groupHome'
 import { btnSecondaryClass, btnTealClass } from '@/lib/ui-classes'
 
 const STATUS_LABELS: Record<BillingStatus, string> = {
@@ -62,6 +63,17 @@ export function BillingDetailPage() {
     queryFn: () => api.getBillingRun(runId),
     enabled: Number.isFinite(runId) && runId > 0,
   })
+
+  useEffect(() => {
+    const home = groupHomePath(window.location.pathname)
+    if (!Number.isFinite(runId) || runId <= 0) {
+      navigate(home, { replace: true })
+      return
+    }
+    if (detailQuery.isError) {
+      navigate(home, { replace: true })
+    }
+  }, [runId, detailQuery.isError, navigate])
 
   const approveMutation = useMutation({
     mutationFn: () => api.approveBillingRun(runId),
@@ -136,14 +148,7 @@ export function BillingDetailPage() {
   }
 
   if (!Number.isFinite(runId) || runId <= 0) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription>
-          ID inválido. <Link to="/faturamento">Voltar à lista</Link>
-        </AlertDescription>
-      </Alert>
-    )
+    return null
   }
 
   if (detailQuery.isPending) {
@@ -156,21 +161,7 @@ export function BillingDetailPage() {
   }
 
   if (detailQuery.isError || !detailQuery.data) {
-    return (
-      <div className="mx-auto max-w-3xl space-y-4">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>
-            {detailQuery.error instanceof Error
-              ? detailQuery.error.message
-              : 'Faturamento não encontrado.'}
-          </AlertDescription>
-        </Alert>
-        <Button type="button" className={btnSecondaryClass} onClick={() => navigate('/faturamento')}>
-          Voltar à lista
-        </Button>
-      </div>
-    )
+    return null
   }
 
   const run = detailQuery.data

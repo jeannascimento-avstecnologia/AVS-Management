@@ -58,6 +58,7 @@ import { QuoteModuleTemplatesPanel } from '@/components/quotes/QuoteModuleTempla
 import { QuoteMonthlyChargesDialog } from '@/components/quotes/QuoteMonthlyChargesDialog'
 import { QuoteProposalTemplatesPanel } from '@/components/quotes/QuoteProposalTemplatesPanel'
 import { localId } from '@/lib/localId'
+import { groupHomePath } from '@/lib/groupHome'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
 import { VhsysItemSearch } from '@/components/quotes/VhsysItemSearch'
 import { moduleTitleFromTemplate } from '@/lib/quoteModuleTemplates'
@@ -624,6 +625,17 @@ export function QuoteWizardPage() {
 
   const quote = quoteQuery.data
   const canEdit = quote?.status === 'draft'
+
+  useEffect(() => {
+    const home = groupHomePath(location.pathname)
+    if (!Number.isFinite(quoteId) || quoteId <= 0) {
+      navigate(home, { replace: true })
+      return
+    }
+    if (quoteQuery.isError) {
+      navigate(home, { replace: true })
+    }
+  }, [quoteId, quoteQuery.isError, location.pathname, navigate])
   const moduleTemplates = moduleTemplatesQuery.data?.templates ?? []
   const filteredInsertTemplates = useMemo(() => {
     const q = insertBlockSearch.trim().toLocaleLowerCase('pt-BR')
@@ -1240,12 +1252,7 @@ export function QuoteWizardPage() {
   }
 
   if (!Number.isFinite(quoteId) || quoteId <= 0) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription>ID de orçamento inválido.</AlertDescription>
-      </Alert>
-    )
+    return null
   }
 
   if (quoteQuery.isPending || !form) {
@@ -1259,22 +1266,7 @@ export function QuoteWizardPage() {
   }
 
   if (quoteQuery.isError || !quote) {
-    return (
-      <div className="mx-auto max-w-4xl space-y-4">
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertTitle>Não encontrado</AlertTitle>
-          <AlertDescription>
-            {quoteQuery.error instanceof Error
-              ? quoteQuery.error.message
-              : 'Orçamento não encontrado.'}
-          </AlertDescription>
-        </Alert>
-        <Button type="button" className={btnSecondaryClass} asChild>
-          <Link to="/orcamentos">Voltar à lista</Link>
-        </Button>
-      </div>
-    )
+    return null
   }
 
   const orderedModules = [...form.modules].sort(

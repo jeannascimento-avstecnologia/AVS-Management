@@ -1112,3 +1112,24 @@ def test_proposal_template_crud_and_apply_payload(quotes_client: TestClient) -> 
     assert deleted.status_code == 204
     assert quotes_client.get("/orcamentos/proposal-templates").json()["templates"] == []
 
+
+def test_html_refresh_quote_path_serves_spa_not_json(quotes_client: TestClient) -> None:
+    created = quotes_client.post("/orcamentos", json=QUOTE_PAYLOAD)
+    quote_id = created.json()["id"]
+    html = quotes_client.get(
+        f"/orcamentos/{quote_id}",
+        headers={"Accept": "text/html,application/xhtml+xml"},
+    )
+    assert html.status_code == 200
+    assert "text/html" in html.headers.get("content-type", "")
+    api = quotes_client.get(f"/orcamentos/{quote_id}")
+    assert api.status_code == 200
+    assert api.json()["id"] == quote_id
+
+
+def test_health_stays_json_even_with_html_accept(quotes_client: TestClient) -> None:
+    res = quotes_client.get("/health", headers={"Accept": "text/html"})
+    assert res.status_code == 200
+    assert res.json()["status"] == "ok"
+
+

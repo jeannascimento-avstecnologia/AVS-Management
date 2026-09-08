@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Form, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 
 from src.auth.deps import require_permission, require_user
@@ -107,6 +108,59 @@ def _spa_index() -> FileResponse | HTMLResponse:
     from src.ui import INDEX_HTML
 
     return HTMLResponse(INDEX_HTML)
+
+
+def _skip_spa_html(path: str) -> bool:
+    if path in {"/health", "/openapi.json", "/docs", "/redoc"}:
+        return True
+    return path.startswith(("/static/", "/assets/", "/webhooks/", "/docs/", "/redoc/"))
+
+
+class SpaHtmlNavigationMiddleware(BaseHTTPMiddleware):
+    """Deploy: GET com Accept text/html serve o SPA; fetch JSON da API segue intacto."""
+
+    async def dispatch(self, request: Request, call_next):
+        accept = (request.headers.get("accept") or "").lower()
+        html_nav = request.method == "GET" and "text/html" in accept
+        path = request.url.path
+        serve_spa = html_nav and not _skip_spa_html(path)
+        # #region agent log
+        try:
+            import json as _json
+            import time as _t
+            from pathlib import Path as _P
+
+            _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log").open(
+                "a", encoding="utf-8"
+            ).write(
+                _json.dumps(
+                    {
+                        "sessionId": "718b43",
+                        "runId": "post-fix",
+                        "hypothesisId": "B",
+                        "location": "main.py:SpaHtmlNavigationMiddleware",
+                        "message": "spa html navigation",
+                        "data": {
+                            "path": path[:80],
+                            "method": request.method,
+                            "html_nav": html_nav,
+                            "serve_spa": serve_spa,
+                        },
+                        "timestamp": int(_t.time() * 1000),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
+        if serve_spa:
+            return _spa_index()
+        return await call_next(request)
+
+
+app.add_middleware(SpaHtmlNavigationMiddleware)
 
 
 @app.get("/", response_class=HTMLResponse, response_model=None)
