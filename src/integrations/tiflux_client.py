@@ -193,21 +193,30 @@ class TifluxClient:
 
 
 
-    async def find_by_name(self, name: str, limit: int = 10) -> list[dict]:
+    async def find_by_name(
+        self, name: str, limit: int = 10, *, active: bool | None = None
+    ) -> list[dict]:
         term = (name or "").strip()
         if not term:
             return []
 
+        if active is True:
+            status_loop: tuple[bool | None, ...] = (True,)
+        elif active is False:
+            status_loop = (False,)
+        else:
+            status_loop = (None, False)
+
         seen: dict[int, dict] = {}
         async with httpx.AsyncClient(timeout=30.0) as client:
-            for active in (None, False):
+            for status in status_loop:
                 params: dict = {
                     "name": term,
                     "offset": 1,
                     "limit": min(limit, self.PAGE_LIMIT),
                 }
-                if active is not None:
-                    params["active"] = active
+                if status is not None:
+                    params["active"] = status
                 response = await client.get(
                     f"{self._base}/clients",
                     headers=self._auth_headers(),
@@ -402,6 +411,39 @@ class TifluxClient:
                     break
                 offset += 1
         return collected
+
+    async def search_requestors(self, term: str, *, limit: int = 50) -> tuple[list[dict], int | None]:
+        """GET /requestors (global). 403 → lista vazia (atendente sem permissão global)."""
+        needle = (term or "").strip()
+        if not needle:
+            return [], None
+        params: dict = {
+            "offset": 1,
+            "limit": min(max(limit, 1), self.PAGE_LIMIT),
+        }
+        if "@" in needle:
+            params["email"] = needle
+        else:
+            digits = "".join(ch for ch in needle if ch.isdigit())
+            if len(digits) >= 8 and not any(ch.isalpha() for ch in needle):
+                params["telephone"] = digits
+            else:
+                params["name"] = needle
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            response = await http.get(
+                f"{self._base}/requestors",
+                headers=self._auth_headers(),
+                params=params,
+            )
+        if response.status_code == 403:
+            return [], 403
+        self._ensure_ok(response, "buscar solicitantes TiFlux")
+        payload = response.json()
+        if isinstance(payload, list):
+            items = [x for x in payload if isinstance(x, dict)]
+        else:
+            items = _extract_client_list(payload)
+        return items, response.status_code
 
     async def get_client_desks(self, client_id: int) -> list[dict]:
         async with httpx.AsyncClient(timeout=30.0) as client:

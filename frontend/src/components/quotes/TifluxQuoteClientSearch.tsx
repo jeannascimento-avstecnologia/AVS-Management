@@ -51,7 +51,7 @@ export function TifluxQuoteClientSearch({
   })
 
   const clients = query.data?.clients ?? []
-  const showList = !disabled && debounced.trim().length >= 2
+  const showList = Boolean(open && enabled)
 
   return (
     <div ref={rootRef} className={cn('relative', showList && 'z-50')}>
@@ -112,8 +112,8 @@ export function TifluxQuoteClientSearch({
                 >
                   <span className="font-medium">{client.name}</span>
                   <span className="text-xs text-muted-foreground">
-                    #{client.id}
-                    {client.cnpj ? ` · ${formatCnpj(client.cnpj)}` : ''}
+                    TiFlux #{client.id}
+                    {client.cnpj ? ` · ${formatCnpj(client.cnpj)}` : ' · sem CNPJ'}
                   </span>
                 </button>
               </li>

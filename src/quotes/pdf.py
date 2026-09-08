@@ -6,6 +6,7 @@ Acabamento visual Aurora (textura, barras, tabelas) sem alterar estrutura/organi
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -99,6 +100,55 @@ def _safe(text: str | None) -> str:
 def _dash(text: str | None) -> str:
     cleaned = (text or "").strip()
     return _safe(cleaned) if cleaned else "-"
+
+
+def _digits_only(raw: str) -> str:
+    return "".join(ch for ch in (raw or "") if ch.isdigit())
+
+
+def _whatsapp_href(phone: str) -> str | None:
+    digits = _digits_only(phone)
+    if len(digits) < 10:
+        return None
+    if digits.startswith("55") and len(digits) >= 12:
+        e164 = digits
+    elif len(digits) in {10, 11}:
+        e164 = f"55{digits}"
+    else:
+        return None
+    return f"https://wa.me/{e164}"
+
+
+_EMAIL_RE = re.compile(r"^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$")
+
+
+def _mailto_href(email: str) -> str | None:
+    cleaned = (email or "").strip().rstrip("|")
+    if not cleaned or any(ch.isspace() for ch in cleaned):
+        return None
+    if cleaned.lower().startswith("mailto:"):
+        cleaned = cleaned[7:]
+    if not _EMAIL_RE.fullmatch(cleaned):
+        return None
+    return f"mailto:{cleaned}"
+
+
+def _site_href(site: str) -> str | None:
+    cleaned = (site or "").strip().rstrip("/").rstrip("|")
+    if not cleaned:
+        return None
+    lower = cleaned.lower()
+    if lower.startswith(("javascript:", "data:", "file:", "vbscript:")):
+        return None
+    if not lower.startswith(("http://", "https://")):
+        cleaned = f"https://{cleaned}"
+        lower = cleaned.lower()
+    if not lower.startswith("https://"):
+        return None
+    host = cleaned.split("://", 1)[1].split("/", 1)[0]
+    if not host or "." not in host or any(ch.isspace() for ch in host):
+        return None
+    return cleaned
 
 
 def _wrap_text_lines(pdf: FPDF, text: str, width: float) -> list[str]:
@@ -581,24 +631,39 @@ def _draw_contact_line(
     icon_h = 3.2
     cursor = x
 
-    def _contact_item(icon: Path, label: str) -> None:
+    def _contact_item(icon: Path, label: str, href: str | None = None) -> None:
         nonlocal cursor
         if icon.is_file():
-            pdf.image(str(icon), x=cursor, y=y + 0.1, h=icon_h)
+            if href:
+                pdf.image(str(icon), x=cursor, y=y + 0.1, h=icon_h, link=href)
+            else:
+                pdf.image(str(icon), x=cursor, y=y + 0.1, h=icon_h)
             cursor += icon_h + 1.0
+        if href:
+            pdf.set_text_color(*_BLUE)
         pdf.set_xy(cursor, y)
-        pdf.cell(pdf.get_string_width(label) + 1.2, 3.4, label)
+        pdf.cell(
+            pdf.get_string_width(label) + 1.2,
+            3.4,
+            label,
+            link=href or "",
+        )
+        if href:
+            pdf.set_text_color(*_INK)
         cursor += pdf.get_string_width(label) + 1.2
 
-    items: list[tuple[Path, str]] = []
+    items: list[tuple[Path, str, str | None]] = []
     if issuer.phone:
-        items.append((_ICON_WHATSAPP, _safe(issuer.phone).rstrip("|").strip()))
+        label = _safe(issuer.phone).rstrip("|").strip()
+        items.append((_ICON_WHATSAPP, label, _whatsapp_href(label)))
     if issuer.email:
-        items.append((_ICON_MAIL, _safe(issuer.email).rstrip("|").strip()))
+        label = _safe(issuer.email).rstrip("|").strip()
+        items.append((_ICON_MAIL, label, _mailto_href(label)))
     if issuer.site:
-        items.append((_ICON_GLOBE, _safe(issuer.site).rstrip("/").rstrip("|").strip()))
-    for i, (icon, label) in enumerate(items):
-        _contact_item(icon, label)
+        label = _safe(issuer.site).rstrip("/").rstrip("|").strip()
+        items.append((_ICON_GLOBE, label, _site_href(label)))
+    for i, (icon, label, href) in enumerate(items):
+        _contact_item(icon, label, href)
         if i < len(items) - 1:
             pdf.set_xy(cursor, y)
             pdf.cell(3.5, 3.4, "|")
@@ -615,11 +680,6 @@ def _write_page_number(pdf: _QuotePdf, y: float) -> None:
     pdf.set_xy(pdf.l_margin, y)
     pdf.cell(0, 3.4, page_label, align="L")
     pdf.set_text_color(*_INK)
-
-
-def _write_issuer_footer(pdf: _QuotePdf, issuer: QuotePdfIssuer | None, y: float) -> None:
-    _ = issuer
-    _write_page_number(pdf, y)
 
 
 def _write_header(

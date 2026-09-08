@@ -98,6 +98,55 @@ def _normalize_tiflux_quote_client(row: dict) -> dict[str, Any] | None:
     }
 
 
+def _map_tiflux_requestor(row: dict[str, Any], *, scope: str) -> dict[str, Any]:
+    first = str(row.get("first_name") or "").strip()
+    last = str(row.get("last_name") or "").strip()
+    composed = f"{first} {last}".strip()
+    name = (
+        str(row.get("name") or row.get("full_name") or row.get("contact_name") or composed).strip()
+        or None
+    )
+    return {
+        "name": name,
+        "email": str(row.get("email") or "").strip() or None,
+        "phone": str(
+            row.get("phone")
+            or row.get("phone_number")
+            or row.get("telephone")
+            or row.get("mobile")
+            or ""
+        ).strip()
+        or None,
+        "scope": scope,
+    }
+
+
+def _tiflux_requestor_key(row: dict[str, Any]) -> str:
+    email = str(row.get("email") or "").strip().lower()
+    if email:
+        return f"e:{email}"
+    name = str(row.get("name") or "").strip().lower()
+    phone = str(row.get("phone") or "").strip()
+    return f"n:{name}|{phone}"
+
+
+def _tiflux_requestor_matches(row: dict[str, Any], needle: str) -> bool:
+    blob = f"{row.get('name') or ''} {row.get('email') or ''} {row.get('phone') or ''}"
+    return needle in blob.casefold()
+
+
+def _dedupe_tiflux_requestors(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[str] = set()
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        key = _tiflux_requestor_key(row)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(row)
+    return out
+
+
 def build_quotes_router() -> APIRouter:
     router = APIRouter(prefix="/orcamentos", tags=["orcamentos"])
 
@@ -306,16 +355,64 @@ def build_quotes_router() -> APIRouter:
         client = TifluxClient(settings)
         try:
             digits = normalize_cnpj(term)
-            use_cnpj = len(digits) >= 11
+            use_cnpj = len(digits) == 14
             if use_cnpj:
                 raw = await client.find_matches_by_cnpj(digits, limit=limit)
             else:
-                raw = await client.find_by_name(term, limit=limit)
+                raw = await client.find_by_name(term, limit=limit, active=True)
         except TifluxApiError as exc:
             status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
             raise HTTPException(status_code=status, detail=str(exc)) from exc
         clients = [c for c in (_normalize_tiflux_quote_client(r) for r in raw) if c is not None]
         return {"clients": clients[:limit], "query": term}
+
+    @router.get("/tiflux/requestors")
+    async def search_tiflux_requestors(
+        client_id: int = Query(..., ge=1),
+        q: str = Query(default="", max_length=200),
+        limit: int = Query(default=40, ge=1, le=80),
+        _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        """Solicitantes: primeiro os do cliente; depois matches globais (GET /requestors)."""
+        settings = get_settings()
+        if not settings.tiflux_api_token:
+            raise HTTPException(status_code=503, detail="Credenciais TiFlux não configuradas.")
+        term = q.strip()
+        client = TifluxClient(settings)
+        try:
+            company_raw = await client.get_client_requestors(client_id)
+        except TifluxApiError as exc:
+            status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
+        company = _dedupe_tiflux_requestors(
+            [_map_tiflux_requestor(row, scope="company") for row in company_raw]
+        )
+        needle = term.casefold()
+        if needle:
+            company_hits = [row for row in company if _tiflux_requestor_matches(row, needle)]
+        else:
+            company_hits = company
+        seen = {_tiflux_requestor_key(row) for row in company_hits}
+        others: list[dict[str, Any]] = []
+        if needle:
+            try:
+                global_raw, _ = await client.search_requestors(term, limit=limit)
+            except TifluxApiError as exc:
+                status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
+                raise HTTPException(status_code=status, detail=str(exc)) from exc
+            for row in global_raw:
+                mapped = _map_tiflux_requestor(row, scope="other")
+                if not _tiflux_requestor_matches(mapped, needle):
+                    continue
+                key = _tiflux_requestor_key(mapped)
+                if key in seen:
+                    continue
+                seen.add(key)
+                others.append(mapped)
+                if len(company_hits) + len(others) >= limit:
+                    break
+        contacts = (company_hits + others)[:limit]
+        return {"contacts": contacts, "query": term}
 
     @router.get("/tiflux/clients/{client_id}/contacts")
     async def list_tiflux_client_contacts(
@@ -334,27 +431,8 @@ def build_quotes_router() -> APIRouter:
             raise HTTPException(status_code=status, detail=str(exc)) from exc
         result: list[dict[str, Any]] = []
         for c in contacts:
-            first = str(c.get("first_name") or "").strip()
-            last = str(c.get("last_name") or "").strip()
-            composed = f"{first} {last}".strip()
-            name = (
-                str(c.get("name") or c.get("full_name") or c.get("contact_name") or composed).strip()
-                or None
-            )
-            result.append(
-                {
-                    "name": name,
-                    "email": str(c.get("email") or "").strip() or None,
-                    "phone": str(
-                        c.get("phone")
-                        or c.get("phone_number")
-                        or c.get("telephone")
-                        or c.get("mobile")
-                        or ""
-                    ).strip()
-                    or None,
-                }
-            )
+            mapped = _map_tiflux_requestor(c, scope="company")
+            result.append({k: mapped[k] for k in ("name", "email", "phone")})
         return result
 
     @router.get("/tiflux/clients/{client_id}")
@@ -594,40 +672,8 @@ def build_quotes_router() -> APIRouter:
     @router.get("/{quote_id}")
     async def get_quote(
         quote_id: int,
-        request: Request,
         _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
     ) -> dict[str, Any]:
-        # #region agent log
-        try:
-            import json as _json
-            import time as _t
-            from pathlib import Path as _P
-
-            _acc = (request.headers.get("accept") or "")[:120]
-            _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log").open(
-                "a", encoding="utf-8"
-            ).write(
-                _json.dumps(
-                    {
-                        "sessionId": "718b43",
-                        "runId": "pre-fix",
-                        "hypothesisId": "A",
-                        "location": "router.py:get_quote",
-                        "message": "GET /orcamentos/{id}",
-                        "data": {
-                            "quote_id": quote_id,
-                            "accept": _acc,
-                            "html_nav": "text/html" in _acc.lower(),
-                        },
-                        "timestamp": int(_t.time() * 1000),
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         try:
             quote = _service().get(quote_id)
         except QuoteNotFoundError as exc:

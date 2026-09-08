@@ -860,6 +860,42 @@ def test_pdf_whatsapp_icon_exists() -> None:
     assert _ICON_WHATSAPP.is_file()
 
 
+def _pdf_uri_links(dest: Path) -> list[str]:
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(dest))
+    uris: list[str] = []
+    for page in reader.pages:
+        annots = page.get("/Annots") or []
+        for ref in annots:
+            obj = ref.get_object()
+            action = obj.get("/A")
+            if action and action.get("/URI"):
+                uris.append(str(action["/URI"]))
+    return uris
+
+
+def test_pdf_issuer_contact_links(tmp_path: Path) -> None:
+    dest = tmp_path / "issuer-links.pdf"
+    render_quote_pdf(_sample_quote(), dest, issuer=_issuer(), client=_client())
+    uris = _pdf_uri_links(dest)
+    assert any("wa.me/551932439559" in u for u in uris)
+    assert any(u.startswith("mailto:comercial@avstecnologia.cloud") for u in uris)
+    assert any("avstecnologia.cloud" in u for u in uris)
+
+
+def test_pdf_contact_href_rejects_unsafe_uris() -> None:
+    from src.quotes.pdf import _mailto_href, _site_href, _whatsapp_href
+
+    assert _whatsapp_href("(19) 3243-9559") == "https://wa.me/551932439559"
+    assert _whatsapp_href("123") is None
+    assert _mailto_href("javascript:alert(1)") is None
+    assert _mailto_href("comercial@avstecnologia.cloud") == "mailto:comercial@avstecnologia.cloud"
+    assert _site_href("javascript:alert(1)") is None
+    assert _site_href("http://evil.example") is None
+    assert _site_href("https://avstecnologia.cloud/") == "https://avstecnologia.cloud"
+
+
 def test_pdf_client_name_wraps_not_truncated(tmp_path: Path) -> None:
     dest = tmp_path / "long-name.pdf"
     long_name = (

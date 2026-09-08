@@ -337,6 +337,13 @@ export type TifluxQuoteClient = {
   cnpj: string | null
 }
 
+export type TifluxRequestorHit = {
+  name: string | null
+  email: string | null
+  phone: string | null
+  scope: 'company' | 'other'
+}
+
 export type VhsysParty = {
   id: number
   name: string
@@ -1066,10 +1073,15 @@ export const api = {
       `/orcamentos/tiflux/clients/${clientId}`,
     ),
 
-  listTifluxClientContacts: (clientId: number) =>
-    request<Array<{ name: string | null; email: string | null; phone: string | null }>>(
-      `/orcamentos/tiflux/clients/${clientId}/contacts`,
-    ),
+  searchTifluxRequestors: (clientId: number, q: string, limit = 40) => {
+    const qs = new URLSearchParams()
+    qs.set('client_id', String(clientId))
+    qs.set('q', q.trim())
+    qs.set('limit', String(limit))
+    return request<{ contacts: TifluxRequestorHit[]; query: string }>(
+      `/orcamentos/tiflux/requestors?${qs}`,
+    )
+  },
 
   getVhsysClientContact: (clientId: number) =>
     request<{ id: number; name: string | null; email: string | null }>(

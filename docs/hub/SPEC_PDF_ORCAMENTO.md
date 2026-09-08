@@ -29,6 +29,7 @@ Rua Manuel Maria Barbosa Du Bocage, 70 Parque Taquaral - Campinas - SP CEP: 13.0
 ```
 
    Separador `|` **somente entre** itens de contato (nunca depois do último). Site **sem** `/` final. Número impresso = `QUOTE_ISSUER_PHONE` (fixo). Celular (`QUOTE_ISSUER_MOBILE`) **não** entra.
+   Links no PDF: WhatsApp → `https://wa.me/55{digits}` (ícone + texto); e-mail → `mailto:`; site → `https://` apenas (rejeita `javascript:`/`http:`/`file:`).
 
    **Rodapé (todas as páginas):** paginação `Pagina X/{nb}` + logo VEIVO Sistemas (`pdf_icons/veivo-powered-by.png`) no canto inferior direito, opacidade 40%.
 

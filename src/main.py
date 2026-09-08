@@ -124,37 +124,6 @@ class SpaHtmlNavigationMiddleware(BaseHTTPMiddleware):
         html_nav = request.method == "GET" and "text/html" in accept
         path = request.url.path
         serve_spa = html_nav and not _skip_spa_html(path)
-        # #region agent log
-        try:
-            import json as _json
-            import time as _t
-            from pathlib import Path as _P
-
-            _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log").open(
-                "a", encoding="utf-8"
-            ).write(
-                _json.dumps(
-                    {
-                        "sessionId": "718b43",
-                        "runId": "post-fix",
-                        "hypothesisId": "B",
-                        "location": "main.py:SpaHtmlNavigationMiddleware",
-                        "message": "spa html navigation",
-                        "data": {
-                            "path": path[:80],
-                            "method": request.method,
-                            "html_nav": html_nav,
-                            "serve_spa": serve_spa,
-                        },
-                        "timestamp": int(_t.time() * 1000),
-                    },
-                    ensure_ascii=False,
-                )
-                + "\n"
-            )
-        except Exception:
-            pass
-        # #endregion
         if serve_spa:
             return _spa_index()
         return await call_next(request)

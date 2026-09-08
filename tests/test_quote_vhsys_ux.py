@@ -373,6 +373,43 @@ def test_tiflux_client_contact_email(
     clear_settings_cache()
 
 
+def test_tiflux_requestor_search_company_first(
+    quotes_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("TIFLUX_API_TOKEN", "tf-tok")
+    clear_settings_cache()
+    with (
+        patch(
+            "src.quotes.router.TifluxClient.get_client_requestors",
+            new=AsyncMock(
+                return_value=[
+                    {"name": "Ana Empresa", "email": "ana@empresa.com", "phone": "111"},
+                    {"name": "Ana Empresa", "email": "ana@empresa.com", "phone": "111"},
+                ]
+            ),
+        ),
+        patch(
+            "src.quotes.router.TifluxClient.search_requestors",
+            new=AsyncMock(
+                return_value=(
+                    [
+                        {"name": "Ana Empresa", "email": "ana@empresa.com", "phone": "111"},
+                        {"name": "Ana Outra", "email": "ana@outra.com", "phone": "222"},
+                    ],
+                    200,
+                )
+            ),
+        ),
+    ):
+        res = quotes_client.get("/orcamentos/tiflux/requestors?client_id=99&q=ana")
+    assert res.status_code == 200, res.text
+    contacts = res.json()["contacts"]
+    assert [c["scope"] for c in contacts] == ["company", "other"]
+    assert contacts[0]["email"] == "ana@empresa.com"
+    assert contacts[1]["email"] == "ana@outra.com"
+    clear_settings_cache()
+
+
 def test_normalize_catalog_category_and_product() -> None:
     from src.integrations.vhsys_client import (
         _normalize_catalog_category,

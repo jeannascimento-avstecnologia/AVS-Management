@@ -49,6 +49,7 @@ import {
   type QuoteTemplateLine,
   type QuoteUpdate,
   type LegacyModuleKind,
+  type TifluxRequestorHit,
 } from '@/api/client'
 import {
   QuoteClientRegisterDialog,
@@ -1318,24 +1319,11 @@ export function QuoteWizardPage() {
               ) : null}
             </span>
           </h1>
-          <div className="flex items-center gap-3 pt-1">
-            <div className="flex-1">
-              <Label className="text-xs font-semibold uppercase tracking-wider text-aurora-accent">
-                Referência
-              </Label>
-              <Input
-                className="mt-1 h-10 border-aurora-accent/30 bg-aurora-accent-muted/20 text-base font-medium placeholder:text-muted-foreground/50"
-                placeholder="Ex.: Microsoft 365, Backup Acronis, Infraestrutura..."
-                disabled={!canEdit}
-                value={form.title}
-                maxLength={120}
-                onChange={(e) => {
-                  patchForm((prev) => ({ ...prev, title: e.target.value }))
-                }}
-                aria-label="Referência do orçamento"
-              />
-            </div>
-          </div>
+          {form.title.trim() ? (
+            <p className="text-lg font-semibold tracking-tight text-aurora-accent">
+              {form.title.trim()}
+            </p>
+          ) : null}
           <p className="text-sm text-muted-foreground">
             {formatCnpj(form.cnpj)}
             {form.client_name ? ` · ${form.client_name}` : ''}
@@ -1386,11 +1374,36 @@ export function QuoteWizardPage() {
               )}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Busca TiFlux (CNPJ ou nome). Lead e vínculo no mesmo painel — padrão visual do passo
-              Itens.
+              Busca só no TiFlux (CNPJ 14 dígitos ou nome). Contatos vêm dos solicitantes desse cliente.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div
+              className={cn(
+                'space-y-2 rounded-xl border-2 border-aurora-accent/50 p-3 sm:p-4',
+                'bg-gradient-to-br from-aurora-accent-muted/70 to-aurora-surface',
+              )}
+            >
+              <Label
+                htmlFor="quote-referencia"
+                className="text-sm font-bold uppercase tracking-wide text-aurora-accent"
+              >
+                Referência
+              </Label>
+              <Input
+                id="quote-referencia"
+                className="h-12 border-aurora-accent/40 bg-aurora-surface text-lg font-semibold placeholder:text-muted-foreground/60"
+                placeholder="Ex.: Microsoft 365, Backup Acronis, Infraestrutura…"
+                disabled={!canEdit}
+                value={form.title}
+                maxLength={120}
+                onChange={(e) => {
+                  patchForm((prev) => ({ ...prev, title: e.target.value }))
+                }}
+                aria-label="Referência do orçamento"
+              />
+              <p className="text-[11px] text-muted-foreground">Nome interno — não sai no PDF.</p>
+            </div>
             <div
               className={cn(
                 'space-y-3 rounded-xl border border-aurora-accent/30 p-3 sm:p-4',
@@ -1424,15 +1437,11 @@ export function QuoteWizardPage() {
                 }}
                 onSelect={(client) => {
                   const clientCnpj = client.cnpj ? digitsOnly(client.cnpj) : ''
-                  if (clientCnpj.length !== 14) {
-                    toast.error('Cliente sem CNPJ válido no TiFlux.')
-                    return
-                  }
                   setTifluxSearch(client.name)
                   emailPrefillDone.current = false
                   patchForm((prev) => ({
                     ...prev,
-                    cnpj: clientCnpj,
+                    cnpj: clientCnpj.length === 14 ? clientCnpj : '',
                     client_name: client.name || prev.client_name,
                     tiflux_client_id: client.id,
                     client_email: '',
@@ -1455,40 +1464,16 @@ export function QuoteWizardPage() {
                       /* prefill na revisão tenta de novo */
                     })
                   toast.success(`Cliente TiFlux #${client.id} vinculado`)
+                  if (clientCnpj.length !== 14) {
+                    toast.message('Sem CNPJ no TiFlux — preencha o CNPJ para o autosave.')
+                  }
                 }}
               />
-              {(form.client_name || form.cnpj || form.tiflux_client_id != null) && (
-                <div
-                  className={cn(
-                    'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface p-3 shadow-sm',
-                    'hover:border-aurora-accent/45 hover:shadow-md',
-                  )}
-                >
-                  <p className="text-sm font-semibold text-aurora-fg">
-                    {form.client_name || '—'}
-                  </p>
-                  <p className="mt-1 flex flex-wrap gap-2 text-xs text-muted-foreground">
-                    {form.cnpj ? (
-                      <span className="font-mono">{formatCnpj(form.cnpj)}</span>
-                    ) : null}
-                    {form.tiflux_client_id != null ? (
-                      <Badge
-                        variant="outline"
-                        className="border-aurora-accent/40 bg-aurora-accent-muted text-aurora-accent"
-                      >
-                        TiFlux #{form.tiflux_client_id}
-                      </Badge>
-                    ) : null}
-                    {form.vhsys_client_id != null ? (
-                      <Badge
-                        variant="outline"
-                        className="border-aurora-brand-red/40 bg-aurora-brand-red/10 text-aurora-brand-red"
-                      >
-                        VHSYS #{form.vhsys_client_id}
-                      </Badge>
-                    ) : null}
-                  </p>
-                </div>
+              {form.tiflux_client_id != null && (
+                <p className="text-xs text-muted-foreground">
+                  Vinculado TiFlux #{form.tiflux_client_id}
+                  {form.cnpj ? ` · ${formatCnpj(form.cnpj)}` : ''}
+                </p>
               )}
             </div>
 
@@ -3329,31 +3314,20 @@ function ContactPicker({
   onSelect: (c: { name: string | null; email: string | null; phone: string | null }) => void
   onNameChange: (name: string) => void
 }) {
-  const [contacts, setContacts] = useState<
-    Array<{ name: string | null; email: string | null; phone: string | null }>
-  >([])
-  const [loading, setLoading] = useState(false)
   const [open, setOpen] = useState(false)
+  const [debounced, setDebounced] = useState(selected.name)
   const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    let cancelled = false
-    setLoading(true)
-    api
-      .listTifluxClientContacts(clientId)
-      .then((data) => {
-        if (!cancelled) setContacts(data)
-      })
-      .catch(() => {
-        if (!cancelled) setContacts([])
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [clientId])
+    const t = window.setTimeout(() => setDebounced(selected.name), 300)
+    return () => window.clearTimeout(t)
+  }, [selected.name])
+
+  const search = useQuery({
+    queryKey: ['tiflux-requestors', clientId, debounced],
+    queryFn: () => api.searchTifluxRequestors(clientId, debounced),
+    enabled: open && canEdit,
+  })
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
@@ -3363,14 +3337,33 @@ function ContactPicker({
     return () => document.removeEventListener('mousedown', onDoc)
   }, [])
 
-  const needle = selected.name.trim().toLocaleLowerCase('pt-BR')
-  const matched =
-    needle.length < 1
-      ? contacts
-      : contacts.filter((c) => {
-          const blob = `${c.name ?? ''} ${c.email ?? ''} ${c.phone ?? ''}`.toLocaleLowerCase('pt-BR')
-          return blob.includes(needle)
-        })
+  const contacts: TifluxRequestorHit[] = search.data?.contacts ?? []
+  const companyHits = contacts.filter((c) => c.scope === 'company')
+  const otherHits = contacts.filter((c) => c.scope === 'other')
+  const loading = search.isFetching
+
+  function renderHit(c: TifluxRequestorHit, i: number) {
+    return (
+      <li key={`${c.scope}-${c.email ?? ''}-${c.name ?? ''}-${i}`}>
+        <button
+          type="button"
+          role="option"
+          className="flex w-full flex-col items-start gap-0.5 rounded-sm px-2 py-1.5 text-left hover:bg-accent"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => {
+            onSelect(c)
+            setOpen(false)
+          }}
+        >
+          <span className="font-medium">{c.name || '(sem nome)'}</span>
+          <span className="text-xs text-muted-foreground">
+            {[c.email, c.phone].filter(Boolean).join(' · ') || 'sem e-mail/telefone'}
+            {c.scope === 'other' ? ' · outra empresa' : ''}
+          </span>
+        </button>
+      </li>
+    )
+  }
 
   return (
     <div ref={rootRef} className="relative space-y-2">
@@ -3388,89 +3381,49 @@ function ContactPicker({
           }}
         />
         {loading ? (
-          <p className="text-xs text-muted-foreground">Carregando contatos TiFlux…</p>
+          <p className="text-xs text-muted-foreground">Buscando contatos TiFlux…</p>
         ) : null}
       </div>
       {open && !loading && (
         <ul
           role="listbox"
-          className="relative z-50 max-h-48 overflow-auto rounded-md border border-aurora-border bg-popover p-1 text-sm shadow-md"
+          className="relative z-50 max-h-56 overflow-auto rounded-md border border-aurora-border bg-popover p-1 text-sm shadow-md"
         >
-          {matched.length === 0 ? (
+          {companyHits.length === 0 && otherHits.length === 0 ? (
             <li className="px-2 py-2 text-xs text-muted-foreground">
-              Nenhum contato TiFlux para este cliente.
+              Nenhum contato. Digite para buscar ou use Novo.
             </li>
           ) : (
-            matched.map((c, i) => (
-              <li key={`${c.email ?? ''}-${c.name ?? ''}-${i}`}>
-                <button
-                  type="button"
-                  role="option"
-                  className="flex w-full flex-col items-start gap-0.5 rounded-sm px-2 py-1.5 text-left hover:bg-accent"
-                  onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => {
-                    onSelect(c)
-                    setOpen(false)
-                  }}
-                >
-                  <span className="font-medium">{c.name || '(sem nome)'}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {[c.email, c.phone].filter(Boolean).join(' · ') || 'sem e-mail/telefone'}
-                  </span>
-                </button>
-              </li>
-            ))
+            <>
+              {companyHits.length > 0 ? (
+                <li className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Desta empresa
+                </li>
+              ) : null}
+              {companyHits.map(renderHit)}
+              {otherHits.length > 0 ? (
+                <li className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Outras empresas
+                </li>
+              ) : null}
+              {otherHits.map((c, i) => renderHit(c, i + companyHits.length))}
+            </>
           )}
+          <li>
+            <button
+              type="button"
+              className="mt-0.5 w-full rounded-sm px-2 py-1.5 text-left text-xs font-medium hover:bg-accent"
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => {
+                onSelect({ name: null, email: null, phone: null })
+                setOpen(false)
+              }}
+            >
+              Novo +
+            </button>
+          </li>
         </ul>
       )}
-      {contacts.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
-          {contacts.map((c, i) => {
-            const isSelected = c.email === selected.email && c.name === selected.name
-            return (
-              <Button
-                key={`${c.email ?? ''}-${i}`}
-                type="button"
-                size="sm"
-                disabled={!canEdit}
-                className={cn(
-                  btnSecondaryClass,
-                  'text-xs',
-                  isSelected &&
-                    'border-aurora-accent bg-aurora-accent-muted text-aurora-accent ring-2 ring-aurora-accent/25',
-                )}
-                onClick={() => onSelect(c)}
-              >
-                {c.name || c.email || '(sem nome)'}
-              </Button>
-            )
-          })}
-          <Button
-            type="button"
-            size="sm"
-            disabled={!canEdit}
-            className={cn(btnSecondaryClass, 'text-xs')}
-            onClick={() => onSelect({ name: null, email: null, phone: null })}
-          >
-            Novo +
-          </Button>
-        </div>
-      ) : !loading ? (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <p className="text-xs text-muted-foreground">
-            Nenhum contato encontrado — preencha manualmente.
-          </p>
-          <Button
-            type="button"
-            size="sm"
-            disabled={!canEdit}
-            className={cn(btnSecondaryClass, 'text-xs')}
-            onClick={() => onSelect({ name: null, email: null, phone: null })}
-          >
-            Novo +
-          </Button>
-        </div>
-      ) : null}
     </div>
   )
 }

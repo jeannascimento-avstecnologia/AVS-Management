@@ -19,7 +19,9 @@ Ao abrir **Novo** (rascunho), Pesquisa + filtros lead/status compactam numa barr
 
 ## 2) Título interno (`quotes.title`)
 
-- Campo opcional (máx. 120). Editável no wizard ao lado de `Orçamento M{id}`.
+- Campo opcional (máx. 120), rótulo **Referência**.
+- No wizard, passo Cliente: caixa **dentro** do card de preenchimento, **acima** da busca TiFlux. Destacada (fonte maior).
+- No cabeçalho, `Orçamento M{id}` permanece; o texto da referência aparece como subtítulo quando preenchido.
 - **Não** entra no PDF.
 
 ## 3) Mensalidades via VHSYS
@@ -36,3 +38,10 @@ Ao abrir **Novo** (rascunho), Pesquisa + filtros lead/status compactam numa barr
 ## 4) `quote_items.vhsys_product_id`
 
 Preenchido ao selecionar item no `VhsysItemSearch`. Edição manual do nome zera o id.
+
+## 5) Contato (solicitante TiFlux)
+
+- Sem grade de chips. Campo **Nome** = busca.
+- Lista: primeiro solicitantes **deste cliente** (`GET /clients/{id}/requestors`); depois matches globais (`GET /requestors`) mesmo cadastrados em outra empresa.
+- Dedup por e-mail (senão nome+telefone). Item **Novo +** no rodapé da lista.
+- E-mail e telefone continuam editáveis abaixo.
