@@ -418,8 +418,95 @@ class TifluxClient:
         self._ensure_ok(response, "listar contatos do cliente TiFlux")
         data = response.json()
         if isinstance(data, list):
-            return [row for row in data if isinstance(row, dict)]
-        return _extract_client_list(data)
+            rows = [row for row in data if isinstance(row, dict)]
+        else:
+            rows = _extract_client_list(data)
+        # #region agent log
+        try:
+            import json as _json, time as _t
+            from pathlib import Path as _P
+            _p = _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log")
+            _p.open("a", encoding="utf-8").write(
+                _json.dumps(
+                    {
+                        "sessionId": "718b43",
+                        "runId": "post-fix",
+                        "hypothesisId": "J",
+                        "location": "tiflux_client.py:get_client_contacts",
+                        "message": "tiflux contacts raw",
+                        "data": {
+                            "clientId": int(client_id),
+                            "status": int(response.status_code),
+                            "n": len(rows),
+                            "dataType": type(data).__name__,
+                            "keys": list(rows[0].keys())[:20] if rows else [],
+                        },
+                        "timestamp": int(_t.time() * 1000),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
+        return rows
+
+    async def get_client_requestors(self, client_id: int, *, limit: int = 50) -> list[dict]:
+        """Solicitantes do cliente (aba Usuários / Solicitantes), não canais /contacts."""
+        collected: list[dict] = []
+        offset = 1
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            while len(collected) < limit:
+                page_size = min(self.PAGE_LIMIT, max(1, limit - len(collected)))
+                response = await http.get(
+                    f"{self._base}/clients/{int(client_id)}/requestors",
+                    headers=self._auth_headers(),
+                    params={"offset": offset, "limit": page_size},
+                )
+                self._ensure_ok(response, "listar solicitantes do cliente TiFlux")
+                payload = response.json()
+                if isinstance(payload, list):
+                    items = [x for x in payload if isinstance(x, dict)]
+                else:
+                    items = _extract_client_list(payload)
+                if not items:
+                    break
+                collected.extend(items)
+                if len(items) < page_size:
+                    break
+                offset += 1
+        # #region agent log
+        try:
+            import json as _json, time as _t
+            from pathlib import Path as _P
+            _p = _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log")
+            _p.open("a", encoding="utf-8").write(
+                _json.dumps(
+                    {
+                        "sessionId": "718b43",
+                        "runId": "post-fix",
+                        "hypothesisId": "K",
+                        "location": "tiflux_client.py:get_client_requestors",
+                        "message": "requestors listed",
+                        "data": {
+                            "clientId": int(client_id),
+                            "n": len(collected),
+                            "keys": list(collected[0].keys())[:20] if collected else [],
+                            "named": sum(
+                                1 for r in collected if str(r.get("name") or "").strip()
+                            ),
+                        },
+                        "timestamp": int(_t.time() * 1000),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
+        return collected
 
     async def get_client_desks(self, client_id: int) -> list[dict]:
         async with httpx.AsyncClient(timeout=30.0) as client:

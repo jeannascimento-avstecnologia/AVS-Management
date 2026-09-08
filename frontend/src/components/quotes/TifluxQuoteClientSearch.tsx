@@ -35,7 +35,23 @@ export function TifluxQuoteClientSearch({
 
   useEffect(() => {
     function onDoc(e: MouseEvent) {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+      const inside = Boolean(rootRef.current?.contains(e.target as Node))
+      // #region agent log
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '718b43' },
+        body: JSON.stringify({
+          sessionId: '718b43',
+          runId: 'post-fix',
+          hypothesisId: 'G',
+          location: 'TifluxQuoteClientSearch.tsx:onDoc',
+          message: 'document mousedown',
+          data: { inside, willClose: !inside },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {})
+      // #endregion
+      if (!inside) setOpen(false)
     }
     document.addEventListener('mousedown', onDoc)
     return () => document.removeEventListener('mousedown', onDoc)
@@ -91,9 +107,7 @@ export function TifluxQuoteClientSearch({
   })
 
   const clients = query.data?.clients ?? []
-  useEffect(() => {
-    if (enabled) setOpen(true)
-  }, [debounced, enabled])
+  const showList = !disabled && debounced.trim().length >= 2
   // #region agent log
   useEffect(() => {
     fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
@@ -111,15 +125,17 @@ export function TifluxQuoteClientSearch({
           isFetching: query.isFetching,
           isError: query.isError,
           n: clients.length,
+          open,
+          showList,
         },
         timestamp: Date.now(),
       }),
     }).catch(() => {})
-  }, [query.fetchStatus, query.status, query.isFetching, query.isError, clients.length])
+  }, [query.fetchStatus, query.status, query.isFetching, query.isError, clients.length, open, showList])
   // #endregion
 
   return (
-    <div ref={rootRef} className="relative">
+    <div ref={rootRef} className={cn('relative', showList && 'z-50')}>
       <div className="relative">
         <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
         <Input
@@ -173,12 +189,12 @@ export function TifluxQuoteClientSearch({
           <Loader2 className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
         )}
       </div>
-      {open && !disabled && debounced.trim().length >= 2 && (
+      {showList && (
         <ul
           id={listId}
           role="listbox"
           className={cn(
-            'absolute z-40 mt-1 max-h-64 w-full overflow-auto rounded-md border border-aurora-border',
+            'relative z-50 mt-1 max-h-64 w-full overflow-auto rounded-md border border-aurora-border',
             'bg-popover p-1 text-sm shadow-md',
           )}
         >

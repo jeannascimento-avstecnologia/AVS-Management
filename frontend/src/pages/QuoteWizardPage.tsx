@@ -1539,6 +1539,7 @@ export function QuoteWizardPage() {
                     email: form.contact_email,
                     phone: form.contact_phone,
                   }}
+                  onNameChange={(name) => patchForm((p) => ({ ...p, contact_name: name }))}
                   onSelect={(contact) =>
                     patchForm((prev) => ({
                       ...prev,
@@ -1549,17 +1550,7 @@ export function QuoteWizardPage() {
                     }))
                   }
                 />
-                <div className="grid gap-2 sm:grid-cols-3">
-                  <div className="space-y-1">
-                    <Label className="text-xs">Nome</Label>
-                    <Input
-                      className="h-8 text-sm"
-                      placeholder="Nome do contato"
-                      disabled={!canEdit}
-                      value={form.contact_name}
-                      onChange={(e) => patchForm((p) => ({ ...p, contact_name: e.target.value }))}
-                    />
-                  </div>
+                <div className="grid gap-2 sm:grid-cols-2">
                   <div className="space-y-1">
                     <Label className="text-xs">E-mail</Label>
                     <Input
@@ -3353,16 +3344,20 @@ function ContactPicker({
   canEdit,
   selected,
   onSelect,
+  onNameChange,
 }: {
   clientId: number
   canEdit: boolean
   selected: { name: string; email: string; phone: string }
   onSelect: (c: { name: string | null; email: string | null; phone: string | null }) => void
+  onNameChange: (name: string) => void
 }) {
   const [contacts, setContacts] = useState<
     Array<{ name: string | null; email: string | null; phone: string | null }>
   >([])
   const [loading, setLoading] = useState(false)
+  const [open, setOpen] = useState(false)
+  const rootRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -3370,9 +3365,39 @@ function ContactPicker({
     api
       .listTifluxClientContacts(clientId)
       .then((data) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '718b43' },
+          body: JSON.stringify({
+            sessionId: '718b43',
+            runId: 'post-fix',
+            hypothesisId: 'I',
+            location: 'QuoteWizardPage.tsx:ContactPicker',
+            message: 'contacts loaded',
+            data: { clientId, n: data.length, named: data.filter((c) => Boolean(c.name)).length },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {})
+        // #endregion
         if (!cancelled) setContacts(data)
       })
-      .catch(() => {
+      .catch((err: unknown) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '718b43' },
+          body: JSON.stringify({
+            sessionId: '718b43',
+            runId: 'post-fix',
+            hypothesisId: 'I',
+            location: 'QuoteWizardPage.tsx:ContactPicker',
+            message: 'contacts fetch failed',
+            data: { clientId, err: err instanceof Error ? err.message : 'error' },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {})
+        // #endregion
         if (!cancelled) setContacts([])
       })
       .finally(() => {
@@ -3383,57 +3408,122 @@ function ContactPicker({
     }
   }, [clientId])
 
-  if (loading) return <p className="text-xs text-muted-foreground">Carregando contatos...</p>
-  if (contacts.length === 0) {
-    return (
-      <div className="flex flex-wrap items-center gap-1.5">
-        <p className="text-xs text-muted-foreground">
-          Nenhum contato encontrado — preencha manualmente.
-        </p>
-        <Button
-          type="button"
-          size="sm"
-          disabled={!canEdit}
-          className={cn(btnSecondaryClass, 'text-xs')}
-          onClick={() => onSelect({ name: null, email: null, phone: null })}
-        >
-          Novo +
-        </Button>
-      </div>
-    )
-  }
+  useEffect(() => {
+    function onDoc(e: MouseEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', onDoc)
+    return () => document.removeEventListener('mousedown', onDoc)
+  }, [])
+
+  const needle = selected.name.trim().toLocaleLowerCase('pt-BR')
+  const matched =
+    needle.length < 1
+      ? contacts
+      : contacts.filter((c) => {
+          const blob = `${c.name ?? ''} ${c.email ?? ''} ${c.phone ?? ''}`.toLocaleLowerCase('pt-BR')
+          return blob.includes(needle)
+        })
 
   return (
-    <div className="flex flex-wrap gap-1.5">
-      {contacts.map((c, i) => {
-        const isSelected = c.email === selected.email && c.name === selected.name
-        return (
+    <div ref={rootRef} className="relative space-y-2">
+      <div className="space-y-1">
+        <Label className="text-xs">Nome</Label>
+        <Input
+          className="h-8 text-sm"
+          placeholder="Buscar contato no TiFlux…"
+          disabled={!canEdit}
+          value={selected.name}
+          onFocus={() => setOpen(true)}
+          onChange={(e) => {
+            onNameChange(e.target.value)
+            setOpen(true)
+          }}
+        />
+        {loading ? (
+          <p className="text-xs text-muted-foreground">Carregando contatos TiFlux…</p>
+        ) : null}
+      </div>
+      {open && !loading && (
+        <ul
+          role="listbox"
+          className="relative z-50 max-h-48 overflow-auto rounded-md border border-aurora-border bg-popover p-1 text-sm shadow-md"
+        >
+          {matched.length === 0 ? (
+            <li className="px-2 py-2 text-xs text-muted-foreground">
+              Nenhum contato TiFlux para este cliente.
+            </li>
+          ) : (
+            matched.map((c, i) => (
+              <li key={`${c.email ?? ''}-${c.name ?? ''}-${i}`}>
+                <button
+                  type="button"
+                  role="option"
+                  className="flex w-full flex-col items-start gap-0.5 rounded-sm px-2 py-1.5 text-left hover:bg-accent"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    onSelect(c)
+                    setOpen(false)
+                  }}
+                >
+                  <span className="font-medium">{c.name || '(sem nome)'}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {[c.email, c.phone].filter(Boolean).join(' · ') || 'sem e-mail/telefone'}
+                  </span>
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+      {contacts.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {contacts.map((c, i) => {
+            const isSelected = c.email === selected.email && c.name === selected.name
+            return (
+              <Button
+                key={`${c.email ?? ''}-${i}`}
+                type="button"
+                size="sm"
+                disabled={!canEdit}
+                className={cn(
+                  btnSecondaryClass,
+                  'text-xs',
+                  isSelected &&
+                    'border-aurora-accent bg-aurora-accent-muted text-aurora-accent ring-2 ring-aurora-accent/25',
+                )}
+                onClick={() => onSelect(c)}
+              >
+                {c.name || c.email || '(sem nome)'}
+              </Button>
+            )
+          })}
           <Button
-            key={i}
             type="button"
             size="sm"
             disabled={!canEdit}
-            className={cn(
-              btnSecondaryClass,
-              'text-xs',
-              isSelected &&
-                'border-aurora-accent bg-aurora-accent-muted text-aurora-accent ring-2 ring-aurora-accent/25',
-            )}
-            onClick={() => onSelect(c)}
+            className={cn(btnSecondaryClass, 'text-xs')}
+            onClick={() => onSelect({ name: null, email: null, phone: null })}
           >
-            {c.name || c.email || '(sem nome)'}
+            Novo +
           </Button>
-        )
-      })}
-      <Button
-        type="button"
-        size="sm"
-        disabled={!canEdit}
-        className={cn(btnSecondaryClass, 'text-xs')}
-        onClick={() => onSelect({ name: null, email: null, phone: null })}
-      >
-        Novo +
-      </Button>
+        </div>
+      ) : !loading ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <p className="text-xs text-muted-foreground">
+            Nenhum contato encontrado — preencha manualmente.
+          </p>
+          <Button
+            type="button"
+            size="sm"
+            disabled={!canEdit}
+            className={cn(btnSecondaryClass, 'text-xs')}
+            onClick={() => onSelect({ name: null, email: null, phone: null })}
+          >
+            Novo +
+          </Button>
+        </div>
+      ) : null}
     </div>
   )
 }

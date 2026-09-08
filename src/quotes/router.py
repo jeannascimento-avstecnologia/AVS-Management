@@ -339,25 +339,69 @@ def build_quotes_router() -> APIRouter:
         client_id: int,
         _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
     ) -> list[dict[str, Any]]:
-        """Lista todos os contatos do cliente TiFlux."""
+        """Lista solicitantes (contatos) TiFlux do cliente — GET /clients/{id}/requestors."""
         settings = get_settings()
         if not settings.tiflux_api_token:
             raise HTTPException(status_code=503, detail="Credenciais TiFlux não configuradas.")
         client = TifluxClient(settings)
         try:
-            contacts = await client.get_client_contacts(client_id)
+            contacts = await client.get_client_requestors(client_id)
         except TifluxApiError as exc:
             status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
             raise HTTPException(status_code=status, detail=str(exc)) from exc
         result: list[dict[str, Any]] = []
         for c in contacts:
+            first = str(c.get("first_name") or "").strip()
+            last = str(c.get("last_name") or "").strip()
+            composed = f"{first} {last}".strip()
+            name = (
+                str(c.get("name") or c.get("full_name") or c.get("contact_name") or composed).strip()
+                or None
+            )
             result.append(
                 {
-                    "name": str(c.get("name") or "").strip() or None,
+                    "name": name,
                     "email": str(c.get("email") or "").strip() or None,
-                    "phone": str(c.get("phone") or c.get("phone_number") or "").strip() or None,
+                    "phone": str(
+                        c.get("phone")
+                        or c.get("phone_number")
+                        or c.get("telephone")
+                        or c.get("mobile")
+                        or ""
+                    ).strip()
+                    or None,
                 }
             )
+        # #region agent log
+        try:
+            import json as _json, time as _t
+            from pathlib import Path as _P
+            _p = _P("/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-718b43.log")
+            keys = list(contacts[0].keys())[:20] if contacts and isinstance(contacts[0], dict) else []
+            _p.open("a", encoding="utf-8").write(
+                _json.dumps(
+                    {
+                        "sessionId": "718b43",
+                        "runId": "post-fix",
+                        "hypothesisId": "I",
+                        "location": "quotes/router.py:list_tiflux_client_contacts",
+                        "message": "contacts normalized",
+                        "data": {
+                            "clientId": int(client_id),
+                            "rawN": len(contacts),
+                            "outN": len(result),
+                            "named": sum(1 for r in result if r.get("name")),
+                            "rawKeys": keys,
+                        },
+                        "timestamp": int(_t.time() * 1000),
+                    },
+                    ensure_ascii=False,
+                )
+                + "\n"
+            )
+        except Exception:
+            pass
+        # #endregion
         return result
 
     @router.get("/tiflux/clients/{client_id}")
