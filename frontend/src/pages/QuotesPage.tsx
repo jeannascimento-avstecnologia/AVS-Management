@@ -91,6 +91,12 @@ function quoteTotal(quote: QuoteRead): number {
 export function QuotesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const openQuote = (id: number) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'E',location:'QuotesPage.tsx:openQuote',message:'navigate to quote',data:{id},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    navigate(`/orcamentos/${id}`)
+  }
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | 'all'>('all')
   const [leadFilter, setLeadFilter] = useState<LeadTemperature | 'all'>('all')
   const [clientFilter, setClientFilter] = useState('')
@@ -279,7 +285,7 @@ export function QuotesPage() {
             Liste rascunhos e abra o wizard (cliente TiFlux → itens → revisão).
           </p>
           <p
-            className="mt-1 min-h-4 text-xs text-aurora-muted"
+            className="mt-1 min-h-4 text-xs text-muted-foreground"
             aria-live="polite"
           >
             {leadFilter !== 'all'
@@ -366,7 +372,7 @@ export function QuotesPage() {
         </Button>
       </div>
 
-      <Card className="border-aurora-border bg-aurora-surface shadow-sm">
+      <Card>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
           <CardTitle className="text-base">Pesquisa</CardTitle>
           {filtersCollapsed ? (
@@ -459,7 +465,7 @@ export function QuotesPage() {
       </Card>
 
       {showCreate && (
-        <Card className="border-aurora-green/30 bg-aurora-surface shadow-sm hub-panel-enter">
+        <Card className="hub-panel-enter">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Novo rascunho</CardTitle>
             <p className="text-xs text-muted-foreground">
@@ -509,7 +515,7 @@ export function QuotesPage() {
                       size="sm"
                       className={cn(
                         btnSecondaryClass,
-                        leadTemperature === null && 'border-aurora-accent text-aurora-accent',
+                        leadTemperature === null && 'border-aurora-green text-aurora-green',
                       )}
                       onClick={() => setLeadTemperature(null)}
                     >
@@ -522,7 +528,7 @@ export function QuotesPage() {
                         size="sm"
                         className={cn(
                           btnSecondaryClass,
-                          leadTemperature === t && 'border-aurora-accent text-aurora-accent',
+                          leadTemperature === t && 'border-aurora-green text-aurora-green',
                         )}
                         onClick={() => setLeadTemperature(t)}
                       >
@@ -562,7 +568,7 @@ export function QuotesPage() {
         loading={pipelineQuery.isPending}
         activeLead={leadFilter}
         onSelectLead={(t) => setLeadFilter(t)}
-        onOpenQuote={(id) => navigate(`/orcamentos/${id}`)}
+        onOpenQuote={(id) => openQuote(id)}
       />
 
       {listQuery.isError && (
@@ -597,18 +603,18 @@ export function QuotesPage() {
         <ul className="space-y-3">
           {quotes.map((quote) => (
             <li key={quote.id}>
-              <Card
+                  <Card
                 className={cn(
-                  'border-aurora-border bg-aurora-surface shadow-sm aurora-motion',
-                  'cursor-pointer hover:border-aurora-green/50 hover:shadow-md',
+                  'aurora-motion cursor-pointer',
+                  'hover:border-aurora-green/50 hover:shadow-md',
                 )}
                 role="link"
                 tabIndex={0}
-                onClick={() => navigate(`/orcamentos/${quote.id}`)}
+                onClick={() => openQuote(quote.id)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
-                    navigate(`/orcamentos/${quote.id}`)
+                    openQuote(quote.id)
                   }
                 }}
               >
@@ -629,7 +635,7 @@ export function QuotesPage() {
                         <span className="truncate text-xs text-muted-foreground">{quote.title}</span>
                       ) : null}
                     </div>
-                    <p className="truncate text-sm text-aurora-fg">
+                    <p className="truncate text-sm">
                       {quote.client_name || 'Cliente não informado'}
                     </p>
                     <p className="text-xs text-muted-foreground">

@@ -882,9 +882,12 @@ def _normalize_catalog_product(row: dict) -> dict | None:
             category_id = int(raw_cat)
         except (TypeError, ValueError):
             category_id = None
+    tipo_raw = str(row.get("tipo_produto") or "").strip()
+    tipo = tipo_raw.casefold()
     return {
         "id": product_id,
-        "kind": "produto",
+        "kind": "servico" if tipo in {"servico", "serviço", "service"} else "produto",
+        "tipo_produto": tipo_raw or None,
         "name": name,
         "code": code,
         "unit_value": unit_value,

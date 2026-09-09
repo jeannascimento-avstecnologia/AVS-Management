@@ -53,19 +53,16 @@ const SECTION_META_PRESET: Record<(typeof PRESET_SECTIONS)[number], SectionMeta>
   implantacao: {
     label: 'Implantação',
     icon: Wrench,
-    tabActive:
-      'border-aurora-accent bg-aurora-accent text-white shadow-sm ring-2 ring-aurora-accent/30',
-    panel: 'border-aurora-accent/35 bg-gradient-to-br from-aurora-accent-muted/40 to-aurora-surface',
+    tabActive: 'border-aurora-green bg-aurora-green text-white',
+    panel: 'border-border bg-muted/40',
     chip: 'border-aurora-accent/40 bg-aurora-accent-muted text-aurora-accent',
     accentText: 'text-aurora-accent',
   },
   mensalidade: {
     label: 'Mensalidade',
     icon: RefreshCw,
-    tabActive:
-      'border-aurora-brand-red bg-aurora-brand-red text-white shadow-sm ring-2 ring-aurora-brand-red/30',
-    panel:
-      'border-aurora-brand-red/35 bg-gradient-to-br from-aurora-brand-red/10 to-aurora-surface',
+    tabActive: 'border-aurora-brand-red bg-aurora-brand-red text-white',
+    panel: 'border-border bg-muted/40',
     chip: 'border-aurora-brand-red/40 bg-aurora-brand-red/10 text-aurora-brand-red',
     accentText: 'text-aurora-brand-red',
   },
@@ -74,9 +71,8 @@ const SECTION_META_PRESET: Record<(typeof PRESET_SECTIONS)[number], SectionMeta>
 const CUSTOM_META: SectionMeta = {
   label: 'Módulo',
   icon: Layers,
-  tabActive:
-    'border-aurora-info bg-aurora-info text-white shadow-sm ring-2 ring-aurora-info/30',
-  panel: 'border-aurora-info/35 bg-gradient-to-br from-aurora-info/10 to-aurora-surface',
+  tabActive: 'border-aurora-info bg-aurora-info text-white',
+  panel: 'border-border bg-muted/40',
   chip: 'border-aurora-info/40 bg-aurora-info/15 text-aurora-info',
   accentText: 'text-aurora-info',
 }

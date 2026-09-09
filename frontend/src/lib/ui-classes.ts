@@ -45,6 +45,10 @@ export const tileInteractiveTealClass =
 export const tileInteractiveAmberClass =
   'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface shadow-sm hover:-translate-y-0.5 hover:border-aurora-amber/50 hover:shadow-md'
 
+/** Nested block inside a Card — no gradient, works in light/dark */
+export const quoteInsetClass =
+  'space-y-3 rounded-lg border border-border bg-muted/40 p-3 sm:p-4'
+
 export const linkClass = 'font-medium text-aurora-brand-red hover:underline'
 
 export const topbarActionBtnClass =

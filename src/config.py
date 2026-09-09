@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     quote_issuer_ie: str = "795.275.950.117"
     quote_issuer_email: str = "comercial@avstecnologia.cloud"
     quote_issuer_site: str = "https://avstecnologia.cloud/"
+    # Custo interno R$/h (passo 3); 0 = sem default. Override por orçamento pode ser 0.
+    quote_analyst_hourly_cost: float = 0.0
 
     @field_validator(
         "tiflux_api_token",

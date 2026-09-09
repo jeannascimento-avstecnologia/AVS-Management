@@ -64,6 +64,8 @@ _QUOTE_COLUMNS = (
     "monthly_discount_value",
     "monthly_labor_hours",
     "monthly_labor_hourly_rate",
+    "analyst_hourly_cost",
+    "implementation_hours",
     "modules_json",
     "client_email",
     "contact_name",
@@ -163,6 +165,19 @@ def _optional_float(row: sqlite3.Row, key: str) -> float | None:
     if raw is None:
         return None
     return float(raw)
+
+
+def _optional_margin_kind(row: sqlite3.Row, key: str = "margin_kind") -> str | None:
+    try:
+        raw = row[key]
+    except (KeyError, IndexError):
+        return None
+    if raw is None:
+        return None
+    cleaned = str(raw).strip().lower()
+    if cleaned in {"implantacao", "licenca", "produto"}:
+        return cleaned
+    return None
 
 
 def _optional_title(row: sqlite3.Row) -> str | None:
@@ -270,13 +285,6 @@ def build_monthly_suggestion(
         source=source if source in ("vhsys", "manual") else "manual",
         warning=warning,
     )
-    try:
-        raw = row[key]
-    except (KeyError, IndexError):
-        return None
-    if raw is None:
-        return None
-    return float(raw)
 
 
 def _parse_extra_recipients(raw: object) -> list[str]:
@@ -421,6 +429,8 @@ def _row_to_item(row: sqlite3.Row) -> QuoteItemRead:
         total_value=float(row["total_value"]),
         template_key=row["template_key"],
         vhsys_product_id=_optional_int(row, "vhsys_product_id"),
+        unit_cost=_optional_float(row, "unit_cost"),
+        margin_kind=_optional_margin_kind(row),
         sort_order=int(row["sort_order"]),
     )
 
@@ -457,6 +467,8 @@ def _row_to_quote(row: sqlite3.Row, items: list[QuoteItemRead]) -> QuoteRead:
         monthly_discount_value=row["monthly_discount_value"],
         monthly_labor_hours=_optional_float(row, "monthly_labor_hours"),
         monthly_labor_hourly_rate=_optional_float(row, "monthly_labor_hourly_rate"),
+        analyst_hourly_cost=_optional_float(row, "analyst_hourly_cost"),
+        implementation_hours=_optional_float(row, "implementation_hours"),
         modules=modules,
         client_email=(str(row["client_email"]).strip() if row["client_email"] else None),
         contact_name=_optional_contact_field(row, "contact_name"),
@@ -486,7 +498,7 @@ def _fetch_items(conn: sqlite3.Connection, quote_id: int) -> list[QuoteItemRead]
     rows = conn.execute(
         """
         SELECT id, quote_id, section, name, qty, unit_value, total_value,
-               template_key, vhsys_product_id, sort_order
+               template_key, vhsys_product_id, unit_cost, margin_kind, sort_order
         FROM quote_items
         WHERE quote_id = ?
         ORDER BY section, sort_order, id
@@ -502,8 +514,8 @@ def _insert_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteItem
             """
             INSERT INTO quote_items (
                 quote_id, section, name, qty, unit_value, total_value,
-                template_key, vhsys_product_id, sort_order
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                template_key, vhsys_product_id, unit_cost, margin_kind, sort_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 quote_id,
@@ -514,6 +526,8 @@ def _insert_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteItem
                 item.computed_total(),
                 item.template_key,
                 item.vhsys_product_id,
+                item.unit_cost,
+                item.margin_kind,
                 item.sort_order,
             ),
         )
@@ -521,22 +535,32 @@ def _insert_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteItem
 
 def _replace_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteItemWrite]) -> None:
     """Upsert por id (mantém ids p/ mensalidades); remove linhas omitidas."""
-    existing = {
-        int(row["id"])
+    existing_rows = {
+        int(row["id"]): row
         for row in conn.execute(
-            "SELECT id FROM quote_items WHERE quote_id = ?",
+            "SELECT id, unit_cost, margin_kind FROM quote_items WHERE quote_id = ?",
             (quote_id,),
         ).fetchall()
     }
+    existing = set(existing_rows)
     keep: set[int] = set()
     for item in items:
         total = item.computed_total()
+        unit_cost = item.unit_cost
+        margin_kind = item.margin_kind
+        if item.id is not None and item.id in existing_rows:
+            prev = existing_rows[item.id]
+            if unit_cost is None:
+                unit_cost = _optional_float(prev, "unit_cost")
+            if margin_kind is None:
+                margin_kind = _optional_margin_kind(prev)
         if item.id is not None and item.id in existing:
             conn.execute(
                 """
                 UPDATE quote_items
                 SET section = ?, name = ?, qty = ?, unit_value = ?, total_value = ?,
-                    template_key = ?, vhsys_product_id = ?, sort_order = ?
+                    template_key = ?, vhsys_product_id = ?, unit_cost = ?,
+                    margin_kind = ?, sort_order = ?
                 WHERE id = ? AND quote_id = ?
                 """,
                 (
@@ -547,6 +571,8 @@ def _replace_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteIte
                     total,
                     item.template_key,
                     item.vhsys_product_id,
+                    unit_cost,
+                    margin_kind,
                     item.sort_order,
                     item.id,
                     quote_id,
@@ -558,8 +584,8 @@ def _replace_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteIte
                 """
                 INSERT INTO quote_items (
                     quote_id, section, name, qty, unit_value, total_value,
-                    template_key, vhsys_product_id, sort_order
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    template_key, vhsys_product_id, unit_cost, margin_kind, sort_order
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     quote_id,
@@ -570,6 +596,8 @@ def _replace_items(conn: sqlite3.Connection, quote_id: int, items: list[QuoteIte
                     total,
                     item.template_key,
                     item.vhsys_product_id,
+                    unit_cost,
+                    margin_kind,
                     item.sort_order,
                 ),
             )
@@ -611,6 +639,7 @@ class QuoteService:
                     modules_json,
                     client_email, contact_name, contact_email, contact_phone,
                     extra_recipients, notes, internal_notes, title,
+                    analyst_hourly_cost, implementation_hours,
                     created_by, created_at, updated_at
                 ) VALUES (
                     ?, ?, ?, ?,
@@ -622,6 +651,7 @@ class QuoteService:
                     ?,
                     ?, ?, ?, ?,
                     ?, ?, ?, ?,
+                    ?, ?,
                     ?, ?, ?
                 )
                 """,
@@ -652,6 +682,8 @@ class QuoteService:
                     seed_quote_notes(data.notes, ticket=None),
                     (data.internal_notes.strip() if data.internal_notes else None),
                     data.title,
+                    data.analyst_hourly_cost,
+                    data.implementation_hours,
                     created_by,
                     now,
                     now,
@@ -765,11 +797,63 @@ class QuoteService:
             ]
 
     def get(self, quote_id: int) -> QuoteRead:
-        with self._db.connect() as conn:
-            row = _get_quote_row(conn, quote_id)
-            if row is None:
-                raise QuoteNotFoundError(f"Orçamento {quote_id} não encontrado.")
-            return _row_to_quote(row, _fetch_items(conn, quote_id))
+        # #region agent log
+        def _dbg(msg: str, data: dict, hid: str) -> None:
+            try:
+                with open(
+                    "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-49cf6c.log",
+                    "a",
+                    encoding="utf-8",
+                ) as _f:
+                    _f.write(
+                        json.dumps(
+                            {
+                                "sessionId": "49cf6c",
+                                "hypothesisId": hid,
+                                "location": "service.py:get",
+                                "message": msg,
+                                "data": data,
+                                "timestamp": int(__import__("time").time() * 1000),
+                            },
+                            default=str,
+                        )
+                        + "\n"
+                    )
+            except Exception:
+                pass
+        # #endregion
+        try:
+            with self._db.connect() as conn:
+                row = _get_quote_row(conn, quote_id)
+                if row is None:
+                    # #region agent log
+                    _dbg("quote not found", {"quote_id": quote_id}, "C")
+                    # #endregion
+                    raise QuoteNotFoundError(f"Orçamento {quote_id} não encontrado.")
+                quote = _row_to_quote(row, _fetch_items(conn, quote_id))
+                # #region agent log
+                _dbg(
+                    "quote get ok",
+                    {
+                        "quote_id": quote_id,
+                        "items": len(quote.items),
+                        "modules": len(quote.modules),
+                    },
+                    "A",
+                )
+                # #endregion
+                return quote
+        except QuoteNotFoundError:
+            raise
+        except Exception as exc:
+            # #region agent log
+            _dbg(
+                "quote get failed",
+                {"quote_id": quote_id, "err_type": type(exc).__name__, "err": str(exc)},
+                "A",
+            )
+            # #endregion
+            raise
 
     def update(self, quote_id: int, data: QuoteUpdate) -> QuoteRead:
         with self._db.connect() as conn:
@@ -813,6 +897,8 @@ class QuoteService:
                         unit_value=i.unit_value,
                         template_key=i.template_key,
                         vhsys_product_id=i.vhsys_product_id,
+                        unit_cost=i.unit_cost,
+                        margin_kind=i.margin_kind,
                         sort_order=i.sort_order,
                     )
                     for i in _fetch_items(conn, quote_id)
@@ -1531,32 +1617,126 @@ class QuoteService:
             assert updated_row is not None
             return _row_to_quote(updated_row, _fetch_items(conn, quote_id))
 
+    def apply_item_unit_costs(
+        self,
+        quote_id: int,
+        costs: dict[int, float | None],
+        kinds: dict[int, str | None] | None = None,
+    ) -> QuoteRead:
+        kind_map = kinds or {}
+        with self._db.connect() as conn:
+            row = _get_quote_row(conn, quote_id)
+            if row is None:
+                raise QuoteNotFoundError(f"Orçamento {quote_id} não encontrado.")
+            if str(row["status"]) not in _EDITABLE_STATUSES:
+                raise QuoteConflictError(
+                    f"Orçamento {quote_id} com status '{row['status']}' não pode ser editado."
+                )
+            now = _utcnow_iso()
+            item_ids = set(costs) | set(kind_map)
+            for item_id in item_ids:
+                unit_cost = costs[item_id] if item_id in costs else None
+                kind = kind_map.get(item_id)
+                if item_id in costs and item_id in kind_map:
+                    conn.execute(
+                        """
+                        UPDATE quote_items
+                        SET unit_cost = ?,
+                            margin_kind = CASE
+                                WHEN (margin_kind IS NULL OR trim(margin_kind) = '')
+                                     AND ? IS NOT NULL THEN ?
+                                ELSE margin_kind
+                            END
+                        WHERE id = ? AND quote_id = ?
+                        """,
+                        (unit_cost, kind, kind, item_id, quote_id),
+                    )
+                elif item_id in costs:
+                    conn.execute(
+                        """
+                        UPDATE quote_items SET unit_cost = ?
+                        WHERE id = ? AND quote_id = ?
+                        """,
+                        (unit_cost, item_id, quote_id),
+                    )
+                else:
+                    conn.execute(
+                        """
+                        UPDATE quote_items
+                        SET margin_kind = CASE
+                            WHEN (margin_kind IS NULL OR trim(margin_kind) = '')
+                                 AND ? IS NOT NULL THEN ?
+                            ELSE margin_kind
+                        END
+                        WHERE id = ? AND quote_id = ?
+                        """,
+                        (kind, kind, item_id, quote_id),
+                    )
+            conn.execute(
+                "UPDATE quotes SET updated_at = ? WHERE id = ?",
+                (now, quote_id),
+            )
+            updated = _get_quote_row(conn, quote_id)
+            assert updated is not None
+            return _row_to_quote(updated, _fetch_items(conn, quote_id))
+
     def list_versions(self, quote_id: int, *, limit: int = 100) -> list[QuoteVersionRead]:
         limit = max(1, min(limit, 200))
-        with self._db.connect() as conn:
-            rows = conn.execute(
-                """
-                SELECT id, quote_id, version_number, snapshot_notes, snapshot_monthly_json,
-                       pdf_path, created_at
-                FROM quote_versions
-                WHERE quote_id = ?
-                ORDER BY version_number DESC, id DESC
-                LIMIT ?
-                """,
-                (quote_id, limit),
-            ).fetchall()
-        return [
-            QuoteVersionRead(
-                id=int(r["id"]),
-                quote_id=int(r["quote_id"]),
-                version_number=int(r["version_number"]),
-                snapshot_notes=r["snapshot_notes"],
-                snapshot_monthly_json=r["snapshot_monthly_json"],
-                pdf_path=r["pdf_path"],
-                created_at=str(r["created_at"]),
-            )
-            for r in rows
-        ]
+        try:
+            with self._db.connect() as conn:
+                rows = conn.execute(
+                    """
+                    SELECT id, quote_id, version_number, snapshot_notes, snapshot_monthly_json,
+                           pdf_path, created_at
+                    FROM quote_versions
+                    WHERE quote_id = ?
+                    ORDER BY version_number DESC, id DESC
+                    LIMIT ?
+                    """,
+                    (quote_id, limit),
+                ).fetchall()
+            return [
+                QuoteVersionRead(
+                    id=int(r["id"]),
+                    quote_id=int(r["quote_id"]),
+                    version_number=int(r["version_number"]),
+                    snapshot_notes=r["snapshot_notes"],
+                    snapshot_monthly_json=r["snapshot_monthly_json"],
+                    pdf_path=r["pdf_path"],
+                    created_at=str(r["created_at"]),
+                )
+                for r in rows
+            ]
+        except Exception as exc:
+            # #region agent log
+            try:
+                with open(
+                    "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-49cf6c.log",
+                    "a",
+                    encoding="utf-8",
+                ) as _f:
+                    _f.write(
+                        json.dumps(
+                            {
+                                "sessionId": "49cf6c",
+                                "hypothesisId": "D",
+                                "location": "service.py:list_versions",
+                                "message": "list_versions failed",
+                                "data": {
+                                    "quote_id": quote_id,
+                                    "err_type": type(exc).__name__,
+                                    "err": str(exc),
+                                },
+                                "timestamp": int(__import__("time").time() * 1000),
+                            },
+                            default=str,
+                        )
+                        + "\n"
+                    )
+            except Exception:
+                pass
+            # #endregion
+            raise
 
     def _row_to_version(self, row: sqlite3.Row) -> QuoteVersionRead:
         return QuoteVersionRead(
@@ -1593,12 +1773,17 @@ class QuoteService:
         created_by: int | None,
         settings: Settings | None = None,
     ) -> QuoteVersionRead:
-        # settings reservado para futuras validações/flags
-        _ = settings
+        # settings / created_by: snapshot usa Settings; created_by reservado
         _ = created_by
         quote = self.get(quote_id)
         snapshot_modules_json = _dump_modules(quote.modules)
         snapshot_items_json = _dump_items(quote.items)
+        from src.quotes.margin import compute_quote_margin
+
+        cfg = settings or get_settings()
+        snapshot_margin_json = compute_quote_margin(
+            quote, default_analyst_hourly_cost=cfg.quote_analyst_hourly_cost
+        ).model_dump_json()
         now = _utcnow_iso()
         with self._db.connect() as conn:
             cur = conn.execute(
@@ -1615,10 +1800,10 @@ class QuoteService:
                 INSERT INTO quote_versions (
                     quote_id, version_number,
                     snapshot_modules_json, snapshot_items_json,
-                    snapshot_notes, snapshot_monthly_json,
+                    snapshot_notes, snapshot_monthly_json, snapshot_margin_json,
                     pdf_path,
                     created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)
                 """,
                 (
                     quote_id,
@@ -1627,6 +1812,7 @@ class QuoteService:
                     snapshot_items_json,
                     quote.notes,
                     quote.monthly_draft_json,
+                    snapshot_margin_json,
                     now,
                     now,
                 ),

@@ -92,6 +92,8 @@ class QuoteModule(BaseModel):
     discount_value: float | None = None
     labor_hours: float | None = None
     labor_hourly_rate: float | None = None
+    internal_labor_hours: float | None = None
+    internal_hourly_cost: float | None = None
     notes: str | None = None
     billed_by_name: str | None = Field(default=None, max_length=300)
     billed_by_cnpj: str | None = None
@@ -246,6 +248,8 @@ class QuoteItemWrite(BaseModel):
     unit_value: float = Field(default=0.0, ge=0)
     template_key: str | None = None
     vhsys_product_id: int | None = Field(default=None, ge=1)
+    unit_cost: float | None = Field(default=None, ge=0)
+    margin_kind: Literal["implantacao", "licenca", "produto"] | None = None
     sort_order: int = Field(default=0, ge=0)
 
     @field_validator("section")
@@ -286,6 +290,8 @@ class QuoteItemRead(BaseModel):
     total_value: float
     template_key: str | None = None
     vhsys_product_id: int | None = None
+    unit_cost: float | None = None
+    margin_kind: Literal["implantacao", "licenca", "produto"] | None = None
     sort_order: int = 0
 
 
@@ -331,6 +337,8 @@ class QuoteWrite(BaseModel):
     monthly_discount_value: float | None = None
     monthly_labor_hours: float | None = None
     monthly_labor_hourly_rate: float | None = None
+    analyst_hourly_cost: float | None = Field(default=None, ge=0)
+    implementation_hours: float | None = Field(default=None, ge=0)
     modules: list[QuoteModule] | None = None
     client_email: str | None = None
     contact_name: str | None = None
@@ -474,6 +482,8 @@ class QuoteUpdate(BaseModel):
     monthly_discount_value: float | None = None
     monthly_labor_hours: float | None = None
     monthly_labor_hourly_rate: float | None = None
+    analyst_hourly_cost: float | None = Field(default=None, ge=0)
+    implementation_hours: float | None = Field(default=None, ge=0)
     modules: list[QuoteModule] | None = None
     client_email: str | None = None
     contact_name: str | None = None
@@ -594,6 +604,8 @@ class QuoteRead(BaseModel):
     monthly_discount_value: float | None
     monthly_labor_hours: float | None = None
     monthly_labor_hourly_rate: float | None = None
+    analyst_hourly_cost: float | None = None
+    implementation_hours: float | None = None
     modules: list[QuoteModule] = Field(default_factory=list)
     client_email: str | None = None
     contact_name: str | None = None
@@ -683,6 +695,66 @@ class QuoteMonthlyDraftWrite(BaseModel):
         if len(ids) != len(set(ids)):
             raise ValueError("allocations não deve conter itens duplicados.")
         return self
+
+
+class QuoteMarginLine(BaseModel):
+    item_id: int
+    section: str
+    section_title: str
+    name: str
+    bucket: Literal["oneshot", "recurring"]
+    qty: float
+    revenue: float
+    cost: float
+    profit: float
+    cost_missing: bool
+    margin_kind: Literal["implantacao", "licenca", "produto"] | None = None
+    unit_value: float = 0.0
+    unit_cost: float | None = None
+
+
+class QuoteMarginTotals(BaseModel):
+    revenue: float
+    cogs: float
+    labor_cost: float
+    profit: float
+    hours: float = 0.0
+    margin_pct: float | None = None
+
+
+class QuoteMarginRecurring(BaseModel):
+    revenue: float
+    fornecedor: float
+    intermediador: float
+
+
+class QuoteMarginModule(BaseModel):
+    id: str
+    title: str
+    legacy_kind: LegacyModuleKind | None = None
+    show_implant_labor: bool = False
+    revenue: float
+    cogs: float
+    labor_cost: float
+    profit: float
+    hours: float | None = None
+    rate: float | None = None
+    effective_rate: float
+    items: list[QuoteMarginLine] = Field(default_factory=list)
+
+
+class QuoteMarginRead(BaseModel):
+    quote_id: int
+    incomplete: bool
+    default_analyst_hourly_cost: float
+    analyst_hourly_cost: float | None
+    effective_analyst_hourly_cost: float
+    implementation_hours: float | None
+    canvas_labor_hours: float
+    oneshot: QuoteMarginTotals
+    recurring: QuoteMarginRecurring
+    modules: list[QuoteMarginModule] = Field(default_factory=list)
+    lines: list[QuoteMarginLine] = Field(default_factory=list)
 
 
 class QuoteVersionRead(BaseModel):

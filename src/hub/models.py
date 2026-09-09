@@ -104,6 +104,8 @@ class HubDatabase:
             ("contact_name", "TEXT"),
             ("contact_email", "TEXT"),
             ("contact_phone", "TEXT"),
+            ("analyst_hourly_cost", "REAL"),
+            ("implementation_hours", "REAL"),
         )
         for name, col_type in additions:
             if name not in existing:
@@ -196,6 +198,8 @@ class HubDatabase:
                         total_value     REAL    NOT NULL,
                         template_key    TEXT,
                         vhsys_product_id INTEGER,
+                        unit_cost       REAL,
+                        margin_kind     TEXT,
                         sort_order      INTEGER NOT NULL DEFAULT 0
                     );
                     """,
@@ -236,33 +240,91 @@ class HubDatabase:
         }
         if "vhsys_product_id" not in existing:
             conn.execute("ALTER TABLE quote_items ADD COLUMN vhsys_product_id INTEGER")
+        if "unit_cost" not in existing:
+            conn.execute("ALTER TABLE quote_items ADD COLUMN unit_cost REAL")
+        if "margin_kind" not in existing:
+            conn.execute("ALTER TABLE quote_items ADD COLUMN margin_kind TEXT")
 
     def _migrate_quote_versions(self, conn: sqlite3.Connection) -> None:
         """Cria quote_versions em DBs já bootstrapados (idempotente)."""
         row = conn.execute(
             "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'quote_versions'"
         ).fetchone()
-        if row is not None:
+        if row is None:
+            conn.executescript(
+                """
+                CREATE TABLE quote_versions (
+                    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                    quote_id                INTEGER NOT NULL
+                                            REFERENCES quotes (id) ON DELETE CASCADE,
+                    version_number         INTEGER NOT NULL,
+                    snapshot_modules_json  TEXT NOT NULL,
+                    snapshot_items_json    TEXT NOT NULL,
+                    snapshot_notes         TEXT,
+                    snapshot_monthly_json TEXT,
+                    snapshot_margin_json  TEXT,
+                    pdf_path                TEXT,
+                    created_at              TEXT NOT NULL,
+                    updated_at              TEXT NOT NULL,
+                    UNIQUE (quote_id, version_number)
+                );
+                CREATE INDEX idx_quote_versions_quote_id ON quote_versions (quote_id);
+                """
+            )
             return
-        conn.executescript(
-            """
-            CREATE TABLE quote_versions (
-                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
-                quote_id                INTEGER NOT NULL
-                                        REFERENCES quotes (id) ON DELETE CASCADE,
-                version_number         INTEGER NOT NULL,
-                snapshot_modules_json  TEXT NOT NULL,
-                snapshot_items_json    TEXT NOT NULL,
-                snapshot_notes         TEXT,
-                snapshot_monthly_json TEXT,
-                pdf_path                TEXT,
-                created_at              TEXT NOT NULL,
-                updated_at              TEXT NOT NULL,
-                UNIQUE (quote_id, version_number)
-            );
-            CREATE INDEX idx_quote_versions_quote_id ON quote_versions (quote_id);
-            """
-        )
+        existing = {
+            str(col[1])
+            for col in conn.execute("PRAGMA table_info(quote_versions)").fetchall()
+        }
+        if "version_number" not in existing:
+            conn.executescript(
+                """
+                CREATE TABLE quote_versions__new (
+                    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                    quote_id                INTEGER NOT NULL
+                                            REFERENCES quotes (id) ON DELETE CASCADE,
+                    version_number         INTEGER NOT NULL,
+                    snapshot_modules_json  TEXT NOT NULL,
+                    snapshot_items_json    TEXT NOT NULL,
+                    snapshot_notes         TEXT,
+                    snapshot_monthly_json TEXT,
+                    snapshot_margin_json  TEXT,
+                    pdf_path                TEXT,
+                    created_at              TEXT NOT NULL,
+                    updated_at              TEXT NOT NULL,
+                    UNIQUE (quote_id, version_number)
+                );
+                """
+            )
+            if "version" in existing:
+                conn.execute(
+                    """
+                    INSERT INTO quote_versions__new (
+                        id, quote_id, version_number,
+                        snapshot_modules_json, snapshot_items_json,
+                        snapshot_notes, snapshot_monthly_json, snapshot_margin_json,
+                        pdf_path, created_at, updated_at
+                    )
+                    SELECT
+                        id, quote_id, version,
+                        '[]', '[]',
+                        NULL, NULL,
+                        snapshot_margin_json,
+                        NULL, created_at, created_at
+                    FROM quote_versions
+                    """
+                )
+            conn.executescript(
+                """
+                DROP TABLE quote_versions;
+                ALTER TABLE quote_versions__new RENAME TO quote_versions;
+                CREATE INDEX IF NOT EXISTS idx_quote_versions_quote_id
+                    ON quote_versions (quote_id);
+                """
+            )
+            return
+        if "snapshot_margin_json" not in existing:
+            conn.execute("ALTER TABLE quote_versions ADD COLUMN snapshot_margin_json TEXT")
 
     def _migrate_relax_section_checks(self, conn: sqlite3.Connection) -> None:
         """Recria quote_items / quote_templates sem CHECK binário de section."""

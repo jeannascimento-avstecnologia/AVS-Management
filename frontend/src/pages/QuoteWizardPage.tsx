@@ -48,6 +48,7 @@ import {
   type QuoteSection,
   type QuoteTemplateLine,
   type QuoteUpdate,
+  type QuoteMarginKind,
   type LegacyModuleKind,
   type TifluxRequestorHit,
 } from '@/api/client'
@@ -57,11 +58,13 @@ import {
 } from '@/components/quotes/QuoteClientRegisterDialog'
 import { QuoteModuleTemplatesPanel } from '@/components/quotes/QuoteModuleTemplatesPanel'
 import { QuoteMonthlyChargesDialog } from '@/components/quotes/QuoteMonthlyChargesDialog'
+import { QuoteMarginPanel } from '@/components/quotes/QuoteMarginPanel'
 import { QuoteProposalTemplatesPanel } from '@/components/quotes/QuoteProposalTemplatesPanel'
 import { localId } from '@/lib/localId'
 import { groupHomePath } from '@/lib/groupHome'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
 import { VhsysItemSearch } from '@/components/quotes/VhsysItemSearch'
+import { inferMarginKindFromCatalog } from '@/lib/quoteMargin'
 import { moduleTitleFromTemplate } from '@/lib/quoteModuleTemplates'
 import { VhsysPartySearch } from '@/components/quotes/VhsysPartySearch'
 import {
@@ -102,10 +105,16 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { WizardStepper } from '@/components/ui/wizard-stepper'
 import { usePermission } from '@/hooks/useAuth'
 import { digitsOnly, formatCnpj, formatDate } from '@/lib/format'
-import { btnAccentClass, btnSecondaryClass, btnDangerClass, inputClass } from '@/lib/ui-classes'
+import {
+  btnAccentClass,
+  btnSecondaryClass,
+  btnDangerClass,
+  inputClass,
+  quoteInsetClass,
+} from '@/lib/ui-classes'
 import { cn } from '@/lib/cn'
 
-const STEPS = ['Orçamento', 'Revisão'] as const
+const STEPS = ['Orçamento', 'Revisão', 'Custo vs lucro'] as const
 
 const TEMP_LABELS: Record<LeadTemperature, string> = {
   quente: 'Quente',
@@ -114,11 +123,9 @@ const TEMP_LABELS: Record<LeadTemperature, string> = {
 }
 
 const TEMP_CHIP: Record<LeadTemperature, string> = {
-  quente:
-    'border-aurora-danger/50 bg-aurora-danger/15 text-aurora-danger ring-2 ring-aurora-danger/25',
-  morno:
-    'border-aurora-warning/50 bg-aurora-warning/15 text-aurora-warning ring-2 ring-aurora-warning/25',
-  frio: 'border-aurora-info/50 bg-aurora-info/15 text-aurora-info ring-2 ring-aurora-info/25',
+  quente: 'border-aurora-danger/40 bg-aurora-danger/10 text-aurora-danger',
+  morno: 'border-aurora-warning/40 bg-aurora-warning/10 text-aurora-warning',
+  frio: 'border-aurora-info/40 bg-aurora-info/10 text-aurora-info',
 }
 
 const NONE = '__none__'
@@ -134,6 +141,8 @@ type DraftItem = {
   unit_value: string
   template_key: string | null
   vhsys_product_id: number | null
+  unit_cost: number | null
+  margin_kind: QuoteMarginKind | null
 }
 
 type DraftInstallment = {
@@ -151,6 +160,8 @@ type DraftModule = {
   discount_value: string
   labor_hours: string
   labor_hourly_rate: string
+  internal_labor_hours: string
+  internal_hourly_cost: string
   notes: string
   billed_by_name: string
   billed_by_cnpj: string
@@ -179,7 +190,20 @@ type DraftForm = {
   extra_recipients: string[]
   notes: string
   internal_notes: string
+  implementation_hours: string
+  analyst_hourly_cost: string
   items: DraftItem[]
+}
+
+function quoteStep1Fill(form: DraftForm): number {
+  const parts = [
+    form.title.trim().length > 0,
+    form.tiflux_client_id != null,
+    form.contact_name.trim().length > 0 || form.contact_email.trim().length > 0,
+    form.lead_temperature != null,
+    form.modules.length > 0 && form.items.some((item) => item.name.trim().length > 0),
+  ]
+  return parts.filter(Boolean).length / parts.length
 }
 
 type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
@@ -194,6 +218,8 @@ const PRESET_IMPLANT: DraftModule = {
   discount_value: '',
   labor_hours: '',
   labor_hourly_rate: '',
+  internal_labor_hours: '',
+  internal_hourly_cost: '',
   notes: '',
   billed_by_name: '',
   billed_by_cnpj: '',
@@ -213,6 +239,8 @@ const PRESET_MONTHLY: DraftModule = {
   discount_value: '',
   labor_hours: '',
   labor_hourly_rate: '',
+  internal_labor_hours: '',
+  internal_hourly_cost: '',
   notes: '',
   billed_by_name: '',
   billed_by_cnpj: '',
@@ -233,6 +261,8 @@ function moduleFromApi(mod: QuoteModule): DraftModule {
     discount_value: mod.discount_value != null ? String(mod.discount_value) : '',
     labor_hours: mod.labor_hours != null ? String(mod.labor_hours) : '',
     labor_hourly_rate: mod.labor_hourly_rate != null ? String(mod.labor_hourly_rate) : '',
+    internal_labor_hours: mod.internal_labor_hours != null ? String(mod.internal_labor_hours) : '',
+    internal_hourly_cost: mod.internal_hourly_cost != null ? String(mod.internal_hourly_cost) : '',
     notes: mod.notes ?? '',
     billed_by_name: mod.billed_by_name ?? '',
     billed_by_cnpj: mod.billed_by_cnpj ?? '',
@@ -249,7 +279,22 @@ function moduleFromApi(mod: QuoteModule): DraftModule {
 function modulesFromQuote(quote: QuoteRead): DraftModule[] {
   return [...(quote.modules ?? [])]
     .sort((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id))
-    .map(moduleFromApi)
+    .map((mod) => {
+      const draft = moduleFromApi(mod)
+      const emptyInternals =
+        !draft.internal_labor_hours.trim() && !draft.internal_hourly_cost.trim()
+      const implant = mod.legacy_kind === 'implantacao'
+      if (implant && emptyInternals) {
+        return {
+          ...draft,
+          internal_labor_hours:
+            quote.implementation_hours != null ? String(quote.implementation_hours) : '',
+          internal_hourly_cost:
+            quote.analyst_hourly_cost != null ? String(quote.analyst_hourly_cost) : '',
+        }
+      }
+      return draft
+    })
 }
 
 function slugifyModuleId(title: string): string {
@@ -275,6 +320,11 @@ function draftModuleToApi(mod: DraftModule, index: number): QuoteModule {
     discount_value: parseOptionalNumber(mod.discount_value),
     labor_hours: mod.show_labor ? parseOptionalNumber(mod.labor_hours) : null,
     labor_hourly_rate: mod.show_labor ? parseOptionalNumber(mod.labor_hourly_rate) : null,
+    internal_labor_hours: parseOptionalNumber(mod.internal_labor_hours),
+    internal_hourly_cost:
+      mod.internal_hourly_cost.trim() === ''
+        ? null
+        : parseNonNegativeNumber(mod.internal_hourly_cost),
     notes: mod.notes.trim() || null,
     billed_by_name: mod.billed_by_name.trim() || null,
     billed_by_cnpj: digitsOnly(mod.billed_by_cnpj) || null,
@@ -479,6 +529,10 @@ function quoteToForm(quote: QuoteRead): DraftForm {
     extra_recipients: [...(quote.extra_recipients ?? [])],
     notes: quote.notes?.trim() ? quote.notes : defaultQuoteNotes(quote.tiflux_ticket_number),
     internal_notes: quote.internal_notes?.trim() ?? '',
+    implementation_hours:
+      quote.implementation_hours != null ? String(quote.implementation_hours) : '',
+    analyst_hourly_cost:
+      quote.analyst_hourly_cost != null ? String(quote.analyst_hourly_cost) : '',
     items: quote.items.map((item) => ({
       localKey: newLocalKey(),
       itemId: item.id,
@@ -488,6 +542,8 @@ function quoteToForm(quote: QuoteRead): DraftForm {
       unit_value: String(item.unit_value),
       template_key: item.template_key,
       vhsys_product_id: item.vhsys_product_id ?? null,
+      unit_cost: item.unit_cost ?? null,
+      margin_kind: item.margin_kind ?? null,
     })),
   }
 }
@@ -502,6 +558,8 @@ function formToUpdate(form: DraftForm): QuoteUpdate {
     unit_value: parseNonNegativeNumber(item.unit_value),
     template_key: item.template_key,
     vhsys_product_id: item.vhsys_product_id,
+    unit_cost: item.unit_cost,
+    margin_kind: item.margin_kind,
     sort_order: index,
   }))
 
@@ -537,6 +595,16 @@ function formToUpdate(form: DraftForm): QuoteUpdate {
     notes: form.notes.trim() || null,
     internal_notes: form.internal_notes.trim() || null,
     title: form.title.trim() || null,
+    implementation_hours: parseOptionalNumber(
+      form.modules.find((m) => m.legacy_kind === 'implantacao')?.internal_labor_hours ??
+        form.implementation_hours,
+    ),
+    analyst_hourly_cost: (() => {
+      const raw =
+        form.modules.find((m) => m.legacy_kind === 'implantacao')?.internal_hourly_cost ??
+        form.analyst_hourly_cost
+      return raw.trim() === '' ? null : parseNonNegativeNumber(raw)
+    })(),
     items,
   }
 }
@@ -581,7 +649,7 @@ export function QuoteWizardPage() {
   const canCadastrar = usePermission('cadastrar')
 
   const locationStep = (location.state as { initialStep?: number } | null)?.initialStep
-  const [step, setStep] = useState(() => (locationStep === 3 ? 2 : 1))
+  const [step, setStep] = useState(() => (locationStep === 2 || locationStep === 3 ? locationStep : 1))
   const [form, setForm] = useState<DraftForm | null>(null)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
@@ -619,6 +687,12 @@ export function QuoteWizardPage() {
     enabled: Number.isFinite(quoteId) && quoteId > 0,
   })
 
+  const marginQuery = useQuery({
+    queryKey: ['quote-margin', quoteId],
+    queryFn: () => api.getQuoteMargin(quoteId),
+    enabled: step === 3 && Number.isFinite(quoteId) && quoteId > 0,
+  })
+
   const moduleTemplatesQuery = useQuery({
     queryKey: ['quote-module-templates'],
     queryFn: () => api.listQuoteModuleTemplates(),
@@ -629,14 +703,23 @@ export function QuoteWizardPage() {
 
   useEffect(() => {
     const home = groupHomePath(location.pathname)
+    // #region agent log
+    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'A',location:'QuoteWizardPage.tsx:redirectEffect',message:'wizard query state',data:{quoteId,status:quoteQuery.status,isError:quoteQuery.isError,isPending:quoteQuery.isPending,hasForm:form!=null,err:quoteQuery.error instanceof Error?quoteQuery.error.message:String(quoteQuery.error??'')},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (!Number.isFinite(quoteId) || quoteId <= 0) {
+      // #region agent log
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'C',location:'QuoteWizardPage.tsx:redirectEffect',message:'redirect invalid id',data:{quoteId,home},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       navigate(home, { replace: true })
       return
     }
     if (quoteQuery.isError) {
+      // #region agent log
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'A',location:'QuoteWizardPage.tsx:redirectEffect',message:'redirect on get error',data:{quoteId,home,err:quoteQuery.error instanceof Error?quoteQuery.error.message:String(quoteQuery.error??'')},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
       navigate(home, { replace: true })
     }
-  }, [quoteId, quoteQuery.isError, location.pathname, navigate])
+  }, [quoteId, quoteQuery.isError, quoteQuery.status, quoteQuery.isPending, quoteQuery.error, form, location.pathname, navigate])
   const moduleTemplates = moduleTemplatesQuery.data?.templates ?? []
   const filteredInsertTemplates = useMemo(() => {
     const q = insertBlockSearch.trim().toLocaleLowerCase('pt-BR')
@@ -653,7 +736,18 @@ export function QuoteWizardPage() {
     hydratedId.current = quote.id
     emailPrefillDone.current = false
     discountSourceByModule.current = {}
-    setForm(quoteToForm(quote))
+    try {
+      const next = quoteToForm(quote)
+      setForm(next)
+      // #region agent log
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'B',location:'QuoteWizardPage.tsx:hydrate',message:'hydrate ok',data:{id:quote.id,items:next.items.length,modules:next.modules.length},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+    } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'B',location:'QuoteWizardPage.tsx:hydrate',message:'hydrate throw',data:{id:quote.id,err:err instanceof Error?err.message:String(err)},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      throw err
+    }
     setTifluxSearch(quote.client_name?.trim() || '')
     setSaveStatus('idle')
     setLastSavedAt(quote.updated_at)
@@ -769,6 +863,7 @@ export function QuoteWizardPage() {
       setLastSavedAt(updated.updated_at)
       void queryClient.invalidateQueries({ queryKey: ['quotes'] })
       queryClient.setQueryData(['quote', quoteId], updated)
+      void queryClient.invalidateQueries({ queryKey: ['quote-margin', quoteId] })
       setForm((prev) => (prev ? syncDraftItemIds(prev, updated) : prev))
       if (dirtyRef.current) {
         setSaveStatus('dirty')
@@ -794,6 +889,37 @@ export function QuoteWizardPage() {
     },
     onError: (err: Error) => {
       toast.error(err.message || 'Erro ao salvar modelo')
+    },
+  })
+
+  const refreshMarginMutation = useMutation({
+    mutationFn: () => api.refreshQuoteMarginCosts(quoteId),
+    onSuccess: async (margin) => {
+      queryClient.setQueryData(['quote-margin', quoteId], margin)
+      const updated = await api.getQuote(quoteId)
+      queryClient.setQueryData(['quote', quoteId], updated)
+      setForm((prev) => {
+        if (!prev) return prev
+        const byId = new Map(
+          updated.items.map((i) => [
+            i.id,
+            { unit_cost: i.unit_cost ?? null, margin_kind: i.margin_kind ?? null },
+          ]),
+        )
+        return {
+          ...prev,
+          items: prev.items.map((it) => {
+            if (it.itemId == null || !byId.has(it.itemId)) return it
+            const hit = byId.get(it.itemId)
+            if (!hit) return it
+            return { ...it, unit_cost: hit.unit_cost, margin_kind: hit.margin_kind }
+          }),
+        }
+      })
+      toast.success('Custos VHSYS atualizados')
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || 'Falha ao buscar custos no VHSYS.')
     },
   })
 
@@ -837,6 +963,8 @@ export function QuoteWizardPage() {
           unit_value: '',
           template_key: null,
           vhsys_product_id: null,
+          unit_cost: null,
+          margin_kind: null,
         },
       ],
     }))
@@ -928,6 +1056,8 @@ export function QuoteWizardPage() {
           discount_value: '',
           labor_hours: '',
           labor_hourly_rate: '',
+          internal_labor_hours: '',
+          internal_hourly_cost: '',
           notes: '',
           billed_by_name: '',
           billed_by_cnpj: '',
@@ -964,6 +1094,8 @@ export function QuoteWizardPage() {
           discount_value: '',
           labor_hours: '',
           labor_hourly_rate: '',
+          internal_labor_hours: '',
+          internal_hourly_cost: '',
           notes: template.notes ?? '',
           billed_by_name: template.billed_by_name ?? '',
           billed_by_cnpj: template.billed_by_cnpj ?? '',
@@ -982,6 +1114,8 @@ export function QuoteWizardPage() {
         unit_value: String(line.unit_value),
         template_key: template.key,
         vhsys_product_id: null,
+        unit_cost: null,
+        margin_kind: null,
       }))
       return {
         ...prev,
@@ -1028,6 +1162,8 @@ export function QuoteWizardPage() {
       unit_value: String(item.unit_value),
       template_key: item.template_key ?? null,
       vhsys_product_id: item.vhsys_product_id ?? null,
+      unit_cost: item.unit_cost ?? null,
+      margin_kind: item.margin_kind ?? null,
     }))
     patchForm((prev) => ({ ...prev, modules, items }))
     setProposalLibraryOpen(false)
@@ -1320,7 +1456,7 @@ export function QuoteWizardPage() {
             </span>
           </h1>
           {form.title.trim() ? (
-            <p className="text-lg font-semibold tracking-tight text-aurora-accent">
+            <p className="text-base font-medium tracking-tight text-foreground">
               {form.title.trim()}
             </p>
           ) : null}
@@ -1350,19 +1486,21 @@ export function QuoteWizardPage() {
         </Alert>
       )}
 
-      <WizardStepper steps={[...STEPS]} current={step} accent="blue" />
+      <WizardStepper
+        steps={[...STEPS]}
+        current={step}
+        accent="green"
+        segmentFills={step === 1 ? [quoteStep1Fill(form)] : undefined}
+      />
 
       {step === 1 && (
         <div className="space-y-6 hub-panel-enter">
-        <Card className="border-aurora-border border-l-4 border-l-aurora-accent bg-aurora-surface shadow-sm">
+        <Card className="border-l-4 border-l-aurora-green">
           <CardHeader className="pb-3">
             <div className="flex flex-wrap items-center gap-2">
-              <UserRound className="h-4 w-4 text-aurora-accent" aria-hidden />
+              <UserRound className="h-4 w-4 text-aurora-green" aria-hidden />
               <CardTitle className="text-base">Cliente</CardTitle>
-              <Badge
-                variant="outline"
-                className="border-aurora-accent/40 bg-aurora-accent-muted text-aurora-accent"
-              >
+              <Badge variant="outline" className="text-muted-foreground">
                 Passo 1
               </Badge>
               {form.tiflux_client_id != null ? (
@@ -1378,21 +1516,13 @@ export function QuoteWizardPage() {
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div
-              className={cn(
-                'space-y-2 rounded-xl border-2 border-aurora-accent/50 p-3 sm:p-4',
-                'bg-gradient-to-br from-aurora-accent-muted/70 to-aurora-surface',
-              )}
-            >
-              <Label
-                htmlFor="quote-referencia"
-                className="text-sm font-bold uppercase tracking-wide text-aurora-accent"
-              >
+            <div className={cn(quoteInsetClass, 'space-y-2')}>
+              <Label htmlFor="quote-referencia" className="text-sm font-medium text-foreground">
                 Referência
               </Label>
               <Input
                 id="quote-referencia"
-                className="h-12 border-aurora-accent/40 bg-aurora-surface text-lg font-semibold placeholder:text-muted-foreground/60"
+                className="h-10"
                 placeholder="Ex.: Microsoft 365, Backup Acronis, Infraestrutura…"
                 disabled={!canEdit}
                 value={form.title}
@@ -1404,15 +1534,10 @@ export function QuoteWizardPage() {
               />
               <p className="text-[11px] text-muted-foreground">Nome interno — não sai no PDF.</p>
             </div>
-            <div
-              className={cn(
-                'space-y-3 rounded-xl border border-aurora-accent/30 p-3 sm:p-4',
-                'bg-gradient-to-br from-aurora-accent-muted/40 to-aurora-surface',
-              )}
-            >
+            <div className={quoteInsetClass}>
               <div className="flex flex-wrap items-center gap-2">
-                <Building2 className="h-4 w-4 text-aurora-accent" aria-hidden />
-                <span className="text-sm font-semibold text-aurora-accent">Cliente TiFlux</span>
+                <Building2 className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <span className="text-sm font-semibold">Cliente TiFlux</span>
               </div>
               <TifluxQuoteClientSearch
                 value={tifluxSearch}
@@ -1478,15 +1603,10 @@ export function QuoteWizardPage() {
             </div>
 
             {form.tiflux_client_id != null && (
-              <div
-                className={cn(
-                  'space-y-3 rounded-xl border border-aurora-border p-3 sm:p-4',
-                  'bg-gradient-to-br from-aurora-surface-2/80 to-aurora-surface',
-                )}
-              >
+              <div className={quoteInsetClass}>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Contact className="h-4 w-4 text-aurora-muted" aria-hidden />
-                  <span className="text-sm font-semibold text-aurora-fg">Contato</span>
+                  <Contact className="h-4 w-4 text-muted-foreground" aria-hidden />
+                  <span className="text-sm font-semibold">Contato</span>
                   {form.contact_name && (
                     <Badge variant="outline" className="text-xs">
                       {form.contact_name}
@@ -1537,15 +1657,10 @@ export function QuoteWizardPage() {
               </div>
             )}
 
-            <div
-              className={cn(
-                'space-y-3 rounded-xl border border-aurora-border p-3 sm:p-4',
-                'bg-gradient-to-br from-aurora-surface-2/80 to-aurora-surface',
-              )}
-            >
+            <div className={quoteInsetClass}>
               <div className="flex flex-wrap items-center gap-2">
-                <Thermometer className="h-4 w-4 text-aurora-muted" aria-hidden />
-                <span className="text-sm font-semibold text-aurora-fg">Temperatura do lead</span>
+                <Thermometer className="h-4 w-4 text-muted-foreground" aria-hidden />
+                <span className="text-sm font-semibold">Temperatura do lead</span>
                 {form.lead_temperature ? (
                   <Badge variant="outline" className={cn('border', TEMP_CHIP[form.lead_temperature])}>
                     {TEMP_LABELS[form.lead_temperature]}
@@ -1564,7 +1679,7 @@ export function QuoteWizardPage() {
                     btnSecondaryClass,
                     'aurora-motion',
                     form.lead_temperature === null &&
-                      'border-aurora-accent bg-aurora-accent-muted text-aurora-accent ring-2 ring-aurora-accent/25',
+                      'border-aurora-green bg-aurora-green-muted text-aurora-green',
                   )}
                   disabled={!canEdit}
                   onClick={() => patchForm((p) => ({ ...p, lead_temperature: null }))}
@@ -1648,7 +1763,7 @@ export function QuoteWizardPage() {
           </div>
 
           {orderedModules.length === 0 ? (
-            <Card className="border-aurora-border bg-aurora-surface shadow-sm">
+            <Card>
               <CardContent className="py-8 text-center text-sm text-muted-foreground">
                 Nenhum bloco. Use <strong>Inserir bloco</strong> ou a Biblioteca de Orçamentos.
               </CardContent>
@@ -1756,7 +1871,7 @@ export function QuoteWizardPage() {
                   <p className="text-xs text-muted-foreground">Carregando biblioteca…</p>
                 )}
                 {!moduleTemplatesQuery.isPending && moduleTemplates.length === 0 && (
-                  <div className="rounded-lg border border-dashed border-aurora-border bg-aurora-surface-2/40 px-4 py-6 text-center">
+                  <div className="rounded-lg border border-dashed border-border bg-muted/40 px-4 py-6 text-center">
                     <p className="text-sm text-muted-foreground">
                       Nenhum bloco na biblioteca ainda.
                     </p>
@@ -1784,8 +1899,8 @@ export function QuoteWizardPage() {
                           key={tpl.id}
                           type="button"
                           className={cn(
-                            'flex flex-col items-start gap-1 rounded-lg border border-aurora-border bg-aurora-surface-2/30 p-3 text-left transition-colors',
-                            'hover:border-aurora-info/50 hover:bg-aurora-info/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-info/40',
+                            'flex flex-col items-start gap-1 rounded-lg border border-border bg-muted/30 p-3 text-left transition-colors',
+                            'hover:border-aurora-green/50 hover:bg-aurora-green/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-green/40',
                           )}
                           onClick={() => addModuleFromTemplate(tpl)}
                         >
@@ -1811,7 +1926,7 @@ export function QuoteWizardPage() {
                         <button
                           type="button"
                           className={cn(
-                            'rounded-lg border border-aurora-border bg-aurora-surface-2/30 p-3 text-left text-sm font-medium',
+                            'rounded-lg border border-border bg-muted/30 p-3 text-left text-sm font-medium',
                             'hover:border-aurora-accent/50 hover:bg-aurora-accent/5',
                           )}
                           onClick={() => restorePreset('implantacao')}
@@ -1823,7 +1938,7 @@ export function QuoteWizardPage() {
                         <button
                           type="button"
                           className={cn(
-                            'rounded-lg border border-aurora-border bg-aurora-surface-2/30 p-3 text-left text-sm font-medium',
+                            'rounded-lg border border-border bg-muted/30 p-3 text-left text-sm font-medium',
                             'hover:border-aurora-brand-red/50 hover:bg-aurora-brand-red/5',
                           )}
                           onClick={() => restorePreset('mensalidade')}
@@ -1959,15 +2074,12 @@ export function QuoteWizardPage() {
 
       {step === 2 && (
         <div className="space-y-4 hub-panel-enter">
-          <Card className="border-aurora-border border-l-4 border-l-aurora-accent bg-aurora-surface shadow-sm">
+          <Card className="border-l-4 border-l-aurora-green">
             <CardHeader className="pb-3">
               <div className="flex flex-wrap items-center gap-2">
-                <UserRound className="h-4 w-4 text-aurora-accent" aria-hidden />
+                <UserRound className="h-4 w-4 text-aurora-green" aria-hidden />
                 <CardTitle className="text-base">Resumo do cliente</CardTitle>
-                <Badge
-                  variant="outline"
-                  className="border-aurora-accent/40 bg-aurora-accent-muted text-aurora-accent"
-                >
+                <Badge variant="outline" className="text-muted-foreground">
                   Passo 2
                 </Badge>
               </div>
@@ -1977,21 +2089,11 @@ export function QuoteWizardPage() {
             </CardHeader>
             <CardContent>
               <dl className="grid gap-3 sm:grid-cols-2">
-                <div
-                  className={cn(
-                    'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface-2/50 p-3',
-                    'hover:border-aurora-accent/40 hover:shadow-sm',
-                  )}
-                >
+                <div className={quoteInsetClass}>
                   <dt className="text-xs text-muted-foreground">CNPJ</dt>
                   <dd className="mt-1 font-mono text-sm font-semibold">{formatCnpj(form.cnpj)}</dd>
                 </div>
-                <div
-                  className={cn(
-                    'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface-2/50 p-3',
-                    'hover:border-aurora-accent/40 hover:shadow-sm',
-                  )}
-                >
+                <div className={quoteInsetClass}>
                   <dt className="text-xs text-muted-foreground">Cliente</dt>
                   <dd className="mt-1 text-sm font-semibold">{form.client_name || '—'}</dd>
                   <div className="mt-2 flex flex-wrap gap-1.5">
@@ -2013,12 +2115,7 @@ export function QuoteWizardPage() {
                     ) : null}
                   </div>
                 </div>
-                <div
-                  className={cn(
-                    'aurora-motion rounded-xl border border-aurora-border bg-aurora-surface-2/50 p-3',
-                    'hover:border-aurora-accent/40 hover:shadow-sm',
-                  )}
-                >
+                <div className={quoteInsetClass}>
                   <dt className="text-xs text-muted-foreground">Temperatura</dt>
                   <dd className="mt-2">
                     {form.lead_temperature ? (
@@ -2057,37 +2154,31 @@ export function QuoteWizardPage() {
 
           <div
             className={cn(
-              'grid gap-3 rounded-xl border border-aurora-border p-4',
-              'bg-gradient-to-br from-aurora-accent-muted/35 to-aurora-brand-red/10',
+              'grid gap-2 rounded-lg border border-border bg-muted/40 p-3',
               moduleNets.length > 1 ? 'sm:grid-cols-2' : 'sm:grid-cols-1',
             )}
           >
             {moduleNets.map(({ mod, net }) => (
               <div
                 key={mod.id}
-                className="flex items-center justify-between gap-2 rounded-lg border border-aurora-accent/30 bg-aurora-surface/80 px-3 py-2.5"
+                className="flex items-center justify-between gap-2 px-1 py-1.5"
               >
-                <span className="text-sm font-medium text-aurora-accent">
-                  Total {mod.title}
-                </span>
+                <span className="text-sm text-muted-foreground">Total {mod.title}</span>
                 <span className="text-sm font-semibold tabular-nums">{money(net.net)}</span>
               </div>
             ))}
-            <div className="flex items-center justify-between gap-2 rounded-lg border border-aurora-brand-red/30 bg-aurora-surface/80 px-3 py-2.5 sm:col-span-full">
-              <span className="text-sm font-medium text-aurora-brand-red">Total geral</span>
+            <div className="flex items-center justify-between gap-2 border-t border-border px-1 py-2 sm:col-span-full">
+              <span className="text-sm font-medium">Total geral</span>
               <span className="text-sm font-semibold tabular-nums">{money(grandTotal)}</span>
             </div>
           </div>
 
-          <Card className="border-aurora-border border-l-4 border-l-aurora-accent bg-aurora-surface shadow-sm">
+          <Card>
             <CardHeader className="pb-3">
               <div className="flex flex-wrap items-center gap-2">
-                <StickyNote className="h-4 w-4 text-aurora-accent" aria-hidden />
+                <StickyNote className="h-4 w-4 text-muted-foreground" aria-hidden />
                 <CardTitle className="text-base">Observações</CardTitle>
-                <Badge
-                  variant="outline"
-                  className="border-aurora-accent/40 bg-aurora-accent-muted text-aurora-accent"
-                >
+                <Badge variant="outline" className="text-muted-foreground">
                   PDF
                 </Badge>
                 {canEdit ? (
@@ -2134,7 +2225,7 @@ export function QuoteWizardPage() {
                 <CardTitle className="text-base">Observações Internas</CardTitle>
                 <Badge
                   variant="outline"
-                  className="border-amber-500/40 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-400"
+                  className="border-aurora-amber/40 bg-aurora-amber-muted text-aurora-amber"
                 >
                   <Lock className="mr-1 h-3 w-3" />
                   Não aparece no PDF
@@ -2164,10 +2255,10 @@ export function QuoteWizardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-aurora-border border-l-4 border-l-aurora-info bg-aurora-surface shadow-sm">
+          <Card>
             <CardHeader className="pb-3">
               <div className="flex flex-wrap items-center gap-2">
-                <Mail className="h-4 w-4 text-aurora-info" aria-hidden />
+                <Mail className="h-4 w-4 text-muted-foreground" aria-hidden />
                 <CardTitle className="text-base">Envio por e-mail</CardTitle>
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
@@ -2199,8 +2290,7 @@ export function QuoteWizardPage() {
                       <li
                         key={email}
                         className={cn(
-                          'aurora-motion inline-flex items-center gap-1 rounded-lg border border-aurora-border',
-                          'bg-aurora-surface-2/60 px-2.5 py-1 text-xs hover:border-aurora-accent/40',
+                          'inline-flex items-center gap-1 rounded-lg border border-border bg-muted/40 px-2.5 py-1 text-xs',
                         )}
                       >
                         <span className="font-mono">{email}</span>
@@ -2254,7 +2344,7 @@ export function QuoteWizardPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-aurora-border bg-aurora-surface shadow-sm">
+          <Card>
             <CardContent className="space-y-3 p-4">
               <Alert>
                 <AlertDescription>
@@ -2356,6 +2446,32 @@ export function QuoteWizardPage() {
         </div>
       )}
 
+      {step === 3 && form && (
+        <div className="space-y-4 hub-panel-enter">
+          <QuoteMarginPanel
+            margin={marginQuery.data ?? null}
+            loading={marginQuery.isPending}
+            canEdit={canEdit}
+            modules={form.modules}
+            items={form.items}
+            refreshing={refreshMarginMutation.isPending}
+            onRefreshCosts={() => refreshMarginMutation.mutate()}
+            onPatchModule={(id, patch) =>
+              patchForm((p) => ({
+                ...p,
+                modules: p.modules.map((m) => (m.id === id ? { ...m, ...patch } : m)),
+              }))
+            }
+            onPatchItem={(localKey, patch) =>
+              patchForm((p) => ({
+                ...p,
+                items: p.items.map((i) => (i.localKey === localKey ? { ...i, ...patch } : i)),
+              }))
+            }
+          />
+        </div>
+      )}
+
       <div className="flex flex-wrap items-center justify-between gap-2 border-t border-aurora-border pt-4">
         <Button
           type="button"
@@ -2366,15 +2482,19 @@ export function QuoteWizardPage() {
           Voltar
         </Button>
         <div className="flex gap-2">
-          {step < 2 ? (
+          {step < 3 ? (
             <Button
               type="button"
               className={btnAccentClass}
-              onClick={() => setStep((s) => Math.min(2, s + 1))}
+              onClick={() => {
+                if (step === 2) persist()
+                setStep((s) => Math.min(3, s + 1))
+              }}
             >
               Próximo
             </Button>
-          ) : (
+          ) : null}
+          {step >= 2 ? (
             <Button
               type="button"
               className={btnSecondaryClass}
@@ -2382,7 +2502,7 @@ export function QuoteWizardPage() {
             >
               Voltar à lista
             </Button>
-          )}
+          ) : null}
         </div>
       </div>
 
@@ -2635,7 +2755,7 @@ function ItemsSection({
   }
 
   return (
-    <Card className={cn('border-aurora-border bg-aurora-surface shadow-sm', accentBorder)}>
+    <Card className={accentBorder}>
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 flex-1">
@@ -2781,13 +2901,22 @@ function ItemsSection({
                     disabled={!canEdit}
                     excludeNames={usedItemNames}
                     unitValue={parseNonNegativeNumber(item.unit_value)}
-                    onChange={(name) => onUpdate(item.localKey, { name, vhsys_product_id: null })}
+                    onChange={(name) =>
+                      onUpdate(item.localKey, {
+                        name,
+                        vhsys_product_id: null,
+                        unit_cost: null,
+                        margin_kind: null,
+                      })
+                    }
                     onSelect={(catalog) =>
                       onUpdate(item.localKey, {
                         name: catalog.name,
                         unit_value:
                           catalog.unit_value > 0 ? String(catalog.unit_value) : item.unit_value,
                         vhsys_product_id: catalog.id,
+                        unit_cost: catalog.cost_value ?? null,
+                        margin_kind: inferMarginKindFromCatalog(catalog),
                       })
                     }
                   />
@@ -3134,7 +3263,7 @@ function PaymentPlanFields({
       ) : null}
     </div>
       {mode === 'parcelado' && installments.length > 0 && (
-        <div className="space-y-2 rounded-lg border border-aurora-border bg-aurora-surface-2/50 p-3">
+        <div className={quoteInsetClass}>
           <p className="text-xs font-medium text-muted-foreground">Parcelas</p>
           {installments.map((inst, i) => (
             <div key={i} className="grid grid-cols-[auto_1fr_auto_auto_1fr] items-center gap-2">
@@ -3209,7 +3338,6 @@ function ReviewBlock({
   return (
     <Card
       className={cn(
-        'border-aurora-border bg-aurora-surface shadow-sm',
         isImplant
           ? 'border-l-4 border-l-aurora-accent'
           : isMonthly
@@ -3237,7 +3365,7 @@ function ReviewBlock({
       </CardHeader>
       <CardContent className="space-y-3">
         {items.length === 0 ? (
-          <p className="rounded-lg border border-dashed border-aurora-border px-3 py-4 text-sm text-muted-foreground">
+          <p className="rounded-lg border border-dashed border-border px-3 py-4 text-sm text-muted-foreground">
             Sem itens nesta seção.
           </p>
         ) : (
@@ -3246,9 +3374,7 @@ function ReviewBlock({
               <li
                 key={item.localKey}
                 className={cn(
-                  'aurora-motion flex justify-between gap-2 rounded-lg border border-aurora-border/80',
-                  'bg-aurora-surface-2/40 px-3 py-2 text-sm',
-                  'hover:border-aurora-accent/35 hover:shadow-sm',
+                  'flex justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm',
                 )}
               >
                 <span className="truncate">

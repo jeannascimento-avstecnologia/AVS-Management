@@ -329,7 +329,7 @@ export function QuoteModuleTemplatesPanel({
         </div>
       )}
 
-      <div className="hub-panel-enter space-y-4 rounded-xl border border-aurora-info/35 bg-gradient-to-br from-aurora-info/10 to-aurora-surface p-3 sm:p-4">
+      <div className="hub-panel-enter space-y-4 rounded-lg border border-border bg-muted/40 p-3 sm:p-4">
         <div className="flex flex-wrap items-center gap-2">
           <Boxes className="h-4 w-4 text-aurora-info" aria-hidden />
           <span className="text-sm font-semibold text-aurora-info">Blocos</span>

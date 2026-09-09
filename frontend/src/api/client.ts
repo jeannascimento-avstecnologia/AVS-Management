@@ -75,6 +75,8 @@ export type QuoteModule = {
   discount_value: number | null
   labor_hours: number | null
   labor_hourly_rate: number | null
+  internal_labor_hours?: number | null
+  internal_hourly_cost?: number | null
   notes: string | null
   billed_by_name: string | null
   billed_by_cnpj: string | null
@@ -94,6 +96,8 @@ export type QuoteItemRead = {
   total_value: number
   template_key: string | null
   vhsys_product_id?: number | null
+  unit_cost?: number | null
+  margin_kind?: 'implantacao' | 'licenca' | 'produto' | null
   sort_order: number
 }
 
@@ -105,6 +109,8 @@ export type QuoteItemWrite = {
   unit_value: number
   template_key?: string | null
   vhsys_product_id?: number | null
+  unit_cost?: number | null
+  margin_kind?: 'implantacao' | 'licenca' | 'produto' | null
   sort_order?: number
 }
 
@@ -130,6 +136,8 @@ export type QuoteRead = {
   monthly_discount_value: number | null
   monthly_labor_hours: number | null
   monthly_labor_hourly_rate: number | null
+  analyst_hourly_cost: number | null
+  implementation_hours: number | null
   modules: QuoteModule[]
   client_email: string | null
   contact_name: string | null
@@ -173,6 +181,68 @@ export type QuoteMonthlyDraftWrite = {
   allocations: QuoteMonthlyAllocationWrite[]
 }
 
+export type QuoteMarginKind = 'implantacao' | 'licenca' | 'produto'
+
+export type QuoteMarginLine = {
+  item_id: number
+  section: QuoteSection
+  section_title: string
+  name: string
+  bucket: 'oneshot' | 'recurring'
+  qty: number
+  revenue: number
+  cost: number
+  profit: number
+  cost_missing: boolean
+  margin_kind?: QuoteMarginKind | null
+  unit_value?: number
+  unit_cost?: number | null
+}
+
+export type QuoteMarginTotals = {
+  revenue: number
+  cogs: number
+  labor_cost: number
+  profit: number
+  hours?: number
+  margin_pct: number | null
+}
+
+export type QuoteMarginRecurring = {
+  revenue: number
+  fornecedor: number
+  intermediador: number
+}
+
+export type QuoteMarginModule = {
+  id: string
+  title: string
+  legacy_kind: LegacyModuleKind | null
+  show_implant_labor: boolean
+  revenue: number
+  cogs: number
+  labor_cost: number
+  profit: number
+  hours: number | null
+  rate: number | null
+  effective_rate: number
+  items: QuoteMarginLine[]
+}
+
+export type QuoteMarginRead = {
+  quote_id: number
+  incomplete: boolean
+  default_analyst_hourly_cost: number
+  analyst_hourly_cost: number | null
+  effective_analyst_hourly_cost: number
+  implementation_hours: number | null
+  canvas_labor_hours: number
+  oneshot: QuoteMarginTotals
+  recurring: QuoteMarginRecurring
+  modules: QuoteMarginModule[]
+  lines: QuoteMarginLine[]
+}
+
 export type QuoteVersionRead = {
   id: number
   quote_id: number
@@ -201,6 +271,8 @@ export type QuoteWrite = {
   monthly_discount_value?: number | null
   monthly_labor_hours?: number | null
   monthly_labor_hourly_rate?: number | null
+  analyst_hourly_cost?: number | null
+  implementation_hours?: number | null
   modules?: QuoteModule[]
   client_email?: string | null
   contact_name?: string | null
@@ -316,6 +388,7 @@ export type VhsysCatalogSubcategory = {
 export type VhsysCatalogItem = {
   id: number
   kind: 'produto' | 'servico'
+  tipo_produto?: string | null
   name: string
   code: string | null
   unit_value: number
@@ -947,7 +1020,20 @@ export const api = {
     return request<{ quotes: QuoteRead[] }>(`/orcamentos${suffix}`)
   },
 
-  getQuote: (id: number) => request<QuoteRead>(`/orcamentos/${id}`),
+  getQuote: async (id: number) => {
+    try {
+      const data = await request<QuoteRead>(`/orcamentos/${id}`)
+      // #region agent log
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'A',location:'client.ts:getQuote',message:'getQuote ok',data:{id,items:data.items?.length ?? 0,modules:data.modules?.length ?? 0},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return data
+    } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'A',location:'client.ts:getQuote',message:'getQuote fail',data:{id,err:err instanceof Error ? err.message : String(err),status:err instanceof ApiError ? err.status : null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      throw err
+    }
+  },
 
   createQuote: (body: QuoteWrite) =>
     request<QuoteRead>('/orcamentos', { method: 'POST', body: JSON.stringify(body) }),
@@ -1137,8 +1223,25 @@ export const api = {
       },
     ),
 
-  listQuoteVersions: (id: number) =>
-    request<{ versions: QuoteVersionRead[] }>(`/orcamentos/${id}/versions`),
+  getQuoteMargin: (id: number) => request<QuoteMarginRead>(`/orcamentos/${id}/margem`),
+
+  refreshQuoteMarginCosts: (id: number) =>
+    request<QuoteMarginRead>(`/orcamentos/${id}/margem/refresh-costs`, { method: 'POST' }),
+
+  listQuoteVersions: async (id: number) => {
+    try {
+      const data = await request<{ versions: QuoteVersionRead[] }>(`/orcamentos/${id}/versions`)
+      // #region agent log
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'D',location:'client.ts:listQuoteVersions',message:'versions ok',data:{id,count:data.versions?.length ?? 0},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      return data
+    } catch (err) {
+      // #region agent log
+      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'D',location:'client.ts:listQuoteVersions',message:'versions fail',data:{id,err:err instanceof Error ? err.message : String(err),status:err instanceof ApiError ? err.status : null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      throw err
+    }
+  },
 
   createQuoteVersion: (id: number) =>
     request<QuoteVersionRead>(`/orcamentos/${id}/versions`, {

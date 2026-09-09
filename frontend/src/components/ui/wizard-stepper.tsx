@@ -6,29 +6,50 @@ type Props = {
   steps: string[]
   current: number
   className?: string
-  accent?: 'blue' | 'default'
+  accent?: 'blue' | 'green' | 'default'
+  /** 0–1 fill for the bar after step i (only while that step is current). Done steps always 100%. */
+  segmentFills?: number[]
 }
 
-export function WizardStepper({ steps, current, className, accent = 'default' }: Props) {
-  const isBlue = accent === 'blue'
-  const doneCircle = isBlue
-    ? 'border-aurora-accent bg-aurora-accent text-white'
-    : 'border-primary bg-primary text-primary-foreground'
-  const activeCircle = isBlue
-    ? 'border-aurora-accent bg-background text-aurora-accent'
-    : 'border-primary bg-background text-primary'
-  const barColor = isBlue ? 'bg-aurora-accent' : 'bg-primary'
+export function WizardStepper({
+  steps,
+  current,
+  className,
+  accent = 'default',
+  segmentFills,
+}: Props) {
+  const doneCircle =
+    accent === 'blue'
+      ? 'border-aurora-accent bg-aurora-accent text-white'
+      : accent === 'green'
+        ? 'border-aurora-green bg-aurora-green text-white'
+        : 'border-primary bg-primary text-primary-foreground'
+  const activeCircle =
+    accent === 'blue'
+      ? 'border-aurora-accent bg-background text-aurora-accent'
+      : accent === 'green'
+        ? 'border-aurora-green bg-background text-aurora-green'
+        : 'border-primary bg-background text-primary'
+  const barColor =
+    accent === 'blue' ? 'bg-aurora-accent' : accent === 'green' ? 'bg-aurora-green' : 'bg-primary'
 
   return (
     <nav aria-label="Progresso" className={cn('mb-8', className)}>
-      <ol className="flex items-center gap-2">
+      <ol className="flex w-full items-center">
         {steps.map((label, i) => {
           const step = i + 1
           const done = step < current
           const active = step === current
+          const isLast = i === steps.length - 1
+          const rawFill = done ? 1 : active ? (segmentFills?.[i] ?? 0) : 0
+          const fill = Math.min(1, Math.max(0, rawFill))
+
           return (
-            <li key={label} className="flex flex-1 items-center gap-2 last:flex-none">
-              <div className="flex min-w-0 flex-1 flex-col items-center gap-1.5 sm:flex-row sm:gap-2">
+            <li
+              key={label}
+              className={cn('flex min-w-0 items-center', !isLast && 'flex-1')}
+            >
+              <div className="flex shrink-0 items-center gap-2">
                 <div
                   className={cn(
                     'flex h-8 w-8 shrink-0 items-center justify-center rounded-full border-2 text-sm font-semibold transition-colors',
@@ -41,23 +62,28 @@ export function WizardStepper({ steps, current, className, accent = 'default' }:
                 </div>
                 <span
                   className={cn(
-                    'truncate text-center text-xs font-medium sm:text-left sm:text-sm',
+                    'text-xs font-medium sm:text-sm',
                     active ? 'text-foreground' : 'text-muted-foreground',
                   )}
                 >
                   {label}
                 </span>
               </div>
-              {i < steps.length - 1 && (
-                <div className="relative hidden h-0.5 flex-1 overflow-hidden rounded-full bg-border sm:block">
-                  {done && (
-                    <motion.div
-                      className={cn('absolute inset-y-0 left-0', barColor)}
-                      initial={{ width: 0 }}
-                      animate={{ width: '100%' }}
-                      transition={{ duration: 0.3 }}
-                    />
-                  )}
+              {!isLast && (
+                <div
+                  className="relative mx-3 h-0.5 min-w-6 flex-1 overflow-hidden rounded-full bg-border"
+                  role="progressbar"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={Math.round(fill * 100)}
+                  aria-label={`Progresso ${label}`}
+                >
+                  <motion.div
+                    className={cn('absolute inset-y-0 left-0 rounded-full', barColor)}
+                    initial={false}
+                    animate={{ width: `${fill * 100}%` }}
+                    transition={{ duration: 0.25 }}
+                  />
                 </div>
               )}
             </li>

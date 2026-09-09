@@ -53,6 +53,8 @@ CREATE TABLE quotes (
     active_quote_version_id INTEGER NULL,
     current_version_number INTEGER, -- última versão criada (vX no PDF/UI)
     monthly_draft_json     TEXT,   -- JSON das mensalidades (rascunho) antes de snapshot
+    analyst_hourly_cost    REAL,   -- custo R$/h analista; NULL = Settings default; 0 = override
+    implementation_hours   REAL,   -- horas internas (não vai ao PDF)
     created_by              INTEGER, -- user id auth (lógico)
     created_at              TEXT    NOT NULL,
     updated_at              TEXT    NOT NULL,
@@ -79,6 +81,8 @@ CREATE TABLE quote_items (
     total_value     REAL    NOT NULL, -- qty * unit (app calcula; DB armazena)
     template_key    TEXT,
     vhsys_product_id INTEGER,
+    unit_cost       REAL,   -- snapshot VHSYS valor_custo_produto; NULL = desconhecido
+    margin_kind     TEXT,   -- implantacao|licenca|produto
     sort_order      INTEGER NOT NULL DEFAULT 0
 );
 
@@ -189,6 +193,7 @@ CREATE TABLE quote_versions (
     snapshot_items_json    TEXT NOT NULL, -- items_json (QuoteItemWrite[])
     snapshot_notes         TEXT,
     snapshot_monthly_json TEXT,           -- JSON mensalidades (charges + sources)
+    snapshot_margin_json  TEXT,           -- P&L interno; PDF ignora
     pdf_path                TEXT,          -- UUID filename (por versão)
     created_at              TEXT NOT NULL,
     updated_at              TEXT NOT NULL,

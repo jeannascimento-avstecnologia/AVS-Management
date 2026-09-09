@@ -107,8 +107,8 @@ export function QuoteProposalTemplatesPanel({
               <li key={template.id}>
                 <div
                   className={cn(
-                    'flex flex-col gap-2 rounded-lg border border-aurora-border bg-aurora-surface-2/30 p-3',
-                    'hover:border-aurora-info/50 hover:bg-aurora-info/5',
+                    'flex flex-col gap-2 rounded-lg border border-border bg-muted/30 p-3',
+                    'hover:border-aurora-green/50 hover:bg-aurora-green/5',
                   )}
                 >
                   <button

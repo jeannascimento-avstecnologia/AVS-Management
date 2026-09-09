@@ -19,6 +19,11 @@ from src.integrations.vhsys_client import (
     VhsysClient,
     normalize_vhsys_party,
 )
+from src.quotes.margin import (
+    compute_quote_margin,
+    infer_margin_kind_from_product,
+    unit_cost_from_product,
+)
 from src.quotes.schemas import (
     LeadTemperature,
     QuoteModuleTemplateUpdate,
@@ -886,6 +891,71 @@ def build_quotes_router() -> APIRouter:
             user=user,
         )
         return updated.model_dump()
+
+    @router.get("/{quote_id}/margem")
+    async def get_quote_margin(
+        quote_id: int,
+        _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        try:
+            quote = _service().get(quote_id)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        default = get_settings().quote_analyst_hourly_cost
+        return compute_quote_margin(quote, default_analyst_hourly_cost=default).model_dump()
+
+    @router.post("/{quote_id}/margem/refresh-costs")
+    async def refresh_quote_margin_costs(
+        request: Request,
+        quote_id: int,
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        if not settings.vhsys_access_token or not settings.vhsys_secret_access_token:
+            raise HTTPException(status_code=503, detail="Credenciais VHSYS não configuradas.")
+        try:
+            quote = _service().get(quote_id)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        vhsys = VhsysClient(settings)
+        costs: dict[int, float | None] = {}
+        kinds: dict[int, str | None] = {}
+        try:
+            for item in quote.items:
+                product = None
+                if item.vhsys_product_id:
+                    product = await vhsys.get_product(item.vhsys_product_id)
+                if product is None and (item.name or "").strip():
+                    found = await vhsys.search_catalog_items(item.name.strip(), limit=20)
+                    needle = item.name.strip().casefold()
+                    product = next(
+                        (p for p in found if str(p.get("name") or "").strip().casefold() == needle),
+                        None,
+                    )
+                item_id = int(item.id)
+                costs[item_id] = unit_cost_from_product(product)
+                kinds[item_id] = infer_margin_kind_from_product(
+                    product, fallback_name=item.name
+                )
+        except VhsysApiError as exc:
+            status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
+            if status == 401:
+                raise HTTPException(status_code=502, detail="Tokens VHSYS inválidos.") from exc
+            raise HTTPException(status_code=status, detail=str(exc)) from exc
+        try:
+            updated = _service().apply_item_unit_costs(quote_id, costs, kinds)
+        except QuoteConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        log_action(
+            request,
+            action="orcamento.margem.refresh_costs",
+            resource=str(quote_id),
+            detail={"items": len(costs)},
+            user=user,
+        )
+        return compute_quote_margin(
+            updated, default_analyst_hourly_cost=settings.quote_analyst_hourly_cost
+        ).model_dump()
 
     @router.get("/{quote_id}/versions")
     async def list_quote_versions(
