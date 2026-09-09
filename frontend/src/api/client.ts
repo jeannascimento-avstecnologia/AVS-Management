@@ -82,6 +82,7 @@ export type QuoteModule = {
   billed_by_cnpj: string | null
   simplified: boolean
   display_name: string | null
+  is_mensalidade?: boolean | null
   sort_order: number
   installments_json?: InstallmentLine[] | null
 }
@@ -330,6 +331,7 @@ export type QuoteModuleTemplateRead = {
   billed_by_cnpj: string | null
   simplified: boolean
   display_name: string | null
+  is_mensalidade: boolean
   lines: QuoteTemplateLine[]
   created_at: string
 }
@@ -344,6 +346,7 @@ export type QuoteModuleTemplateWrite = {
   billed_by_cnpj?: string | null
   simplified?: boolean
   display_name?: string | null
+  is_mensalidade?: boolean
   lines?: QuoteTemplateLine[]
 }
 
@@ -356,6 +359,7 @@ export type QuoteModuleTemplateUpdate = {
   billed_by_cnpj?: string | null
   simplified?: boolean | null
   display_name?: string | null
+  is_mensalidade?: boolean | null
   lines?: QuoteTemplateLine[] | null
 }
 

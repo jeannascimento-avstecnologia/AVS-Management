@@ -146,6 +146,7 @@ def test_migrate_quote_module_template_notes_columns(tmp_path: Path) -> None:
         cols = {str(row[1]) for row in opened.execute("PRAGMA table_info(quote_module_templates)")}
     assert "notes" in cols
     assert "billed_by_name" in cols
+    assert "is_mensalidade" in cols
 
 
 def test_migrate_quotes_internal_notes_column(tmp_path: Path) -> None:

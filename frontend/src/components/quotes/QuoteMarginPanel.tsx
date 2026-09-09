@@ -31,6 +31,7 @@ export type MarginDraftModule = {
   id: string
   title: string
   legacy_kind: QuoteModule['legacy_kind']
+  is_mensalidade?: boolean
   internal_labor_hours: string
   internal_hourly_cost: string
 }
@@ -135,7 +136,10 @@ export function QuoteMarginPanel({
           mod.legacy_kind === 'implantacao' ||
           modItems.some((i) => i.margin_kind === 'implantacao')
         const isImplant = mod.legacy_kind === 'implantacao' || mod.id === 'implantacao'
-        const isMonthly = mod.legacy_kind === 'mensalidade' || mod.id === 'mensalidade'
+        const isMonthly =
+          Boolean(mod.is_mensalidade) ||
+          mod.legacy_kind === 'mensalidade' ||
+          mod.id === 'mensalidade'
         return (
           <Card
             key={mod.id}

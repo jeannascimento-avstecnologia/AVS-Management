@@ -79,8 +79,9 @@ Proibido na UI do wizard: strings “modelo de itens”, “modelo de módulo”
   - Quantidade, valor unitário / total
   - Adicionar / remover linhas
 - **Simplificar** (check no card): oculta a listagem de linhas; mostra **Nome de Exibição** (`display_name`) + soma dos totais das linhas. Condições, pagamento, observações e faturado permanecem. Linhas continuam persistidas.
+- **Mensalidade** (check no card): override `is_mensalidade`. Bloco flagado sai do total de implementação (PDF + revisão) e entra na seção `MENSALIDADES` / bucket recorrente do passo 3. Default `true` no preset Mensalidade; `false` nos demais. VHSYS não distingue.
 - **`quote_templates` (modelos de itens) = legado** — API/tabela permanecem; **não montar** painel/apply/save de itens no wizard neste MVP
-- Forma de pagamento + desconto %↔R$ espelho (`líquido = subtotal − desconto`)
+- Forma de pagamento + desconto %↔R$ espelho (`líquido = subtotal − desconto`). Parcelado: **sem** cronograma de datas/valores; UI/PDF = `Parcelado em {N}x de R$ {líquido/N}`.
 - Mão de obra só se `show_labor` (default Mensalidade; herdado do bloco da Biblioteca se houver)
 - Campo **Faturado por** **por bloco** (busca VHSYS); ao selecionar, persistir **nome + CNPJ** (`billed_by_name`, `billed_by_cnpj`) e exibir o CNPJ na UI e no PDF. **Sem** Faturado por geral no wizard.
 - Condições do bloco: **sem** Categoria/Subcategoria VHSYS (filtro removido; catálogo busca global).
@@ -210,6 +211,7 @@ TiFlux ticket/contrato e VHSYS OS são **projeções**.
   "title": "Implantação",
   "legacy_kind": "implantacao",
   "show_labor": false,
+  "is_mensalidade": false,
   "payment_plan": null,
   "discount_pct": null,
   "discount_value": null,
@@ -364,7 +366,7 @@ Documento irmão: faturamento mensal usa o **mesmo hub**; orçamento é o “ant
 ## Adendo — Mensalidades, versões e PDF (fast-follow)
 
 ### Passo 3 — Ações / Revisão
-1. **Mensalidades**: botão no passo 3 para selecionar linhas (de quaisquer blocos) e criar múltiplas mensalidades com valores configuráveis.
+1. **Mensalidades**: check no bloco (passo 1). Sem dialog na Revisão.
 2. **Salvar orçamento**: clique cria uma nova **versão** `v1, v2, v3...` (snapshot usado no PDF).
 
 ### PDF do orçamento

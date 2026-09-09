@@ -7,7 +7,7 @@
 ## 1) Objetivo
 
 Passo 3 interno: **receita vs custos por módulo** (COGS VHSYS + horas de analista em implantação).  
-Não substitui o split fornecedor/intermediador das mensalidades.  
+Recorrente = módulos com `is_mensalidade` efetivo.  
 **Nunca** entra no PDF, e-mail ou TiFlux.
 
 ## 2) Wizard
@@ -15,7 +15,7 @@ Não substitui o split fornecedor/intermediador das mensalidades.
 | Passo | Label | Cliente vê? |
 |-------|--------|-------------|
 | 1 | Orçamento | canvas |
-| 2 | Revisão | totais, mensalidades, PDF, envio |
+| 2 | Revisão | totais (implementação vs mensalidades), PDF, envio |
 | 3 | Custo vs lucro | só interno |
 
 Enviar / PDF / versões permanecem no passo 2. Passo 3 não bloqueia submit.
@@ -45,13 +45,13 @@ Override manual sempre permitido.
 ## 5) Cálculo por módulo
 
 - Receita = líquido da seção (itens + MO venda se `show_labor`)
-- COGS = `unit_cost * qty` dos itens **não** alocados no draft de mensalidades
+- COGS = `unit_cost * qty` dos itens de módulos **sem** `is_mensalidade`
 - Custo horas = se `legacy_kind=implantacao` **ou** algum item `implantacao`: `hours * effective_rate`
 - Lucro = receita − COGS − custo horas
 
 KPI do orçamento (soma dos módulos, sem rótulo one-shot): Receita | Custo (COGS+horas) | Lucro | Horas.
 
-Recorrente: totais do draft mensal (não recalcular).
+Recorrente: líquido dos módulos com `is_mensalidade` (não `monthly_draft_json`). Fallback: draft legado se nenhum módulo traz o campo.
 
 ## 6) API / UI
 
@@ -61,4 +61,4 @@ Recorrente: totais do draft mensal (não recalcular).
 
 ## 7) Fora de escopo
 
-PDF, valor-hora por usuário, dashboard da lista, MO de implantação no PDF, editar split no passo 3.
+PDF, valor-hora por usuário, dashboard da lista, MO de implantação no PDF.

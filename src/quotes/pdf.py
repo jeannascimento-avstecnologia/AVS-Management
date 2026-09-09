@@ -16,7 +16,14 @@ from fpdf import FPDF
 
 from src.cnpj.validator import format_cnpj
 from src.quotes.pdf_parties import QuotePdfClient, QuotePdfIssuer, client_from_quote, issuer_from_settings
-from src.quotes.schemas import DEFAULT_QUOTE_NOTES, QuoteItemRead, QuoteModule, QuoteRead
+from src.quotes.schemas import (
+    DEFAULT_QUOTE_NOTES,
+    QuoteItemRead,
+    QuoteModule,
+    QuoteRead,
+    effective_is_mensalidade,
+    modules_declare_mensalidade_flag,
+)
 from src.quotes.totals import (
     apply_section_discount,
     format_payment_plan_label,
@@ -360,6 +367,7 @@ def _estimate_section_height(
     installments: list[dict[str, Any]] | None = None,
 ) -> float:
     """Altura estimada de `_write_section` (banda → TOTAL + gap final)."""
+    _ = installments
     h = _BAND_H + _GAP  # section band
     h += _ROW_H  # header ITEM/QTDE/...
     if simplified:
@@ -388,12 +396,12 @@ def _estimate_section_height(
 
     notes_clean_est = (notes or "").strip()
     n_right = 1 + (1 if discount > 0 else 0)  # TOTAL [+ desconto]
-    pay_est = _safe(format_payment_plan_label(payment_plan)).strip()
+    pay_est = _safe(format_payment_plan_label(payment_plan, module_net=_net)).strip()
     billed_est = bool((billed_by_name or "").strip() or (billed_by_cnpj or "").strip())
     n_right += (1 if pay_est and pay_est != "-" else 0) + (1 if billed_est else 0) + (
         1 if notes_clean_est else 0
     )
-    n_left = len(installments or [])
+    n_left = 0
     n_pair_est = max(n_left, n_right)
     h += _GAP * 0.5 + n_pair_est * _ROW_H + _GAP * 0.5
     return h
@@ -433,6 +441,48 @@ def _notes_with_disclaimer_and_ticket(quote: QuoteRead) -> str:
     return notes or "-"
 
 
+def _section_items(quote: QuoteRead, module_id: str) -> list[QuoteItemRead]:
+    return [i for i in quote.items if i.section == module_id]
+
+
+def _monthly_from_flagged_modules(quote: QuoteRead) -> tuple[float, list[dict[str, Any]]]:
+    """Exclusão + linhas da seção MENSALIDADES a partir de `is_mensalidade`."""
+    exclude = 0.0
+    rows: list[dict[str, Any]] = []
+    for mod in _ordered_modules(quote):
+        if not effective_is_mensalidade(mod):
+            continue
+        mod_items = _section_items(quote, mod.id)
+        include_labor = bool(mod.show_labor)
+        net = _section_net_total(
+            mod_items,
+            discount_pct=mod.discount_pct,
+            discount_value=mod.discount_value,
+            labor_hours=mod.labor_hours,
+            labor_rate=mod.labor_hourly_rate,
+            include_labor=include_labor,
+        )
+        exclude = round_money(exclude + net)
+        if mod.simplified:
+            name = (mod.display_name or mod.title or "").strip() or mod.title
+            first_id = int(mod_items[0].id) if mod_items else None
+            rows.append({"role": "product", "name": name, "amount": net, "item_id": first_id})
+            continue
+        for item in mod_items:
+            rows.append(
+                {
+                    "role": "product",
+                    "name": item.name,
+                    "amount": float(item.total_value),
+                    "item_id": int(item.id),
+                }
+            )
+        labor = labor_total(mod.labor_hours, mod.labor_hourly_rate) if include_labor else 0.0
+        if labor > 0:
+            rows.append({"role": "product", "name": "Mao de obra", "amount": labor, "item_id": None})
+    return exclude, rows
+
+
 def _estimate_signatures_height() -> float:
     """Assinaturas removidas do PDF — altura zero para keep-together."""
     return 0.0
@@ -454,7 +504,11 @@ def render_quote_pdf(
     monthly_exclude_total = 0.0
     monthly_rows: list[dict[str, Any]] = []
     license_ids: set[int] = set()
-    if monthly_draft_json:
+    monthly_total_override: float | None = None
+    if modules_declare_mensalidade_flag(quote.modules):
+        monthly_exclude_total, monthly_rows = _monthly_from_flagged_modules(quote)
+        monthly_total_override = monthly_exclude_total
+    elif monthly_draft_json:
         try:
             draft = json.loads(str(monthly_draft_json))
         except (ValueError, TypeError):
@@ -586,6 +640,7 @@ def render_quote_pdf(
             modules_by_id=modules_by_id,
             items=quote.items,
             issuer_name=issuer.name,
+            total_override=monthly_total_override,
         )
 
     notes_for_pdf = _notes_with_disclaimer_and_ticket(quote)
@@ -872,6 +927,7 @@ def _write_section(
     display_name: str | None = None,
     installments: list[dict[str, Any]] | None = None,
 ) -> None:
+    _ = installments
     billed_clean = (billed_by_name or "").strip()
     cnpj_clean = (billed_by_cnpj or "").strip()
     billed_label = billed_clean
@@ -975,21 +1031,9 @@ def _write_section(
     section_subtotal = round_money(items_total + labor)
     discount, net = apply_section_discount(section_subtotal, discount_pct, discount_value)
 
-    pay = _safe(format_payment_plan_label(payment_plan)).strip()
+    pay = _safe(format_payment_plan_label(payment_plan, module_net=net)).strip()
     notes_clean = (notes or "").strip()
-    installment_rows = installments or []
     lefts: list[str] = []
-    for idx_inst, line in enumerate(installment_rows):
-        due = str(line.get("due_date", "") if isinstance(line, dict) else "")
-        amt = float(line.get("amount", 0) if isinstance(line, dict) else 0)
-        due_fmt = due
-        if due and len(due) == 10:
-            try:
-                parts = due.split("-")
-                due_fmt = f"{parts[2]}/{parts[1]}/{parts[0]}"
-            except (IndexError, ValueError):
-                pass
-        lefts.append(f"Parcela {idx_inst + 1} ({due_fmt}) {_brl(amt)}")
     rights: list[tuple[str, str, str]] = []
     if discount > 0:
         rights.append(("Desconto", f"- {_brl(discount)} ", "body"))
@@ -1113,6 +1157,7 @@ def _write_monthly_charges_section(
     modules_by_id: dict[str, Any] | None = None,
     items: list[Any] | None = None,
     issuer_name: str = "AVS TECNOLOGIA",
+    total_override: float | None = None,
 ) -> float:
     """Renderiza seção 'MENSALIDADES' agrupada por fornecedor (billed_by_name)."""
     if not rows:
@@ -1224,7 +1269,9 @@ def _write_monthly_charges_section(
         pdf.ln(_GAP)
 
     # ── Grand total ──
-    grand_total = round_money(grand_total)
+    grand_total = round_money(
+        float(total_override) if total_override is not None else grand_total
+    )
 
     pdf.ln(_GAP)
     _write_navy_total_bar(pdf, "TOTAL MENSALIDADES", grand_total)

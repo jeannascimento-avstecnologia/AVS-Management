@@ -14,7 +14,6 @@ import {
   MoreHorizontal,
   Plus,
   Search,
-  Repeat,
   Send,
   StickyNote,
   Thermometer,
@@ -43,7 +42,6 @@ import {
   type QuoteModule,
   type QuoteModuleTemplateRead,
   type QuoteProposalTemplateRead,
-  type QuoteMonthlyDraftWrite,
   type QuoteRead,
   type QuoteSection,
   type QuoteTemplateLine,
@@ -57,7 +55,6 @@ import {
   type QuoteClientLink,
 } from '@/components/quotes/QuoteClientRegisterDialog'
 import { QuoteModuleTemplatesPanel } from '@/components/quotes/QuoteModuleTemplatesPanel'
-import { QuoteMonthlyChargesDialog } from '@/components/quotes/QuoteMonthlyChargesDialog'
 import { QuoteMarginPanel } from '@/components/quotes/QuoteMarginPanel'
 import { QuoteProposalTemplatesPanel } from '@/components/quotes/QuoteProposalTemplatesPanel'
 import { localId } from '@/lib/localId'
@@ -167,6 +164,7 @@ type DraftModule = {
   billed_by_cnpj: string
   simplified: boolean
   display_name: string
+  is_mensalidade: boolean
   sort_order: number
   installments: DraftInstallment[]
 }
@@ -225,6 +223,7 @@ const PRESET_IMPLANT: DraftModule = {
   billed_by_cnpj: '',
   simplified: false,
   display_name: '',
+  is_mensalidade: false,
   sort_order: 0,
   installments: [],
 }
@@ -246,6 +245,7 @@ const PRESET_MONTHLY: DraftModule = {
   billed_by_cnpj: '',
   simplified: false,
   display_name: '',
+  is_mensalidade: true,
   sort_order: 1,
   installments: [],
 }
@@ -268,11 +268,9 @@ function moduleFromApi(mod: QuoteModule): DraftModule {
     billed_by_cnpj: mod.billed_by_cnpj ?? '',
     simplified: Boolean(mod.simplified),
     display_name: mod.display_name ?? '',
+    is_mensalidade: mod.is_mensalidade ?? mod.legacy_kind === 'mensalidade',
     sort_order: mod.sort_order,
-    installments: (mod.installments_json ?? []).map((i) => ({
-      due_date: i.due_date,
-      amount: String(i.amount),
-    })),
+    installments: [],
   }
 }
 
@@ -330,14 +328,9 @@ function draftModuleToApi(mod: DraftModule, index: number): QuoteModule {
     billed_by_cnpj: digitsOnly(mod.billed_by_cnpj) || null,
     simplified: mod.simplified,
     display_name: mod.display_name.trim() || null,
+    is_mensalidade: mod.is_mensalidade,
     sort_order: index,
-    installments_json:
-      mod.installments.length > 0
-        ? mod.installments.map((i) => ({
-            due_date: i.due_date,
-            amount: parseNonNegativeNumber(i.amount),
-          }))
-        : null,
+    installments_json: null,
   }
 }
 
@@ -469,17 +462,6 @@ function buildPaymentPlan(mode: PaymentMode, installments: number | null): strin
 
 function defaultQuoteNotes(_ticket: string | null): string {
   return ''
-}
-
-function parseMonthlyDraft(raw: string | null | undefined): QuoteMonthlyDraftWrite | null {
-  if (!raw?.trim()) return null
-  try {
-    const data = JSON.parse(raw) as QuoteMonthlyDraftWrite
-    if (!Array.isArray(data.allocations)) return null
-    return { allocations: data.allocations }
-  } catch {
-    return null
-  }
 }
 
 function syncDraftItemIds(form: DraftForm, quote: QuoteRead): DraftForm {
@@ -625,14 +607,20 @@ function sectionTotal(items: DraftItem[], section: QuoteSection): number {
     }, 0)
 }
 
-function paymentLabel(value: string): string {
+function paymentLabel(value: string, moduleNet?: number): string {
   if (!value) return '—'
   const { mode, installments } = parsePaymentPlan(value)
   if (mode === 'a_vista') return 'À vista'
   if (mode === 'recorrente_anual') {
     return installments ? `${RECORRENTE_LABEL} ${installments}x` : RECORRENTE_LABEL
   }
-  if (mode === 'parcelado' && installments) return `Parcelado ${installments}x`
+  if (mode === 'parcelado' && installments) {
+    if (moduleNet != null) {
+      const per = roundMoney(moduleNet / installments)
+      return `Parcelado em ${installments}x de ${money(per)}`
+    }
+    return `Parcelado ${installments}x`
+  }
   return value
 }
 
@@ -664,8 +652,6 @@ export function QuoteWizardPage() {
   const [proposalLibraryOpen, setProposalLibraryOpen] = useState(false)
   const [saveProposalOpen, setSaveProposalOpen] = useState(false)
   const [saveProposalName, setSaveProposalName] = useState('')
-  const [monthlyOpen, setMonthlyOpen] = useState(false)
-  const [monthlySaving, setMonthlySaving] = useState(false)
   const [versionSaving, setVersionSaving] = useState(false)
   const [versionPdfPending, setVersionPdfPending] = useState<number | null>(null)
   const emailPrefillDone = useRef(false)
@@ -1063,6 +1049,7 @@ export function QuoteWizardPage() {
           billed_by_cnpj: '',
           simplified: false,
           display_name: '',
+          is_mensalidade: false,
           sort_order: prev.modules.length,
           installments: [],
         },
@@ -1101,6 +1088,7 @@ export function QuoteWizardPage() {
           billed_by_cnpj: template.billed_by_cnpj ?? '',
           simplified: Boolean(template.simplified),
           display_name: template.display_name ?? '',
+          is_mensalidade: Boolean(template.is_mensalidade),
           sort_order: prev.modules.length,
           installments: [],
         },
@@ -1202,40 +1190,6 @@ export function QuoteWizardPage() {
       toast.error(err instanceof Error ? err.message : 'Falha ao salvar versão')
     } finally {
       setVersionSaving(false)
-    }
-  }
-
-  async function handleMonthlySave(draft: QuoteMonthlyDraftWrite, selectedLocalKeys: string[]) {
-    const current = formRef.current
-    if (!current || !canEdit) return
-    if (saveTimer.current) clearTimeout(saveTimer.current)
-    setMonthlySaving(true)
-    try {
-      const updated = await api.updateQuote(quoteId, formToUpdate(current))
-      const synced = syncDraftItemIds(current, updated)
-      formRef.current = synced
-      setForm(synced)
-      queryClient.setQueryData(['quote', quoteId], updated)
-      const idByKey = new Map(synced.items.map((i) => [i.localKey, i.itemId]))
-      const allocations = draft.allocations.map((a, index) => {
-        const fromKey = idByKey.get(selectedLocalKeys[index] ?? '')
-        return { ...a, item_id: fromKey ?? a.item_id }
-      })
-      if (selectedLocalKeys.length > 0 && allocations.some((a) => !a.item_id || a.item_id < 1)) {
-        toast.error('Salve os itens antes de aplicar mensalidades.')
-        return
-      }
-      const next = await api.updateQuoteMonthlyDraft(quoteId, { allocations })
-      queryClient.setQueryData(['quote', quoteId], next)
-      setLastSavedAt(next.updated_at)
-      dirtyRef.current = false
-      setSaveStatus('saved')
-      setMonthlyOpen(false)
-      toast.success(allocations.length ? 'Mensalidades aplicadas' : 'Mensalidades limpas')
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Falha ao salvar mensalidades')
-    } finally {
-      setMonthlySaving(false)
     }
   }
 
@@ -1420,15 +1374,12 @@ export function QuoteWizardPage() {
     }
   })
   const grandTotal = moduleNets.reduce((sum, row) => sum + row.net.net, 0)
-  const monthlyLines = form.items.map((item) => ({
-    localKey: item.localKey,
-    itemId: item.itemId,
-    section: item.section,
-    sectionTitle: form.modules.find((m) => m.id === item.section)?.title ?? item.section,
-    name: item.name.trim() || 'Novo item',
-    total: lineTotal(item),
-  }))
-  const monthlyDraft = parseMonthlyDraft(quote.monthly_draft_json)
+  const implementationTotal = moduleNets
+    .filter(({ mod }) => !mod.is_mensalidade)
+    .reduce((sum, row) => sum + row.net.net, 0)
+  const monthlyTotal = moduleNets
+    .filter(({ mod }) => mod.is_mensalidade)
+    .reduce((sum, row) => sum + row.net.net, 0)
   const versions = versionsQuery.data?.versions ?? []
 
   return (
@@ -1820,9 +1771,9 @@ export function QuoteWizardPage() {
                   onBilledByName={(v) => patchModule(mod.id, { billed_by_name: v })}
                   onBilledByCnpj={(v) => patchModule(mod.id, { billed_by_cnpj: v })}
                   onSimplified={(v) => patchModule(mod.id, { simplified: v })}
+                  isMensalidade={mod.is_mensalidade}
+                  onIsMensalidade={(v) => patchModule(mod.id, { is_mensalidade: v })}
                   onDisplayName={(v) => patchModule(mod.id, { display_name: v })}
-                  installments={mod.installments}
-                  onInstallments={(v) => patchModule(mod.id, { installments: v })}
                   onAdd={() => addItem(mod.id)}
                   onRemove={removeItem}
                   onUpdate={updateItem}
@@ -2149,6 +2100,7 @@ export function QuoteWizardPage() {
               notes={mod.notes}
               billedByName={mod.billed_by_name}
               subtotal={sub}
+              isMensalidade={mod.is_mensalidade}
             />
           ))}
 
@@ -2163,14 +2115,32 @@ export function QuoteWizardPage() {
                 key={mod.id}
                 className="flex items-center justify-between gap-2 px-1 py-1.5"
               >
-                <span className="text-sm text-muted-foreground">Total {mod.title}</span>
+                <span className="text-sm text-muted-foreground">
+                  Total {mod.title}
+                  {mod.is_mensalidade ? ' (mensalidade)' : ''}
+                </span>
                 <span className="text-sm font-semibold tabular-nums">{money(net.net)}</span>
               </div>
             ))}
-            <div className="flex items-center justify-between gap-2 border-t border-border px-1 py-2 sm:col-span-full">
-              <span className="text-sm font-medium">Total geral</span>
-              <span className="text-sm font-semibold tabular-nums">{money(grandTotal)}</span>
-            </div>
+            {moduleNets.some((row) => row.mod.is_mensalidade) ? (
+              <>
+                <div className="flex items-center justify-between gap-2 border-t border-border px-1 py-2 sm:col-span-full">
+                  <span className="text-sm font-medium">Total implementação</span>
+                  <span className="text-sm font-semibold tabular-nums">
+                    {money(implementationTotal)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-2 px-1 py-2 sm:col-span-full">
+                  <span className="text-sm font-medium">Total mensalidades</span>
+                  <span className="text-sm font-semibold tabular-nums">{money(monthlyTotal)}</span>
+                </div>
+              </>
+            ) : (
+              <div className="flex items-center justify-between gap-2 border-t border-border px-1 py-2 sm:col-span-full">
+                <span className="text-sm font-medium">Total geral</span>
+                <span className="text-sm font-semibold tabular-nums">{money(grandTotal)}</span>
+              </div>
+            )}
           </div>
 
           <Card>
@@ -2181,19 +2151,6 @@ export function QuoteWizardPage() {
                 <Badge variant="outline" className="text-muted-foreground">
                   PDF
                 </Badge>
-                {canEdit ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    className={cn(btnSecondaryClass, 'ml-auto')}
-                    onClick={() => setMonthlyOpen(true)}
-                  >
-                    <Repeat className="h-4 w-4" />
-                    Mensalidades
-                  </Button>
-                ) : monthlyDraft ? (
-                  <Badge variant="outline">Mensalidades</Badge>
-                ) : null}
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Opcional. Impresso no bloco OBSERVAÇÕES do PDF.
@@ -2514,17 +2471,6 @@ export function QuoteWizardPage() {
           onLinked={applyClientLink}
         />
       )}
-
-      <QuoteMonthlyChargesDialog
-        open={monthlyOpen}
-        onOpenChange={setMonthlyOpen}
-        quoteId={quoteId}
-        lines={monthlyLines}
-        canEdit={canEdit}
-        initialDraft={monthlyDraft}
-        saving={monthlySaving}
-        onSave={handleMonthlySave}
-      />
     </div>
   )
 }
@@ -2630,13 +2576,13 @@ function ItemsSection({
   billedByCnpj,
   simplified,
   displayName,
+  isMensalidade,
   onNotes,
   onBilledByName,
   onBilledByCnpj,
   onSimplified,
+  onIsMensalidade,
   onDisplayName,
-  installments,
-  onInstallments,
   onAdd,
   onRemove,
   onUpdate,
@@ -2668,13 +2614,13 @@ function ItemsSection({
   billedByCnpj: string
   simplified: boolean
   displayName: string
+  isMensalidade: boolean
   onNotes: (v: string) => void
   onBilledByName: (v: string) => void
   onBilledByCnpj: (v: string) => void
   onSimplified: (v: boolean) => void
+  onIsMensalidade: (v: boolean) => void
   onDisplayName: (v: string) => void
-  installments: DraftInstallment[]
-  onInstallments: (v: DraftInstallment[]) => void
   onAdd: () => void
   onRemove: (localKey: string) => void
   onUpdate: (localKey: string, patch: Partial<DraftItem>) => void
@@ -2693,7 +2639,7 @@ function ItemsSection({
   const isImplant = section === 'implantacao'
   const accentBorder = isImplant
     ? 'border-l-4 border-l-aurora-accent'
-    : section === 'mensalidade'
+    : isMensalidade
       ? 'border-l-4 border-l-aurora-brand-red'
       : 'border-l-4 border-l-aurora-info'
   const usedItemNames = items.map((i) => i.name)
@@ -2708,6 +2654,7 @@ function ItemsSection({
       billed_by_cnpj: string | null
       simplified: boolean
       display_name: string | null
+      is_mensalidade: boolean
       lines: QuoteTemplateLine[]
     }) => api.createQuoteModuleTemplate(payload),
     onSuccess: (created) => {
@@ -2750,6 +2697,7 @@ function ItemsSection({
       billed_by_cnpj: digitsOnly(billedByCnpj) || null,
       simplified,
       display_name: displayName.trim() || null,
+      is_mensalidade: isMensalidade,
       lines,
     })
   }
@@ -2803,6 +2751,15 @@ function ItemsSection({
                   aria-label="Simplificar bloco"
                 />
                 Simplificar
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Checkbox
+                  checked={isMensalidade}
+                  disabled={!canEdit}
+                  onCheckedChange={(v) => onIsMensalidade(v === true)}
+                  aria-label="Bloco de mensalidade"
+                />
+                Mensalidade
               </label>
             </div>
           </div>
@@ -3003,8 +2960,6 @@ function ItemsSection({
                 paymentPlan={paymentPlan}
                 canEdit={canEdit}
                 onPaymentPlan={onPaymentPlan}
-                installments={installments}
-                onInstallments={onInstallments}
                 moduleNet={applySectionDiscount(subtotal, discountPct, discountValue).net}
               />
 
@@ -3157,46 +3112,21 @@ function PaymentPlanFields({
   paymentPlan,
   canEdit,
   onPaymentPlan,
-  installments,
-  onInstallments,
   moduleNet,
 }: {
   paymentPlan: string
   canEdit: boolean
   onPaymentPlan: (v: string) => void
-  installments: DraftInstallment[]
-  onInstallments: (v: DraftInstallment[]) => void
   moduleNet: number
 }) {
   const { mode, installments: nParcels } = parsePaymentPlan(paymentPlan)
   const modeValue = mode || NONE
   const showValueField = mode === 'parcelado' || mode === 'recorrente_anual'
   const monthsValue = String(nParcels ?? (mode === 'recorrente_anual' ? 12 : 2))
-
-  useEffect(() => {
-    if (mode !== 'parcelado' || !nParcels || nParcels < 1) {
-      if (installments.length > 0) onInstallments([])
-      return
-    }
-    if (installments.length === nParcels) return
-
-    const perParcel = moduleNet > 0 ? roundMoney(moduleNet / nParcels) : 0
-    const today = new Date()
-    const generated: DraftInstallment[] = []
-    let dt = new Date(today)
-    dt.setDate(dt.getDate() + 7)
-
-    for (let i = 0; i < nParcels; i++) {
-      generated.push({
-        due_date: dt.toISOString().split('T')[0],
-        amount: String(perParcel),
-      })
-      dt = new Date(dt)
-      dt.setDate(dt.getDate() + 30)
-    }
-    onInstallments(generated)
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- só regenera quando muda N/modo
-  }, [mode, nParcels])
+  const parcelPhrase =
+    mode === 'parcelado' && nParcels && nParcels >= 1
+      ? `Parcelado em ${nParcels}x de ${money(roundMoney(moduleNet / nParcels))}`
+      : null
 
   return (
     <div className="space-y-3">
@@ -3262,43 +3192,9 @@ function PaymentPlanFields({
         </div>
       ) : null}
     </div>
-      {mode === 'parcelado' && installments.length > 0 && (
-        <div className={quoteInsetClass}>
-          <p className="text-xs font-medium text-muted-foreground">Parcelas</p>
-          {installments.map((inst, i) => (
-            <div key={i} className="grid grid-cols-[auto_1fr_auto_auto_1fr] items-center gap-2">
-              <span className="text-xs text-muted-foreground whitespace-nowrap">
-                Parcela {i + 1}
-              </span>
-              <input
-                type="date"
-                disabled={!canEdit}
-                value={inst.due_date}
-                className={cn(inputClass, 'text-sm')}
-                onChange={(e) => {
-                  const next = [...installments]
-                  next[i] = { ...next[i], due_date: e.target.value }
-                  onInstallments(next)
-                }}
-              />
-              <span className="text-xs text-muted-foreground">→</span>
-              <span className="text-xs text-muted-foreground">R$</span>
-              <input
-                type="text"
-                inputMode="decimal"
-                disabled={!canEdit}
-                value={inst.amount}
-                className={cn(inputClass, 'text-sm text-right max-w-[100px]')}
-                onChange={(e) => {
-                  const next = [...installments]
-                  next[i] = { ...next[i], amount: e.target.value }
-                  onInstallments(next)
-                }}
-              />
-            </div>
-          ))}
-        </div>
-      )}
+      {parcelPhrase ? (
+        <p className="text-sm font-medium tabular-nums text-foreground">{parcelPhrase}</p>
+      ) : null}
     </div>
   )
 }
@@ -3316,6 +3212,7 @@ function ReviewBlock({
   notes,
   billedByName,
   subtotal,
+  isMensalidade,
 }: {
   title: string
   section: QuoteSection
@@ -3329,11 +3226,12 @@ function ReviewBlock({
   notes: string
   billedByName: string
   subtotal: number
+  isMensalidade: boolean
 }) {
   const { discount, net } = applySectionDiscount(subtotal, discountPct, discountValue)
   const labor = showLabor ? laborTotal(laborHours, laborRate) : 0
   const isImplant = section === 'implantacao'
-  const isMonthly = section === 'mensalidade'
+  const isMonthly = isMensalidade
 
   return (
     <Card
@@ -3393,7 +3291,7 @@ function ReviewBlock({
         ) : null}
         <div className="space-y-1 border-t border-aurora-border/70 pt-2 text-sm">
           <p className="text-xs text-muted-foreground">
-            Pagamento: {paymentLabel(paymentPlan)}
+            Pagamento: {paymentLabel(paymentPlan, net)}
             {discountPct ? ` · Desc. ${discountPct}%` : ''}
             {discountValue ? ` · Desc. ${money(Number(discountValue) || 0)}` : ''}
           </p>

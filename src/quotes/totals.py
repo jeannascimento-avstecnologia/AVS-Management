@@ -51,8 +51,39 @@ def apply_stacked_discount(
     return discount, net
 
 
-def format_payment_plan_label(value: str | None) -> str:
-    """Rótulo legível do plano (PDF / UI)."""
+def format_brl(value: float) -> str:
+    formatted = f"{round_money(value):,.2f}"
+    return f"R$ {formatted.replace(',', 'X').replace('.', ',').replace('X', '.')}"
+
+
+def parcel_count_from_plan(value: str | None) -> int | None:
+    """N de parcelas se o plano for parcelado; None para à vista / recorrente / vazio."""
+    raw = (value or "").strip().lower()
+    if not raw:
+        return None
+    if raw in {"a_vista", "avista", "à vista"}:
+        return None
+    if raw in {"recorrente_anual", "recorrente-anual", "anual"} or raw.startswith("recorrente_"):
+        return None
+    if raw.startswith("parcelado_"):
+        raw = raw.removeprefix("parcelado_")
+    if raw.endswith("_sem_juros"):
+        raw = raw[: -len("_sem_juros")]
+    if raw.endswith("x") and raw[:-1].isdigit():
+        n = int(raw[:-1])
+        return n if n >= 1 else None
+    return None
+
+
+def format_payment_plan_label(
+    value: str | None,
+    module_net: float | None = None,
+) -> str:
+    """Rótulo legível do plano (PDF / UI).
+
+    Parcelado + `module_net`: `Parcelado em Nx de R$ …` (líquido / N, round 2).
+    Sem `module_net`: rótulo curto legado (`Parcelado 12x`).
+    """
     raw = (value or "").strip().lower()
     if not raw:
         return ""
@@ -64,6 +95,10 @@ def format_payment_plan_label(value: str | None) -> str:
         n = raw.removeprefix("recorrente_")[:-1]
         if n.isdigit():
             return f"Recorrente {n}x"
+    n_parcels = parcel_count_from_plan(value)
+    if n_parcels is not None and module_net is not None:
+        per = round_money(float(module_net) / n_parcels) if n_parcels else 0.0
+        return f"Parcelado em {n_parcels}x de {format_brl(per)}"
     if raw in {"3x_sem_juros", "3x"}:
         return "Parcelado 3x"
     if raw in {"6x_sem_juros", "6x"}:

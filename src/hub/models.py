@@ -423,6 +423,7 @@ class HubDatabase:
             ("billed_by_cnpj", "TEXT"),
             ("simplified", "INTEGER NOT NULL DEFAULT 0"),
             ("display_name", "TEXT"),
+            ("is_mensalidade", "INTEGER NOT NULL DEFAULT 0"),
         ):
             if name not in existing:
                 conn.execute(f"ALTER TABLE quote_module_templates ADD COLUMN {name} {col_type}")

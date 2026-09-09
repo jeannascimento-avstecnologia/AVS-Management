@@ -121,6 +121,8 @@ CREATE TABLE quote_module_templates (
     simplified      INTEGER NOT NULL DEFAULT 0
                     CHECK (simplified IN (0, 1)),
     display_name    TEXT,
+    is_mensalidade   INTEGER NOT NULL DEFAULT 0
+                    CHECK (is_mensalidade IN (0, 1)),
     lines_json  TEXT    NOT NULL,
     created_at  TEXT    NOT NULL
 );

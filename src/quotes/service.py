@@ -1226,7 +1226,7 @@ class QuoteService:
             rows = conn.execute(
                 """
                 SELECT id, key, name, title, show_labor, notes, billed_by_name,
-                       billed_by_cnpj, simplified, display_name,
+                       billed_by_cnpj, simplified, display_name, is_mensalidade,
                        lines_json, created_at
                 FROM quote_module_templates
                 ORDER BY name, id
@@ -1239,7 +1239,7 @@ class QuoteService:
             row = conn.execute(
                 """
                 SELECT id, key, name, title, show_labor, notes, billed_by_name,
-                       billed_by_cnpj, simplified, display_name,
+                       billed_by_cnpj, simplified, display_name, is_mensalidade,
                        lines_json, created_at
                 FROM quote_module_templates
                 WHERE id = ?
@@ -1267,9 +1267,9 @@ class QuoteService:
                 """
                 INSERT INTO quote_module_templates
                     (key, name, title, show_labor, notes, billed_by_name,
-                     billed_by_cnpj, simplified, display_name,
+                     billed_by_cnpj, simplified, display_name, is_mensalidade,
                      lines_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     key,
@@ -1281,6 +1281,7 @@ class QuoteService:
                     data.billed_by_cnpj,
                     1 if data.simplified else 0,
                     data.display_name,
+                    1 if data.is_mensalidade else 0,
                     json.dumps(lines, ensure_ascii=False),
                     now,
                 ),
@@ -1311,6 +1312,11 @@ class QuoteService:
         simplified = (
             data.simplified if data.simplified is not None else current.simplified
         )
+        is_mensalidade = (
+            data.is_mensalidade
+            if data.is_mensalidade is not None
+            else current.is_mensalidade
+        )
         display_name = (
             data.display_name
             if "display_name" in data.model_fields_set
@@ -1334,6 +1340,7 @@ class QuoteService:
                 UPDATE quote_module_templates
                 SET name = ?, title = ?, show_labor = ?, notes = ?, billed_by_name = ?,
                     billed_by_cnpj = ?, simplified = ?, display_name = ?,
+                    is_mensalidade = ?,
                     lines_json = ?
                 WHERE id = ?
                 """,
@@ -1346,6 +1353,7 @@ class QuoteService:
                     billed_by_cnpj,
                     1 if simplified else 0,
                     display_name,
+                    1 if is_mensalidade else 0,
                     json.dumps(lines, ensure_ascii=False),
                     template_id,
                 ),
@@ -1395,6 +1403,9 @@ class QuoteService:
             billed_by_cnpj=row["billed_by_cnpj"] if "billed_by_cnpj" in row.keys() else None,
             simplified=bool(row["simplified"]) if "simplified" in row.keys() else False,
             display_name=row["display_name"] if "display_name" in row.keys() else None,
+            is_mensalidade=(
+                bool(row["is_mensalidade"]) if "is_mensalidade" in row.keys() else False
+            ),
             lines=lines,
             created_at=str(row["created_at"]),
         )

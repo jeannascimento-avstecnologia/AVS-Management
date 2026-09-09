@@ -7,7 +7,7 @@
 Adicionar ao fluxo de **Orçamento → PDF**:
 
 1. **Versões** (histórico consultável) criadas ao clicar em **"Salvar orçamento"**.
-2. Um botão de **Mensalidades** no **passo 3 (Revisão)** para selecionar linhas (de quaisquer blocos) que viram cobrança mensal, e dividir o valor em múltiplas mensalidades.
+2. Check **Mensalidade** em cada bloco no **passo 1 (Orçamento)** — override manual (VHSYS não distingue). Blocos flagados saem do total de implementação e entram na seção PDF / bucket recorrente do passo 3.
 3. Atualizações no **PDF**:
    - Exibir **"vX"** em fonte menor ao lado de `M{id}`.
    - Mostrar **"Ticket no.:"** dentro do campo **Observações** (passo 3) e permitir edição.
@@ -28,9 +28,7 @@ Adicionar ao fluxo de **Orçamento → PDF**:
 O snapshot deve ser suficiente para que o PDF renderize exatamente como estava no momento do clique:
 - `modules_json` e `quote_items`
 - `notes` (string)
-- `mensalidades_config`:
-  - lista de linhas/licenças selecionadas (origem)
-  - lista de mensalidades criadas (fornecedor/intermediador/...) e valores
+- `mensalidades_config`: `modules[].is_mensalidade` no snapshot de `modules_json` (legado: `monthly_draft_json` se o campo não existia)
 
 ### 2.3 Exibição no PDF
 - No cabeçalho, manter `Orçamento : M{id}` e exibir ao lado:
@@ -77,27 +75,22 @@ O snapshot deve ser suficiente para que o PDF renderize exatamente como estava n
 ### 5.2 Quebra de linha
 - Se o texto em `ITEM` exceder o tamanho da caixa, **quebrar em linhas** ao invés de truncar.
 
-## 6) Mensalidades (passo 3) e separação no PDF
+## 6) Mensalidades (passo 1) e separação no PDF
 
-### 6.1 UI — botão de mensalidades
-- No passo 3, adicionar um botão **"Mensalidades"**.
-- A modal deve permitir selecionar linhas de itens de **quaisquer blocos** (linha inteira).
-- Ao marcar a linha, **puxar automaticamente do VHSYS** (custo = fornecedor; venda−custo = intermediador AVS). Sem digitação obrigatória.
-- Override manual só se o usuário clicar “Editar manualmente” (custo ausente no cadastro).
+### 6.1 UI — check no bloco
+- No card de cada bloco (passo 1, ao lado de **Simplificar**): checkbox **Mensalidade**.
+- Flag = `QuoteModule.is_mensalidade` (override). Sem inferência VHSYS.
+- Default: `true` no preset Restaurar Mensalidade (`legacy_kind=mensalidade`); `false` em bloco em branco / biblioteca (salvo se o template gravar o flag).
+- Campo ausente no JSON antigo + `legacy_kind=mensalidade` → `true`.
+- **Não** há botão/dialog Mensalidades na Revisão. Endpoints `POST/PUT …/mensalidades` permanecem para snapshots antigos; a UI nova não grava `monthly_draft_json`.
 
-### 6.2 Regra dinâmica de valor
-- Por linha: `fornecedor_amount + intermediador_amount == total daquela linha`.
-- Fonte default: `valor_custo_produto * qty` + margem.
-- Não validar contra o total do orçamento nem contra a soma de todas as linhas juntas.
+### 6.2 Custo (passo 3)
+- Split fornecedor/AVS **fora** deste fluxo. Passo 3 (Custo vs lucro) trata itens dos módulos flagados como `bucket=recurring`.
 
-### 6.3 Validação
-- Se a soma das partes de uma linha não bater, o UI impede Aplicar (diferença visível na linha).
-
-### 6.4 PDF — seção exclusiva
-- O PDF deve renderizar uma seção **somente de MENSALIDADES**.
-- Para cada linha selecionada: nome do produto (com quebra de linha se passar da largura); abaixo, só as partes com valor **> 0** (Fornecedor e/ou Intermediador). Valor 0 não imprime.
+### 6.3 PDF — seção exclusiva
+- O PDF deve renderizar uma seção **somente de MENSALIDADES** com os itens (ou linha simplificada) dos módulos flagados, agrupados por `billed_by_name`.
 - Essa seção fica **fora do `VALOR TOTAL DO ORCAMENTO`**.
-- A implementação (Implantação + outros módulos de implementação) continua compondo o `VALOR TOTAL DO ORCAMENTO`.
+- A implementação (módulos **sem** o flag) continua compondo o `VALOR TOTAL DO ORCAMENTO`.
 
 ## 7) Contratos
 

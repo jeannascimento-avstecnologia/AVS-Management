@@ -99,6 +99,7 @@ class QuoteModule(BaseModel):
     billed_by_cnpj: str | None = None
     simplified: bool = False
     display_name: str | None = Field(default=None, max_length=200)
+    is_mensalidade: bool | None = None
     sort_order: int = Field(default=0, ge=0)
     installments_json: list[InstallmentLine] | None = None
 
@@ -149,6 +150,18 @@ class QuoteModule(BaseModel):
         return self
 
 
+def effective_is_mensalidade(mod: QuoteModule) -> bool:
+    """Override explícito; JSON antigo sem campo + preset mensalidade → True."""
+    if mod.is_mensalidade is not None:
+        return bool(mod.is_mensalidade)
+    return mod.legacy_kind == "mensalidade"
+
+
+def modules_declare_mensalidade_flag(modules: list[QuoteModule]) -> bool:
+    """True se algum módulo persistiu o campo (não só default ausente)."""
+    return any(m.is_mensalidade is not None for m in modules)
+
+
 def seed_default_modules() -> list[QuoteModule]:
     """Create sem `modules` e sem itens → canvas vazio.
 
@@ -173,6 +186,7 @@ def _preset_monthly() -> QuoteModule:
         title="Mensalidade",
         legacy_kind="mensalidade",
         show_labor=True,
+        is_mensalidade=True,
         sort_order=1,
     )
 
@@ -864,6 +878,7 @@ class QuoteModuleTemplateWrite(BaseModel):
     billed_by_cnpj: str | None = None
     simplified: bool = False
     display_name: str | None = Field(default=None, max_length=200)
+    is_mensalidade: bool = False
     lines: list[QuoteTemplateLine] = Field(default_factory=list)
 
     @field_validator("name", "title")
@@ -920,6 +935,7 @@ class QuoteModuleTemplateUpdate(BaseModel):
     billed_by_cnpj: str | None = None
     simplified: bool | None = None
     display_name: str | None = Field(default=None, max_length=200)
+    is_mensalidade: bool | None = None
     lines: list[QuoteTemplateLine] | None = None
 
     @field_validator("name", "title")
@@ -964,6 +980,7 @@ class QuoteModuleTemplateRead(BaseModel):
     billed_by_cnpj: str | None = None
     simplified: bool = False
     display_name: str | None = None
+    is_mensalidade: bool = False
     lines: list[QuoteTemplateLine]
     created_at: str
 

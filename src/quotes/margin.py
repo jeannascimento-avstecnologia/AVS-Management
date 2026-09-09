@@ -14,6 +14,8 @@ from src.quotes.schemas import (
     QuoteModule,
     QuoteMonthlyDraftWrite,
     QuoteRead,
+    effective_is_mensalidade,
+    modules_declare_mensalidade_flag,
 )
 from src.quotes.totals import apply_section_discount, labor_total, round_money
 
@@ -119,8 +121,6 @@ def compute_quote_margin(
     *,
     default_analyst_hourly_cost: float,
 ) -> QuoteMarginRead:
-    recurring_ids = _parse_monthly_ids(quote.monthly_draft_json)
-    draft = _parse_monthly_draft(quote.monthly_draft_json)
     by_section: dict[str, list[Any]] = {}
     for item in quote.items:
         by_section.setdefault(item.section, []).append(item)
@@ -135,6 +135,13 @@ def compute_quote_margin(
     tot_hours = 0.0
 
     default_rate = round_money(max(0.0, float(default_analyst_hourly_cost)))
+    use_flag = modules_declare_mensalidade_flag(quote.modules)
+    flagged_ids = {m.id for m in quote.modules if effective_is_mensalidade(m)}
+    if use_flag:
+        recurring_ids = {int(i.id) for i in quote.items if i.section in flagged_ids}
+    else:
+        recurring_ids = _parse_monthly_ids(quote.monthly_draft_json)
+    draft = _parse_monthly_draft(quote.monthly_draft_json)
 
     for mod in quote.modules:
         items = by_section.get(mod.id, [])
@@ -161,7 +168,7 @@ def compute_quote_margin(
 
         mod_rev = 0.0
         mod_cogs = 0.0
-        if mod.id != "mensalidade":
+        if not effective_is_mensalidade(mod):
             mod_rev = round_money(mod_rev + labor_net)
 
         mod_lines: list[QuoteMarginLine] = []
@@ -221,11 +228,27 @@ def compute_quote_margin(
         )
 
     oneshot_profit = round_money(tot_rev - tot_cogs - tot_labor)
-    rec_revenue = round_money(
-        sum(a.fornecedor_amount + a.intermediador_amount for a in draft.allocations)
-    )
-    rec_forn = round_money(sum(a.fornecedor_amount for a in draft.allocations))
-    rec_inter = round_money(sum(a.intermediador_amount for a in draft.allocations))
+    if use_flag:
+        rec_revenue = 0.0
+        for mod in quote.modules:
+            if not effective_is_mensalidade(mod):
+                continue
+            items = by_section.get(mod.id, [])
+            items_total = round_money(sum(float(i.total_value) for i in items))
+            labor = (
+                labor_total(mod.labor_hours, mod.labor_hourly_rate) if mod.show_labor else 0.0
+            )
+            subtotal = round_money(items_total + labor)
+            _d, net = apply_section_discount(subtotal, mod.discount_pct, mod.discount_value)
+            rec_revenue = round_money(rec_revenue + net)
+        rec_forn = 0.0
+        rec_inter = 0.0
+    else:
+        rec_revenue = round_money(
+            sum(a.fornecedor_amount + a.intermediador_amount for a in draft.allocations)
+        )
+        rec_forn = round_money(sum(a.fornecedor_amount for a in draft.allocations))
+        rec_inter = round_money(sum(a.intermediador_amount for a in draft.allocations))
 
     quote_rate = effective_analyst_hourly_cost(quote.analyst_hourly_cost, default_rate)
 

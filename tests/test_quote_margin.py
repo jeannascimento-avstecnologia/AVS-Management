@@ -316,6 +316,38 @@ def test_refresh_costs_persists_unit_cost(quotes_client: TestClient, monkeypatch
     assert got.json()["items"][0]["margin_kind"] == "licenca"
 
 
+def test_mensalidade_flag_excludes_from_oneshot() -> None:
+    implant = _item(id=1, unit_cost=10.0)
+    monthly = _item(
+        id=2,
+        section="lic",
+        name="Plano",
+        qty=1,
+        unit_value=299.9,
+        total_value=299.9,
+        unit_cost=100.0,
+    )
+    quote = _quote(
+        modules=[
+            QuoteModule(
+                id="implantacao",
+                title="Implantação",
+                legacy_kind="implantacao",
+                is_mensalidade=False,
+            ),
+            QuoteModule(id="lic", title="Licenças", is_mensalidade=True),
+        ],
+        items=[implant, monthly],
+    )
+    margin = compute_quote_margin(quote, default_analyst_hourly_cost=0)
+    assert margin.oneshot.revenue == 200.0
+    assert margin.oneshot.cogs == 20.0
+    assert margin.recurring.revenue == 299.9
+    buckets = {ln.item_id: ln.bucket for ln in margin.lines}
+    assert buckets[1] == "oneshot"
+    assert buckets[2] == "recurring"
+
+
 def test_margem_404(quotes_client: TestClient) -> None:
     res = quotes_client.get("/orcamentos/99999/margem")
     assert res.status_code == 404

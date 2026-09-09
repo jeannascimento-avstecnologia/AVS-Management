@@ -203,6 +203,7 @@ def test_format_payment_plan_label_recorrente_anual() -> None:
     assert format_payment_plan_label("recorrente_12x") == "Recorrente 12x"
     assert format_payment_plan_label("a_vista") == "À vista"
     assert format_payment_plan_label("12x") == "Parcelado 12x"
+    assert format_payment_plan_label("5x", 1666.65) == "Parcelado em 5x de R$ 333,33"
     assert format_payment_plan_label(None) == ""
     assert format_payment_plan_label("") == ""
 
@@ -421,19 +422,19 @@ def test_pdf_renders_installments(tmp_path: Path) -> None:
     mods = list(quote.modules)
     mods[0] = mods[0].model_copy(
         update={
+            "payment_plan": "2x",
             "installments_json": [
                 {"due_date": "2026-09-11", "amount": 750.0},
                 {"due_date": "2026-10-11", "amount": 750.0},
-            ]
+            ],
         }
     )
     quote = quote.model_copy(update={"modules": mods})
     render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
     text = _pdf_text(dest)
-    assert "Parcela 1" in text
-    assert "11/09/2026" in text
-    assert "Parcela 2" in text
-    assert "10/11/2026" in text or "11/10/2026" in text
+    assert "Parcelado em 2x de R$ 750,00" in text
+    assert "Parcela 1" not in text
+    assert "11/09/2026" not in text
 
 
 def test_pdf_simplified_module_hides_line_names(tmp_path: Path) -> None:
@@ -930,4 +931,57 @@ def test_pdf_payment_has_only_grand_total(tmp_path: Path) -> None:
     assert "Subtotal (itens)" not in text
     assert "TOTAL LIQUIDO" not in text
     assert "Mensalidade:" not in text
+
+
+def test_pdf_is_mensalidade_flag_excludes_module(tmp_path: Path) -> None:
+    dest = tmp_path / "flag-monthly.pdf"
+    quote = _sample_quote()
+    quote = quote.model_copy(
+        update={
+            "modules": [
+                QuoteModule(
+                    id="implantacao",
+                    title="Implantação",
+                    legacy_kind="implantacao",
+                    show_labor=False,
+                    is_mensalidade=False,
+                    sort_order=0,
+                ),
+                QuoteModule(
+                    id="lic",
+                    title="Licenças",
+                    is_mensalidade=True,
+                    sort_order=1,
+                ),
+            ],
+            "items": [
+                QuoteItemRead(
+                    id=1,
+                    quote_id=quote.id,
+                    section="implantacao",
+                    name="Setup implant",
+                    qty=1,
+                    unit_value=1500.0,
+                    total_value=1500.0,
+                    sort_order=0,
+                ),
+                QuoteItemRead(
+                    id=3,
+                    quote_id=quote.id,
+                    section="lic",
+                    name="M365 flag",
+                    qty=1,
+                    unit_value=500.0,
+                    total_value=500.0,
+                    sort_order=0,
+                ),
+            ],
+        }
+    )
+    render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
+    text = _pdf_text(dest)
+    assert "MENSALIDADES" in text
+    assert "M365 flag" in text
+    assert "1.500,00" in text
+    assert "2.000,00" not in text
 
