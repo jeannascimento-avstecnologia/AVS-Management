@@ -13,6 +13,18 @@
 - `quotes.title` **nunca** é impresso.
 - Não usar “Ordem de serviço” / “OS” no título.
 
+## Nome do arquivo (download)
+
+O PDF no disco continua UUID em `HUB_PDF_DIR`. Só o `Content-Disposition` é amigável:
+
+`Orçamento M{id} - {client_name} - {title}.pdf`
+
+- Versão só se `version_number >= 2`: sufixo ` - v{n}`.
+- v1 ou sem versão: sem sufixo.
+- Segmentos vazios omitidos (sem `--`). Placeholder de modelo = sem cliente.
+- Sanitizar `/ \ : * ? " < > |`; teto ~180 chars no stem.
+- `filename` ASCII `Orcamento-M{id}.pdf` + `filename*=UTF-8''...`.
+
 ## Layout
 
 1. **Cabeçalho (emitente fixo AVS)** — logo à esquerda (aspect 1965×746 ≈ 2.63:1, ~44.7×17 mm); título 16 pt **centralizado verticalmente com a logo**; mesma linha: `Orçamento : M{id}` à esquerda da área de texto e **data do orçamento na extrema direita**. Abaixo, só identificação fiscal:

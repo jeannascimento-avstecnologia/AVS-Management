@@ -39,6 +39,7 @@ from src.quotes.schemas import (
     QuoteMonthlySuggestBody,
     VhsysCatalogCreateBody,
 )
+from src.quotes.pdf_filename import PdfDownloadName, quote_pdf_download_name_from_quote
 from src.quotes.service import (
     QuoteConflictError,
     QuoteNotFoundError,
@@ -61,14 +62,14 @@ def _service() -> QuoteService:
     return QuoteService(get_hub_db())
 
 
-def _pdf_download(path: Any, filename: str) -> FileResponse:
+def _pdf_download(path: Any, name: PdfDownloadName) -> FileResponse:
     return FileResponse(
         path,
         media_type="application/pdf",
-        filename=filename,
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate",
             "Pragma": "no-cache",
+            "Content-Disposition": name.content_disposition(),
         },
     )
 
@@ -1010,13 +1011,14 @@ def build_quotes_router() -> APIRouter:
         try:
             version = _service().get_version(quote_id, version_id)
             path = _service().get_version_pdf_file(quote_id, version_id)
+            quote = _service().get(quote_id)
         except QuoteNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except QuoteConflictError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         return _pdf_download(
             path,
-            f"orcamento-M{quote_id}-v{version.version_number}-{path.stem[:8]}.pdf",
+            quote_pdf_download_name_from_quote(quote, version.version_number),
         )
 
     @router.post("/{quote_id}/pdf")
@@ -1049,7 +1051,7 @@ def build_quotes_router() -> APIRouter:
             detail={"pdf_path": quote.pdf_path},
             user=user,
         )
-        return _pdf_download(path, f"orcamento-M{quote.id}-{path.stem[:8]}.pdf")
+        return _pdf_download(path, quote_pdf_download_name_from_quote(quote))
 
     @router.get("/{quote_id}/pdf")
     async def download_quote_pdf(
@@ -1073,6 +1075,6 @@ def build_quotes_router() -> APIRouter:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except QuoteConflictError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
-        return _pdf_download(path, f"orcamento-M{quote.id}-{path.stem[:8]}.pdf")
+        return _pdf_download(path, quote_pdf_download_name_from_quote(quote))
 
     return router

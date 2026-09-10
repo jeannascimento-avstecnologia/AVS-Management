@@ -111,6 +111,7 @@ import {
   quoteInsetClass,
 } from '@/lib/ui-classes'
 import { cn } from '@/lib/cn'
+import { motion, useReducedMotion } from 'framer-motion'
 
 const STEPS = ['Orçamento', 'Revisão', 'Custo vs lucro'] as const
 
@@ -637,11 +638,8 @@ export function QuoteWizardPage() {
   const queryClient = useQueryClient()
   const canCadastrar = usePermission('cadastrar')
 
-  const locationStep = (location.state as { initialStep?: number } | null)?.initialStep
-  const [step, setStep] = useState(() => (locationStep === 2 || locationStep === 3 ? locationStep : 1))
-  // #region agent log
-  fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'36a979'},body:JSON.stringify({sessionId:'36a979',hypothesisId:'A',location:'QuoteWizardPage.tsx:init',message:'wizard step init',data:{quoteId,locationStep:locationStep??null,stepInit:locationStep===2||locationStep===3?locationStep:1,pathname:location.pathname},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
+  const [step, setStep] = useState(1)
+  const [clientEditorOpen, setClientEditorOpen] = useState(false)
   const [form, setForm] = useState<DraftForm | null>(null)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
@@ -710,6 +708,11 @@ export function QuoteWizardPage() {
       return title.includes(q) || tpl.name.toLocaleLowerCase('pt-BR').includes(q)
     })
   }, [moduleTemplates, insertBlockSearch])
+
+  useEffect(() => {
+    setStep(1)
+    setClientEditorOpen(false)
+  }, [quoteId])
 
   useEffect(() => {
     if (!quote) return
@@ -1370,7 +1373,7 @@ export function QuoteWizardPage() {
   const versions = versionsQuery.data?.versions ?? []
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="mx-auto max-w-4xl space-y-6 overflow-visible">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="space-y-1">
           <Button
@@ -1445,14 +1448,37 @@ export function QuoteWizardPage() {
             </AlertDescription>
           </Alert>
         ) : null}
+        {form.tiflux_client_id != null && !clientEditorOpen ? (
+          <Card className="border-l-4 border-l-aurora-green">
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <UserRound className="h-4 w-4 shrink-0 text-aurora-green" aria-hidden />
+                  <CardTitle className="text-base">{form.client_name || 'Cliente'}</CardTitle>
+                  <Badge variant="success">Vinculado</Badge>
+                  {form.cnpj ? (
+                    <span className="font-mono text-xs text-muted-foreground">{formatCnpj(form.cnpj)}</span>
+                  ) : null}
+                </div>
+                {canEdit ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    className={btnSecondaryClass}
+                    onClick={() => setClientEditorOpen(true)}
+                  >
+                    Editar cliente
+                  </Button>
+                ) : null}
+              </div>
+            </CardHeader>
+          </Card>
+        ) : (
         <Card className="border-l-4 border-l-aurora-green">
           <CardHeader className="pb-3">
             <div className="flex flex-wrap items-center gap-2">
               <UserRound className="h-4 w-4 text-aurora-green" aria-hidden />
               <CardTitle className="text-base">Cliente</CardTitle>
-              <Badge variant="outline" className="text-muted-foreground">
-                Passo 1
-              </Badge>
               {form.tiflux_client_id != null ? (
                 <Badge variant="success">Vinculado</Badge>
               ) : (
@@ -1674,6 +1700,7 @@ export function QuoteWizardPage() {
             </div>
           </CardContent>
         </Card>
+        )}
         <div className="space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-xl text-sm text-muted-foreground">
@@ -1719,7 +1746,8 @@ export function QuoteWizardPage() {
               </CardContent>
             </Card>
           ) : (
-            orderedModules.map((mod, idx) => {
+            <div className="space-y-4 overflow-visible">
+            {orderedModules.map((mod, idx) => {
               const items = form.items.filter((i) => i.section === mod.id)
               const sub = moduleSubtotal(mod, form.items)
               return (
@@ -1778,7 +1806,8 @@ export function QuoteWizardPage() {
                   onUpdate={updateItem}
                 />
               )
-            })
+            })}
+            </div>
           )}
 
           {canEdit && (
@@ -2029,9 +2058,6 @@ export function QuoteWizardPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <UserRound className="h-4 w-4 text-aurora-green" aria-hidden />
                 <CardTitle className="text-base">Resumo do cliente</CardTitle>
-                <Badge variant="outline" className="text-muted-foreground">
-                  Passo 2
-                </Badge>
               </div>
               <p className="mt-0.5 text-xs text-muted-foreground">
                 Confira vínculo e lead antes de enviar.
@@ -2629,6 +2655,7 @@ function ItemsSection({
   onUpdate: (localKey: string, patch: Partial<DraftItem>) => void
 }) {
   const queryClient = useQueryClient()
+  const reduceMotion = useReducedMotion()
   const [saveAsModuleOpen, setSaveAsModuleOpen] = useState(false)
   const [saveAsModuleName, setSaveAsModuleName] = useState('')
   const [editingTitle, setEditingTitle] = useState(false)
@@ -2706,6 +2733,11 @@ function ItemsSection({
   }
 
   return (
+    <motion.div
+      layout={!reduceMotion}
+      className="relative md:pr-12"
+      transition={reduceMotion ? { duration: 0 } : { type: 'spring', stiffness: 420, damping: 34 }}
+    >
     <Card className={accentBorder}>
       <CardHeader className="pb-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -2769,26 +2801,6 @@ function ItemsSection({
           <div className="flex flex-wrap items-center gap-2">
             {canEdit && (
               <>
-                <Button
-                  type="button"
-                  size="sm"
-                  className={cn(btnSecondaryClass, 'h-8 px-2')}
-                  disabled={!canMoveUp}
-                  onClick={onMoveUp}
-                  aria-label="Mover bloco para cima"
-                >
-                  <ChevronUp className="h-4 w-4" />
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className={cn(btnSecondaryClass, 'h-8 px-2')}
-                  disabled={!canMoveDown}
-                  onClick={onMoveDown}
-                  aria-label="Mover bloco para baixo"
-                >
-                  <ChevronDown className="h-4 w-4" />
-                </Button>
                 {!simplified && (
                   <Button type="button" size="sm" className={btnSecondaryClass} onClick={onAdd}>
                     <Plus className="h-4 w-4" />
@@ -3108,6 +3120,39 @@ function ItemsSection({
         </DialogContent>
       </Dialog>
     </Card>
+    {canEdit ? (
+      <div className="absolute right-1 top-3 z-10 flex flex-col gap-1 md:-right-11">
+        <Button
+          type="button"
+          size="sm"
+          className={cn(
+            btnSecondaryClass,
+            'h-8 w-8 p-0 shadow-md',
+            'focus-visible:ring-2 focus-visible:ring-aurora-green/50',
+          )}
+          disabled={!canMoveUp}
+          onClick={onMoveUp}
+          aria-label="Mover bloco para cima"
+        >
+          <ChevronUp className="h-4 w-4" />
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          className={cn(
+            btnSecondaryClass,
+            'h-8 w-8 p-0 shadow-md',
+            'focus-visible:ring-2 focus-visible:ring-aurora-green/50',
+          )}
+          disabled={!canMoveDown}
+          onClick={onMoveDown}
+          aria-label="Mover bloco para baixo"
+        >
+          <ChevronDown className="h-4 w-4" />
+        </Button>
+      </div>
+    ) : null}
+    </motion.div>
   )
 }
 

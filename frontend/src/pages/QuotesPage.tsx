@@ -194,9 +194,6 @@ export function QuotesPage() {
       setPendingProposal(null)
       setShowCreate(false)
       void queryClient.invalidateQueries({ queryKey: ['quotes'] })
-      // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'36a979'},body:JSON.stringify({sessionId:'36a979',runId:'post-fix',hypothesisId:'A',location:'QuotesPage.tsx:createMutation.onSuccess',message:'navigate after create',data:{id:created.id,initialStep:1,hasPendingProposal:Boolean(pendingProposal)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       navigate(`/orcamentos/${created.id}`)
     },
     onError: (err: Error) => {

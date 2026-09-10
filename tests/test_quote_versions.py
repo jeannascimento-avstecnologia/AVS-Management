@@ -114,6 +114,18 @@ def test_create_versions_and_monthly_draft(quotes_client: TestClient) -> None:
     )
     assert pdf.status_code == 200
     assert pdf.content[:4] == b"%PDF"
+    cd_v1 = pdf.headers.get("content-disposition") or ""
+    assert "- v1" not in (cd_v1.split("filename*=UTF-8''", 1)[-1] if "filename*=UTF-8''" in cd_v1 else cd_v1)
+
+    pdf_v2 = quotes_client.get(
+        f"/orcamentos/{quote_id}/versions/{v2.json()['id']}/pdf"
+    )
+    assert pdf_v2.status_code == 200
+    cd_v2 = pdf_v2.headers.get("content-disposition") or ""
+    from urllib.parse import unquote
+
+    encoded = cd_v2.split("filename*=UTF-8''", 1)[1]
+    assert unquote(encoded).endswith(" - v2.pdf")
 
     listed2 = quotes_client.get(f"/orcamentos/{quote_id}/versions")
     assert len(listed2.json()["versions"]) == 2

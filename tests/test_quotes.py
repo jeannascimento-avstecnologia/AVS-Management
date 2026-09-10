@@ -679,6 +679,13 @@ def test_pdf_generate_and_download(quotes_client: TestClient, quotes_env: Path) 
     assert gen.status_code == 200, gen.text
     assert gen.headers["content-type"].startswith("application/pdf")
     assert gen.content[:4] == b"%PDF"
+    cd = gen.headers.get("content-disposition") or ""
+    assert "filename*=UTF-8''" in cd
+    assert f"Orcamento-M{quote_id}.pdf" in cd
+    from urllib.parse import unquote
+
+    encoded = cd.split("filename*=UTF-8''", 1)[1]
+    assert unquote(encoded) == f"Orçamento M{quote_id} - AVS Teste LTDA.pdf"
     # Sem X-Pdf-Path (evita vazar filename em header); path só no body da quote.
     assert "x-pdf-path" not in {k.lower() for k in gen.headers.keys()}
 
