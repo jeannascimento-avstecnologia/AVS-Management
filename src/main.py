@@ -26,6 +26,7 @@ from src.integrations.tiflux_client import TifluxApiError
 from src.billing import build_billing_router
 from src.documents import build_documents_router
 from src.quotes import build_quotes_router
+from src.debug_reports import build_debug_reports_router
 from src.hub.webhooks import build_webhooks_router
 from src.orchestrator import (
     OrchestratorError,
@@ -95,6 +96,7 @@ app.include_router(build_auth_router())
 app.include_router(build_quotes_router())
 app.include_router(build_billing_router())
 app.include_router(build_documents_router())
+app.include_router(build_debug_reports_router())
 app.include_router(build_webhooks_router())
 
 

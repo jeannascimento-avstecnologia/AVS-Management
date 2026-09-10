@@ -1358,6 +1358,24 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+
+  submitDebugReport: (body: {
+    title: string
+    description: string
+    notes?: string
+    screenshotBase64: string
+    sessionLog: unknown[]
+    clientMeta: {
+      url: string
+      userAgent: string
+      viewport: { width: number; height: number }
+      app: 'avs-management'
+    }
+  }) =>
+    request<{ success: true }>('/debug-reports', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 }
 
 export type DormantProgress = {

@@ -38,6 +38,7 @@ export default defineConfig({
       '/orcamentos': apiProxy(),
       '/faturamento': apiProxy(),
       '/documentos': apiProxy(),
+      '/debug-reports': API,
       '/health': API,
       '/static': API,
     },

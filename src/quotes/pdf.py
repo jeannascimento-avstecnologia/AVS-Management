@@ -53,7 +53,8 @@ _ICON_DIR = Path(__file__).resolve().parent / "pdf_icons"
 _ICON_WHATSAPP = _ICON_DIR / "whatsapp.png"
 _ICON_MAIL = _ICON_DIR / "mail.png"
 _ICON_GLOBE = _ICON_DIR / "globe.png"
-_VEIVO_LOGO_PATH = _ICON_DIR / "veivo-powered-by.png"
+_VEIVO_LOGO_PATH = _ICON_DIR / "logo_veivo_gestao.png"
+_VEIVO_LOGO_ASPECT = 1024 / 332  # logo_veivo_gestao.png
 # Grade tipográfica / geometria (tudo alinhado à mesma largura útil)
 _CONTENT_W = 188.0
 _FS_TITLE = 16.0
@@ -298,10 +299,10 @@ class _QuotePdf(FPDF):
         self.set_line_width(0.2)
         self.line(self.l_margin, y, self.w - self.r_margin, y)
         _write_page_number(self, y + 1.2)
-        # Logo VEIVO discreta no canto inferior direito
+        # Logo VEIVO Gestão no canto inferior direito
         exists = _VEIVO_LOGO_PATH.is_file()
-        veivo_h = 8.0  # mm — lockup 3 linhas (POWERED BY / VEIVO / SISTEMAS)
-        veivo_w = veivo_h * (2000 / 617)
+        veivo_h = 8.0  # mm
+        veivo_w = veivo_h * _VEIVO_LOGO_ASPECT
         veivo_x = self.w - self.r_margin - veivo_w
         veivo_y = self.h - _FOOTER_MARGIN + 3.5
         if exists:

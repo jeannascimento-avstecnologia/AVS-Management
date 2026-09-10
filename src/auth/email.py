@@ -1,10 +1,26 @@
 from __future__ import annotations
 
 import smtplib
+from email.mime.application import MIMEApplication
+from email.mime.image import MIMEImage
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from src.config import Settings
+
+
+def _smtp_send(settings: Settings, msg: MIMEMultipart, recipients: list[str]) -> None:
+    if not settings.smtp_host or not settings.smtp_user:
+        raise RuntimeError("SMTP não configurado (SMTP_HOST / SMTP_USER).")
+    if not recipients:
+        raise RuntimeError("Nenhum destinatário de e-mail.")
+
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as server:
+        if settings.smtp_use_tls:
+            server.starttls()
+        if settings.smtp_password:
+            server.login(settings.smtp_user, settings.smtp_password)
+        server.sendmail(msg["From"], recipients, msg.as_string())
 
 
 def send_password_reset_email(
@@ -14,9 +30,6 @@ def send_password_reset_email(
     reset_url: str,
     user_name: str,
 ) -> None:
-    if not settings.smtp_host or not settings.smtp_user:
-        raise RuntimeError("SMTP não configurado (SMTP_HOST / SMTP_USER).")
-
     subject = "AVS Management — redefinição de senha"
     text_body = (
         f"Olá, {user_name}.\n\n"
@@ -40,10 +53,38 @@ def send_password_reset_email(
     msg["To"] = to_email
     msg.attach(MIMEText(text_body, "plain", "utf-8"))
     msg.attach(MIMEText(html_body, "html", "utf-8"))
+    _smtp_send(settings, msg, [to_email])
 
-    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as server:
-        if settings.smtp_use_tls:
-            server.starttls()
-        if settings.smtp_password:
-            server.login(settings.smtp_user, settings.smtp_password)
-        server.sendmail(msg["From"], [to_email], msg.as_string())
+
+def send_debug_report_email(
+    settings: Settings,
+    *,
+    to: list[str],
+    subject: str,
+    html_body: str,
+    reply_to: str | None,
+    screenshot_png: bytes,
+    session_log_json: bytes,
+) -> None:
+    from_addr = settings.smtp_from or settings.smtp_user
+    msg = MIMEMultipart("mixed")
+    msg["Subject"] = subject
+    msg["From"] = from_addr
+    msg["To"] = ", ".join(to)
+    if reply_to:
+        msg["Reply-To"] = reply_to
+
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText("Relatório de debug em anexo (HTML).", "plain", "utf-8"))
+    alt.attach(MIMEText(html_body, "html", "utf-8"))
+    msg.attach(alt)
+
+    screenshot = MIMEImage(screenshot_png, _subtype="png")
+    screenshot.add_header("Content-Disposition", "attachment", filename="screenshot.png")
+    msg.attach(screenshot)
+
+    log_part = MIMEApplication(session_log_json, _subtype="json")
+    log_part.add_header("Content-Disposition", "attachment", filename="session-log.json")
+    msg.attach(log_part)
+
+    _smtp_send(settings, msg, to)

@@ -65,6 +65,7 @@ Ordem de entrega do plano: **P0 → O1 → O2 → F1** (MVP) → **O3** (fast-fo
 | [CHECKLIST_PRE_AUTOMACAO.md](./CHECKLIST_PRE_AUTOMACAO.md) | Checklist Go/No-go pré-automação billing |
 | [P1-aceitacao-mvp.md](./P1-aceitacao-mvp.md) | P1.1 — aceite MVP dry-run (pytest + checklist UI) |
 | [SPEC_CONSULTA_DOCUMENTOS.md](./SPEC_CONSULTA_DOCUMENTOS.md) | Busca orçamentos/PDFs/faturamentos por empresa ou ordem |
+| [SPEC_DEBUG_REPORT.md](./SPEC_DEBUG_REPORT.md) | Botão “Reportar problema”: captura, logs de sessão, e-mail SMTP |
 | [sketch-fluxo-completo.html](./sketch-fluxo-completo.html) | UI ref orçamento/comercial |
 | [sketch-fluxo-faturamento.html](./sketch-fluxo-faturamento.html) | UI ref fila faturamento |
 | `test-*.sh` / `verify-all.sh` | Probes API (creds via env — nunca commit) |

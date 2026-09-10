@@ -1,6 +1,6 @@
 import { cn } from '@/lib/cn'
 
-export const LOGO_SRC = '/static/AVS_Management_white.png?v=2'
+export const LOGO_SRC = '/static/logo_veivo_gestao.png?v=2'
 
 export type LogoVariant = 'sidebar' | 'topbar' | 'auth' | 'onLight'
 
@@ -49,7 +49,7 @@ export function Logo({
     <div className={cn('inline-flex shrink-0 items-center justify-center', config.wrapper, className)}>
       <img
         src={LOGO_SRC}
-        alt="AVS Management"
+        alt="VEIVO Gestão"
         className={cn(
           'object-contain object-left',
           imgSize,

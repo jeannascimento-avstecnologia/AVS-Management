@@ -49,6 +49,7 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from: str = ""
     smtp_use_tls: bool = True
+    debug_report_recipients: str = ""
     azure_tenant_id: str = ""
     azure_client_id: str = ""
     azure_client_secret: str = ""
@@ -102,6 +103,10 @@ class Settings(BaseSettings):
     @property
     def allowed_user_email_list(self) -> list[str]:
         return [e.strip().lower() for e in self.allowed_user_emails.split(",") if e.strip()]
+
+    @property
+    def debug_report_recipient_list(self) -> list[str]:
+        return [e.strip() for e in self.debug_report_recipients.split(",") if e.strip()]
 
     @property
     def trusted_proxy_ip_list(self) -> list[str]:
