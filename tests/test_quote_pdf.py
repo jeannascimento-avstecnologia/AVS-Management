@@ -822,6 +822,33 @@ def test_pdf_notes_verbatim_no_hardcoded_disclaimer(tmp_path: Path) -> None:
     assert "Os valores podem sofrer alteracao" not in text
 
 
+def test_pdf_wraps_long_module_and_general_notes(tmp_path: Path) -> None:
+    dest = tmp_path / "notes-wrap.pdf"
+    long_general = (
+        "Forma de Pagamento Servicos: Boleto bancario com vencimento em 30 dias apos emissao. "
+        "Forma de Pagamento Produtos: Boleto mensal recorrente incluso suporte. "
+        "Validade desta proposta permanece vigente por 15 dias uteis. "
+        "Itens sujeitos a disponibilidade de estoque e agenda de implantacao."
+    )
+    long_mod = (
+        "Condicao deste bloco: implantacao presencial em Campinas com janela de 5 dias uteis, "
+        "incluindo migracao de dados historicos, treinamento da equipe operacional e homologacao "
+        "junto ao cliente antes do go-live, sem custo extra de deslocamento no raio metropolitano."
+    )
+    quote = _sample_quote()
+    mods = list(quote.modules)
+    mods[0] = mods[0].model_copy(update={"notes": long_mod})
+    quote = quote.model_copy(update={"modules": mods, "notes": long_general})
+    render_quote_pdf(quote, dest, issuer=_issuer(), client=_client())
+    text = _pdf_text(dest)
+    assert "metropolitano" in text
+    assert "deslocamento" in text
+    assert "implantacao" in text
+    assert "15 dias uteis" in text
+    # corte antigo de 90 chars do bloco nao pode ser o unico trecho impresso
+    assert "homologacao" in text
+
+
 def test_pdf_single_module_fits_one_page(tmp_path: Path) -> None:
     dest = tmp_path / "one-mod.pdf"
     quote = _sample_quote()

@@ -2196,7 +2196,10 @@ export function QuoteWizardPage() {
                 disabled={!canEdit}
                 value={form.notes}
                 placeholder="Ex.: Forma de pagamento Serviços: Boleto… / Produtos: Boleto mensal…"
-                className={cn(inputClass, 'min-h-[96px] resize-y py-2.5')}
+                className={cn(
+                  inputClass,
+                  'h-auto min-h-[96px] min-w-0 resize-y whitespace-pre-wrap break-words py-2.5',
+                )}
                 onChange={(e) => patchForm((p) => ({ ...p, notes: e.target.value }))}
               />
               <p className="mt-1.5 text-right text-[11px] text-muted-foreground tabular-nums">
@@ -2232,7 +2235,10 @@ export function QuoteWizardPage() {
                 disabled={!canEdit}
                 value={form.internal_notes}
                 placeholder="Ex.: Cliente pediu desconto de 10% se fechar até sexta. André aprovou..."
-                className={cn(inputClass, 'min-h-[72px] resize-y py-2.5')}
+                className={cn(
+                  inputClass,
+                  'h-auto min-h-[72px] min-w-0 resize-y whitespace-pre-wrap break-words py-2.5',
+                )}
                 onChange={(e) => patchForm((p) => ({ ...p, internal_notes: e.target.value }))}
               />
               <p className="mt-1.5 text-right text-[11px] text-muted-foreground tabular-nums">
@@ -3022,7 +3028,10 @@ function ItemsSection({
               disabled={!canEdit}
               value={notes}
               placeholder="Condições deste bloco…"
-              className={cn(inputClass, 'min-h-[72px] resize-y py-2.5')}
+              className={cn(
+                inputClass,
+                'h-auto min-h-[72px] min-w-0 resize-y whitespace-pre-wrap break-words py-2.5',
+              )}
               onChange={(e) => onNotes(e.target.value)}
             />
             <p className="text-right text-[11px] text-muted-foreground tabular-nums">
@@ -3347,7 +3356,7 @@ function ReviewBlock({
             <p className="text-xs text-muted-foreground">Faturado por: {billedByName.trim()}</p>
           ) : null}
           {notes.trim() ? (
-            <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+            <p className="whitespace-pre-wrap break-words text-xs text-muted-foreground">
               Observações: {notes.trim()}
             </p>
           ) : null}

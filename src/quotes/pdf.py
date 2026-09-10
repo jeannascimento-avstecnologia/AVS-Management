@@ -201,6 +201,40 @@ def _wrap_text_lines(pdf: FPDF, text: str, width: float) -> list[str]:
     return lines
 
 
+def _wrap_paragraphs(pdf: FPDF, text: str, width: float) -> list[str]:
+    """Quebra por parágrafo (preserva \\n) e depois por largura."""
+    raw = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    if not raw.strip():
+        return ["-"]
+    out: list[str] = []
+    for para in raw.split("\n"):
+        if not para.strip():
+            out.append("")
+            continue
+        out.extend(_wrap_text_lines(pdf, para, width))
+    return out or ["-"]
+
+
+def _estimate_wrap_count(text: str, *, mm_per_char: float, width: float = _CONTENT_W) -> int:
+    """Aproxima linhas wrap sem instanciar FPDF (mm/char medido em Helvetica)."""
+    raw = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    if not raw.strip():
+        return 1
+    chars_per = max(20, int(width / max(0.5, mm_per_char)))
+    n = 0
+    for para in raw.split("\n"):
+        if not para.strip():
+            n += 1
+            continue
+        n += max(1, (len(para) + chars_per - 1) // chars_per)
+    return max(1, n)
+
+
+# Helvetica 8pt / 7pt — largura média aproximada (mm/char)
+_MM_PER_CHAR_BODY = 1.30
+_MM_PER_CHAR_MUTED = 1.14
+
+
 def _fmt_date(iso: str | None) -> str:
     if not iso:
         return "-"
@@ -398,12 +432,17 @@ def _estimate_section_height(
     n_right = 1 + (1 if discount > 0 else 0)  # TOTAL [+ desconto]
     pay_est = _safe(format_payment_plan_label(payment_plan, module_net=_net)).strip()
     billed_est = bool((billed_by_name or "").strip() or (billed_by_cnpj or "").strip())
-    n_right += (1 if pay_est and pay_est != "-" else 0) + (1 if billed_est else 0) + (
-        1 if notes_clean_est else 0
-    )
+    n_right += (1 if pay_est and pay_est != "-" else 0) + (1 if billed_est else 0)
     n_left = 0
     n_pair_est = max(n_left, n_right)
     h += _GAP * 0.5 + n_pair_est * _ROW_H + _GAP * 0.5
+    notes_lines = 0
+    if notes_clean_est:
+        notes_lines = _estimate_wrap_count(
+            f"Obs: {notes_clean_est}",
+            mm_per_char=_MM_PER_CHAR_MUTED,
+        )
+        h += notes_lines * _LINE_H
     return h
 
 
@@ -421,14 +460,9 @@ def _estimate_payment_summary_height(
 
 def _estimate_observations_height(notes: str | None) -> float:
     text = (notes or "").strip() or "-"
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    max_lines = 12
-    clipped = "\n".join(lines[:max_lines])
-    if len(lines) > max_lines and len(clipped) > 480:
-        clipped = clipped[:477] + "..."
     line_h = _LINE_H
-    n_lines = max(1, clipped.count("\n") + 1)
-    box_h = max(_ROW_H * 2, n_lines * line_h + 2.4)
+    n_lines = _estimate_wrap_count(text, mm_per_char=_MM_PER_CHAR_BODY)
+    box_h = max(_ROW_H, n_lines * line_h + 2.4)
     return _BAND_H + _GAP + box_h + _GAP
 
 
@@ -1081,7 +1115,10 @@ def _write_section(
     if notes_clean:
         pdf.set_font("Helvetica", "", _FS_MUTED)
         pdf.set_text_color(*_MUTED)
-        pdf.cell(0, _ROW_H - 1.0, f"Obs: {_safe(notes_clean)[:90]}", new_x="LMARGIN", new_y="NEXT")
+        label = f"Obs: {_safe(notes_clean)}"
+        wrap_lines = _wrap_paragraphs(pdf, label, max(20.0, _CONTENT_W - 2 * float(pdf.c_margin)))
+        for ln in wrap_lines:
+            pdf.cell(_CONTENT_W, _LINE_H, ln if ln else " ", new_x="LMARGIN", new_y="NEXT")
         pdf.set_text_color(*_INK)
     pdf.ln(_GAP * 0.5)
     pdf.c_margin = original_c_margin
@@ -1284,15 +1321,13 @@ def _write_monthly_charges_section(
 def _write_observations(pdf: _QuotePdf, notes: str | None) -> None:
     _section_band(pdf, "OBSERVACOES", _BLUE)
     text = (notes or "").strip() or "-"
-    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-    max_lines = 12
-    clipped = "\n".join(lines[:max_lines])
-    if len(lines) > max_lines and len(clipped) > 480:
-        clipped = clipped[:477] + "..."
 
     line_h = _LINE_H
     pdf.set_font("Helvetica", "", _FS_BODY)
     pdf.set_text_color(*_INK)
-    pdf.multi_cell(_CONTENT_W, line_h, _safe(clipped))
+    wrap_w = max(20.0, _CONTENT_W - 2 * float(pdf.c_margin))
+    wrap_lines = _wrap_paragraphs(pdf, _safe(text), wrap_w)
+    for ln in wrap_lines:
+        pdf.cell(_CONTENT_W, line_h, ln if ln else " ", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(_GAP)
 
