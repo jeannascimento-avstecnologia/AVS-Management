@@ -4,9 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite --open",
     "dev:api": "node ../scripts/dev-api.cjs",
-    "dev:local": "concurrently -n api,web -c blue,green \"npm run dev:api\" \"vite\"",
+    "dev:local": "concurrently -n api,web -c blue,green \"npm run dev:api\" \"vite --open\"",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview"

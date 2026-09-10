@@ -23,6 +23,8 @@ if (!fs.existsSync(venvPython)) {
   process.exit(1)
 }
 
+console.log('[dev:api] UI = http://127.0.0.1:5173  |  API = http://127.0.0.1:8000 (HTML redireciona)')
+
 const child = spawn(
   venvPython,
   [
@@ -37,7 +39,12 @@ const child = spawn(
     '--port',
     '8000',
   ],
-  { cwd: root, stdio: 'inherit', shell: false },
+  {
+    cwd: root,
+    stdio: 'inherit',
+    shell: false,
+    env: { ...process.env, AVS_SPA_DEV: '1' },
+  },
 )
 
 child.on('exit', (code, signal) => {

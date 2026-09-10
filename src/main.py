@@ -1,9 +1,10 @@
+import os
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Form, Request
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
@@ -67,10 +68,27 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = ROOT_DIR / "static"
 FRONTEND_DIST = ROOT_DIR / "frontend" / "dist"
 
+
+def _spa_dev() -> bool:
+    """True só no `npm run dev:local` (scripts/dev-api.cjs). Produção e pytest não setam."""
+    return os.getenv("AVS_SPA_DEV", "").strip().lower() in {"1", "true", "yes"}
+
+
+def _vite_origin(request: Request | None) -> str:
+    override = os.getenv("AVS_VITE_ORIGIN", "").strip().rstrip("/")
+    if override:
+        return override
+    host = (request.headers.get("host") if request else "") or "127.0.0.1:8000"
+    hostname = host.split(":")[0] or "127.0.0.1"
+    if hostname not in {"127.0.0.1", "localhost", "::1"}:
+        hostname = "127.0.0.1"
+    return f"http://{hostname}:5173"
+
+
 if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
-if (FRONTEND_DIST / "assets").is_dir():
+if not _spa_dev() and (FRONTEND_DIST / "assets").is_dir():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="frontend-assets")
 
 app.include_router(build_auth_router())
@@ -101,13 +119,19 @@ def _optional_int(value: Any) -> int | None:
         return None
 
 
-def _spa_index() -> FileResponse | HTMLResponse:
+def _spa_index(request: Request | None = None) -> FileResponse | HTMLResponse | RedirectResponse:
+    if _spa_dev():
+        path = request.url.path if request else "/"
+        query = f"?{request.url.query}" if request and request.url.query else ""
+        target = f"{_vite_origin(request)}{path}{query}"
+        return RedirectResponse(url=target, status_code=307)
     index = FRONTEND_DIST / "index.html"
     if index.is_file():
         return FileResponse(index)
-    from src.ui import INDEX_HTML
-
-    return HTMLResponse(INDEX_HTML)
+    return HTMLResponse(
+        "Frontend build ausente. Produção: cd frontend && npm run build. Dev: use http://127.0.0.1:5173",
+        status_code=503,
+    )
 
 
 def _skip_spa_html(path: str) -> bool:
@@ -125,7 +149,7 @@ class SpaHtmlNavigationMiddleware(BaseHTTPMiddleware):
         path = request.url.path
         serve_spa = html_nav and not _skip_spa_html(path)
         if serve_spa:
-            return _spa_index()
+            return _spa_index(request)
         return await call_next(request)
 
 
@@ -133,8 +157,8 @@ app.add_middleware(SpaHtmlNavigationMiddleware)
 
 
 @app.get("/", response_class=HTMLResponse, response_model=None)
-async def index():
-    return _spa_index()
+async def index(request: Request):
+    return _spa_index(request)
 
 
 @app.post("/preview")
@@ -627,9 +651,9 @@ async def health() -> dict[str, str]:
 
 
 @app.get("/{full_path:path}", response_class=HTMLResponse, response_model=None)
-async def spa_fallback(full_path: str):
+async def spa_fallback(request: Request, full_path: str):
     if full_path.startswith(
         ("api/", "auth/", "static/", "assets/", "webhooks/", "orcamentos/", "faturamento/")
     ):
         return JSONResponse(status_code=404, content={"detail": "Not Found"})
-    return _spa_index()
+    return _spa_index(request)

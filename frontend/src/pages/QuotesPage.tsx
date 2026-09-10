@@ -42,6 +42,11 @@ import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
 import { digitsOnly, formatCnpj, formatDate } from '@/lib/format'
 import { TEMP_LABELS } from '@/lib/quoteLead'
+import {
+  QUOTE_TEMPLATE_PLACEHOLDER_CNPJ,
+  QUOTE_TEMPLATE_PLACEHOLDER_NAME,
+  isQuoteTemplatePlaceholderCnpj,
+} from '@/lib/quoteTemplate'
 import { btnDangerClass, btnGreenClass, btnSecondaryClass } from '@/lib/ui-classes'
 import { cn } from '@/lib/cn'
 
@@ -199,6 +204,28 @@ export function QuotesPage() {
     },
   })
 
+  const createTemplateMutation = useMutation({
+    mutationFn: () =>
+      api.createQuote({
+        cnpj: QUOTE_TEMPLATE_PLACEHOLDER_CNPJ,
+        client_name: QUOTE_TEMPLATE_PLACEHOLDER_NAME,
+        tiflux_client_id: null,
+        lead_temperature: null,
+        items: [],
+        modules: [],
+      }),
+    onSuccess: (created) => {
+      toast.success(
+        'Modelo: rascunho sem cliente. Salve na biblioteca quando o canvas estiver pronto.',
+      )
+      void queryClient.invalidateQueries({ queryKey: ['quotes'] })
+      navigate(`/orcamentos/${created.id}`)
+    },
+    onError: (err: Error) => {
+      toast.error(err.message || 'Erro ao criar modelo')
+    },
+  })
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => api.deleteQuote(id),
     onSuccess: () => {
@@ -271,6 +298,12 @@ export function QuotesPage() {
   }
 
   const quotes = listQuery.data?.quotes ?? []
+  // #region agent log
+  {
+    const first = quotes[0]
+    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'95d267'},body:JSON.stringify({sessionId:'95d267',runId:'pre-fix',hypothesisId:'H1',location:'QuotesPage.tsx:render',message:'quotes list shape',data:{pending:listQuery.isPending,hasData:Boolean(listQuery.data),rawQuotesIsArray:Array.isArray(listQuery.data?.quotes),quotesLen:quotes.length,firstItemsIsArray:first?Array.isArray(first.items):null,firstModulesIsArray:first?Array.isArray(first.modules):null,pipelineQuotesIsArray:Array.isArray(pipelineQuery.data?.quotes)},timestamp:Date.now()})}).catch(()=>{});
+  }
+  // #endregion
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">
@@ -369,6 +402,19 @@ export function QuotesPage() {
         >
           <FileText className="h-4 w-4" />
           Biblioteca de Orçamentos
+        </Button>
+        <Button
+          type="button"
+          className={btnSecondaryClass}
+          disabled={createTemplateMutation.isPending}
+          onClick={() => createTemplateMutation.mutate()}
+        >
+          {createTemplateMutation.isPending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <FileText className="h-4 w-4" />
+          )}
+          Criar modelo de orçamento
         </Button>
       </div>
 
@@ -622,7 +668,9 @@ export function QuotesPage() {
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-sm font-medium">
-                        {formatCnpj(quote.cnpj)}
+                        {isQuoteTemplatePlaceholderCnpj(quote.cnpj)
+                          ? 'Sem cliente'
+                          : formatCnpj(quote.cnpj)}
                       </span>
                       <Badge variant={statusVariant(quote.status)}>
                         {STATUS_LABELS[quote.status]}
@@ -648,7 +696,8 @@ export function QuotesPage() {
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
-                    {isQuoteSubmittable(quote.status) && (
+                    {isQuoteSubmittable(quote.status) &&
+                    !isQuoteTemplatePlaceholderCnpj(quote.cnpj) && (
                       <Button
                         type="button"
                         size="sm"

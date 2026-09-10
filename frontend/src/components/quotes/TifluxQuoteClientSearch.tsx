@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { Loader2, Search } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type TifluxQuoteClient } from '@/api/client'
@@ -53,6 +53,56 @@ export function TifluxQuoteClientSearch({
   const clients = query.data?.clients ?? []
   const showList = Boolean(open && enabled)
 
+  // #region agent log
+  const listRef = useRef<HTMLUListElement>(null)
+  useLayoutEffect(() => {
+    const header = document.querySelector('header')
+    const ul = listRef.current
+    const headerRect = header?.getBoundingClientRect()
+    const ulRect = ul?.getBoundingClientRect()
+    const ulStyle = ul ? window.getComputedStyle(ul) : null
+    const rootStyle = rootRef.current ? window.getComputedStyle(rootRef.current) : null
+    const mainEl = document.querySelector('main')
+    const mainStyle = mainEl ? window.getComputedStyle(mainEl) : null
+    const overlapTopbar = Boolean(
+      headerRect &&
+        ulRect &&
+        ulRect.top < headerRect.bottom &&
+        ulRect.bottom > headerRect.top,
+    )
+    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '95d267' },
+      body: JSON.stringify({
+        sessionId: '95d267',
+        runId: 'pre-fix',
+        hypothesisId: 'A',
+        location: 'TifluxQuoteClientSearch.tsx:layout',
+        message: 'client-search layout',
+        data: {
+          showList,
+          open,
+          enabled,
+          clientsLen: clients.length,
+          valueLen: value.trim().length,
+          rootZ: rootStyle?.zIndex ?? null,
+          ulPosition: ulStyle?.position ?? null,
+          ulZ: ulStyle?.zIndex ?? null,
+          ulTransform: ulStyle?.transform ?? null,
+          mainTransform: mainStyle?.transform ?? null,
+          mainZ: mainStyle?.zIndex ?? null,
+          overlapTopbar,
+          ulTop: ulRect ? Math.round(ulRect.top) : null,
+          ulHeight: ulRect ? Math.round(ulRect.height) : null,
+          headerBottom: headerRect ? Math.round(headerRect.bottom) : null,
+          headerZ: header ? window.getComputedStyle(header).zIndex : null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+  }, [showList, open, enabled, clients.length, value])
+  // #endregion
+
   return (
     <div ref={rootRef} className={cn('relative', showList && 'z-50')}>
       <div className="relative">
@@ -80,6 +130,7 @@ export function TifluxQuoteClientSearch({
       </div>
       {showList && (
         <ul
+          ref={listRef}
           id={listId}
           role="listbox"
           className={cn(

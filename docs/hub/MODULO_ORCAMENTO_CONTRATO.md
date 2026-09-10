@@ -273,7 +273,7 @@ Catálogo reutilizável de **blocos** custom (ex. Licenças). Na UI: **Bibliotec
 1. **Cadastro** — botão “Gerar orçamento”  
 2. **Orçamento** — passo 2: **Inserir bloco** · **Biblioteca** · **Salvar na biblioteca**; seed Implantação+Mensalidade; picker Biblioteca/em branco/restore; add/remove/rename/↑↓; **sem** UI de modelos de itens; pagamento, faturado por, salvar  
 3. **Modal cliente** — CNPJ/nome; cadastro rápido overlay  
-4. **Lista de orçamentos / leads** — filtro por temperatura e status; painel pipeline (3 círculos Quente/Morno/Frio + soma R$ + strip “Quase fechados”) — ver §2.5  
+4. **Lista de orçamentos / leads** — filtro por temperatura e status; painel pipeline (3 círculos Quente/Morno/Frio + soma R$ + strip “Quase fechados”) — ver §2.5. Home: **Novo** · **Biblioteca de Blocos** · **Biblioteca de Orçamentos** · **Criar modelo de orçamento** (wizard sem CNPJ/lead; placeholder interno; enviar só após vincular cliente).  
 
 5. **Detalhe orçamento** — enviar ticket, ver PDF, marcar enviado, aprovar, gerar contrato  
 6. **Gerar contrato** — editor de itens pré-preenchidos → confirmar push TiFlux  

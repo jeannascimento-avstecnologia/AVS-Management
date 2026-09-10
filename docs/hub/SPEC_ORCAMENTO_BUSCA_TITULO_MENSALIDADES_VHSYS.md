@@ -41,7 +41,7 @@ Preenchido ao selecionar item no `VhsysItemSearch`. Edição manual do nome zera
 
 ## 5) Contato (solicitante TiFlux)
 
-- Sem grade de chips. Campo **Nome** = busca.
-- Lista: primeiro solicitantes **deste cliente** (`GET /clients/{id}/requestors`); depois matches globais (`GET /requestors`) mesmo cadastrados em outra empresa.
+- Sem grade de chips. Campo **Nome** = busca. Resultados em **lista vertical** (dropdown), nunca wrap de botões.
+- Lista: primeiro matches **deste cliente**; abaixo, matches globais (`GET /requestors`) mesmo cadastrados em outra empresa (ex.: atende duas empresas).
 - Dedup por e-mail (senão nome+telefone). Item **Novo +** no rodapé da lista.
 - E-mail e telefone continuam editáveis abaixo.

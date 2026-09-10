@@ -35,6 +35,17 @@ def test_index_html_home_and_flow():
     assert "AVS" in text
 
 
+def test_spa_dev_redirects_html_to_vite(monkeypatch):
+    monkeypatch.setenv("AVS_SPA_DEV", "1")
+    response = client.get(
+        "/",
+        headers={"Accept": "text/html", "host": "127.0.0.1:8000"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 307
+    assert response.headers["location"] == "http://127.0.0.1:5173/"
+
+
 
 
 

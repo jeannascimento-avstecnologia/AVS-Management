@@ -418,6 +418,7 @@ export type TifluxRequestorHit = {
   name: string | null
   email: string | null
   phone: string | null
+  company_name?: string | null
   scope: 'company' | 'other'
 }
 

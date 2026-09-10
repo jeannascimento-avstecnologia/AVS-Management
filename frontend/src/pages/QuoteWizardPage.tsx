@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -102,6 +102,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { WizardStepper } from '@/components/ui/wizard-stepper'
 import { usePermission } from '@/hooks/useAuth'
 import { digitsOnly, formatCnpj, formatDate } from '@/lib/format'
+import { isQuoteTemplatePlaceholderCnpj } from '@/lib/quoteTemplate'
 import {
   btnAccentClass,
   btnSecondaryClass,
@@ -494,6 +495,9 @@ function syncDraftItemIds(form: DraftForm, quote: QuoteRead): DraftForm {
 }
 
 function quoteToForm(quote: QuoteRead): DraftForm {
+  // #region agent log
+  fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'95d267'},body:JSON.stringify({sessionId:'95d267',runId:'pre-fix',hypothesisId:'H2',location:'QuoteWizardPage.tsx:quoteToForm',message:'quote shape before map',data:{id:quote.id,itemsIsArray:Array.isArray(quote.items),itemsLen:quote.items?.length??null,modulesIsArray:Array.isArray(quote.modules)},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   return {
     cnpj: quote.cnpj,
     client_name: quote.client_name ?? '',
@@ -1243,6 +1247,71 @@ export function QuoteWizardPage() {
     }))
   }
 
+  // #region agent log
+  useLayoutEffect(() => {
+    if (step !== 1) return
+    const header = document.querySelector('header')
+    const headerRect = header?.getBoundingClientRect()
+    const listboxes = Array.from(document.querySelectorAll('ul[role="listbox"]'))
+    const stepEl = document.querySelector('.hub-panel-enter.space-y-6')
+    const insets = Array.from(document.querySelectorAll('.rounded-lg.border.border-border.bg-muted\\/40'))
+    const payload = {
+      sessionId: '95d267',
+      runId: 'pre-fix',
+      hypothesisId: 'E',
+      location: 'QuoteWizardPage.tsx:step1-layout',
+      message: 'wizard step1 boxes vs topbar',
+      data: {
+        listboxCount: listboxes.length,
+        listboxes: listboxes.map((ul) => {
+          const st = window.getComputedStyle(ul)
+          const r = ul.getBoundingClientRect()
+          const btnCount = ul.querySelectorAll('button').length
+          const overlapTopbar = Boolean(
+            headerRect && r.top < headerRect.bottom && r.bottom > headerRect.top,
+          )
+          return {
+            position: st.position,
+            zIndex: st.zIndex,
+            transform: st.transform,
+            display: st.display,
+            flexWrap: st.flexWrap,
+            btnCount,
+            width: Math.round(r.width),
+            height: Math.round(r.height),
+            top: Math.round(r.top),
+            overlapTopbar,
+          }
+        }),
+        insetCount: insets.length,
+        insets: insets.slice(0, 4).map((el) => {
+          const r = el.getBoundingClientRect()
+          const st = window.getComputedStyle(el)
+          return {
+            top: Math.round(r.top),
+            height: Math.round(r.height),
+            position: st.position,
+            transform: st.transform,
+            zIndex: st.zIndex,
+            overlapTopbar: Boolean(
+              headerRect && r.top < headerRect.bottom && r.bottom > headerRect.top,
+            ),
+          }
+        }),
+        stepTransform: stepEl ? window.getComputedStyle(stepEl).transform : null,
+        headerBottom: headerRect ? Math.round(headerRect.bottom) : null,
+        hasClientId: form?.tiflux_client_id != null,
+      },
+      timestamp: Date.now(),
+    }
+    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '95d267' },
+      body: JSON.stringify(payload),
+    }).catch(() => {})
+  }, [step, form?.tiflux_client_id, form?.contact_name, tifluxSearch])
+  // #endregion
+
   async function handleGeneratePdf() {
     setPdfPending(true)
     try {
@@ -1274,6 +1343,9 @@ export function QuoteWizardPage() {
       if (current && canEdit && dirtyRef.current) {
         if (digitsOnly(current.cnpj).length !== 14) {
           throw new Error('CNPJ inválido — corrija no passo Cliente.')
+        }
+        if (isQuoteTemplatePlaceholderCnpj(current.cnpj)) {
+          throw new Error('Vincule um cliente TiFlux (CNPJ) antes de enviar.')
         }
         if (saveTimer.current) clearTimeout(saveTimer.current)
         dirtyRef.current = false
@@ -1412,7 +1484,9 @@ export function QuoteWizardPage() {
             </p>
           ) : null}
           <p className="text-sm text-muted-foreground">
-            {formatCnpj(form.cnpj)}
+            {isQuoteTemplatePlaceholderCnpj(form.cnpj)
+              ? 'Sem cliente'
+              : formatCnpj(form.cnpj)}
             {form.client_name ? ` · ${form.client_name}` : ''}
           </p>
         </div>
@@ -1446,6 +1520,16 @@ export function QuoteWizardPage() {
 
       {step === 1 && (
         <div className="space-y-6 hub-panel-enter">
+        {isQuoteTemplatePlaceholderCnpj(form.cnpj) ? (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Modelo sem cliente</AlertTitle>
+            <AlertDescription>
+              CNPJ e lead são opcionais. Monte os blocos e use <strong>Salvar modelo de orçamento</strong>.
+              Para enviar ao cliente, vincule um cliente TiFlux.
+            </AlertDescription>
+          </Alert>
+        ) : null}
         <Card className="border-l-4 border-l-aurora-green">
           <CardHeader className="pb-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -2042,7 +2126,11 @@ export function QuoteWizardPage() {
               <dl className="grid gap-3 sm:grid-cols-2">
                 <div className={quoteInsetClass}>
                   <dt className="text-xs text-muted-foreground">CNPJ</dt>
-                  <dd className="mt-1 font-mono text-sm font-semibold">{formatCnpj(form.cnpj)}</dd>
+                  <dd className="mt-1 font-mono text-sm font-semibold">
+                    {isQuoteTemplatePlaceholderCnpj(form.cnpj)
+                      ? 'Sem cliente'
+                      : formatCnpj(form.cnpj)}
+                  </dd>
                 </div>
                 <div className={quoteInsetClass}>
                   <dt className="text-xs text-muted-foreground">Cliente</dt>
@@ -2702,6 +2790,44 @@ function ItemsSection({
     })
   }
 
+  // #region agent log
+  useLayoutEffect(() => {
+    const simp = document.querySelectorAll('[data-quote-check="simplificar"]')
+    const mens = document.querySelectorAll('[data-quote-check="mensalidade"]')
+    const firstMens = mens[0]
+    const st = firstMens ? window.getComputedStyle(firstMens) : null
+    const r = firstMens?.getBoundingClientRect()
+    const header = firstMens?.closest('.flex.flex-col, .flex.flex-wrap')
+    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '95d267' },
+      body: JSON.stringify({
+        sessionId: '95d267',
+        runId: 'pre-fix',
+        hypothesisId: 'M1',
+        location: 'QuoteWizardPage.tsx:ItemsSection',
+        message: 'mensalidade checkbox layout',
+        data: {
+          section,
+          canEdit,
+          isMensalidade,
+          simpCount: simp.length,
+          mensCount: mens.length,
+          mensDisplay: st?.display ?? null,
+          mensVisibility: st?.visibility ?? null,
+          mensOpacity: st?.opacity ?? null,
+          mensW: r ? Math.round(r.width) : null,
+          mensH: r ? Math.round(r.height) : null,
+          mensTop: r ? Math.round(r.top) : null,
+          mensLeft: r ? Math.round(r.left) : null,
+          parentOverflow: header ? window.getComputedStyle(header).overflow : null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+  }, [section, canEdit, isMensalidade])
+  // #endregion
+
   return (
     <Card className={accentBorder}>
       <CardHeader className="pb-3">
@@ -2743,7 +2869,10 @@ function ItemsSection({
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
               ) : null}
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <label
+                data-quote-check="simplificar"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              >
                 <Checkbox
                   checked={simplified}
                   disabled={!canEdit}
@@ -2752,7 +2881,10 @@ function ItemsSection({
                 />
                 Simplificar
               </label>
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <label
+                data-quote-check="mensalidade"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground"
+              >
                 <Checkbox
                   checked={isMensalidade}
                   disabled={!canEdit}
@@ -3350,7 +3482,7 @@ function ContactPicker({
   const search = useQuery({
     queryKey: ['tiflux-requestors', clientId, debounced],
     queryFn: () => api.searchTifluxRequestors(clientId, debounced),
-    enabled: open && canEdit,
+    enabled: open && canEdit && clientId > 0,
   })
 
   useEffect(() => {
@@ -3365,14 +3497,71 @@ function ContactPicker({
   const companyHits = contacts.filter((c) => c.scope === 'company')
   const otherHits = contacts.filter((c) => c.scope === 'other')
   const loading = search.isFetching
+  const selectedKey = `${selected.email}|${selected.name}`
+  const listRef = useRef<HTMLUListElement>(null)
+
+  // #region agent log
+  useLayoutEffect(() => {
+    const header = document.querySelector('header')
+    const headerRect = header?.getBoundingClientRect()
+    const ul = listRef.current
+    const ulStyle = ul ? window.getComputedStyle(ul) : null
+    const ulRect = ul?.getBoundingClientRect()
+    const firstBtn = ul?.querySelector('button')
+    const btnStyle = firstBtn ? window.getComputedStyle(firstBtn) : null
+    const parentStyle = rootRef.current ? window.getComputedStyle(rootRef.current) : null
+    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '95d267' },
+      body: JSON.stringify({
+        sessionId: '95d267',
+        runId: 'pre-fix',
+        hypothesisId: 'C',
+        location: 'QuoteWizardPage.tsx:ContactPicker',
+        message: 'contact picker layout',
+        data: {
+          open,
+          loading,
+          companyCount: companyHits.length,
+          otherCount: otherHits.length,
+          contactsLen: contacts.length,
+          ulMounted: Boolean(ul),
+          ulPosition: ulStyle?.position ?? null,
+          ulZ: ulStyle?.zIndex ?? null,
+          ulDisplay: ulStyle?.display ?? null,
+          ulFlexWrap: ulStyle?.flexWrap ?? null,
+          parentPosition: parentStyle?.position ?? null,
+          btnDisplay: btnStyle?.display ?? null,
+          btnWidth: firstBtn ? Math.round(firstBtn.getBoundingClientRect().width) : null,
+          ulWidth: ulRect ? Math.round(ulRect.width) : null,
+          ulHeight: ulRect ? Math.round(ulRect.height) : null,
+          ulTop: ulRect ? Math.round(ulRect.top) : null,
+          overlapTopbar: Boolean(
+            headerRect &&
+              ulRect &&
+              ulRect.top < headerRect.bottom &&
+              ulRect.bottom > headerRect.top,
+          ),
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {})
+  }, [open, loading, companyHits.length, otherHits.length, contacts.length])
+  // #endregion
 
   function renderHit(c: TifluxRequestorHit, i: number) {
+    const key = `${c.email ?? ''}|${c.name ?? ''}`
+    const isSelected = Boolean(selected.name) && key === selectedKey
     return (
       <li key={`${c.scope}-${c.email ?? ''}-${c.name ?? ''}-${i}`}>
         <button
           type="button"
           role="option"
-          className="flex w-full flex-col items-start gap-0.5 rounded-sm px-2 py-1.5 text-left hover:bg-accent"
+          aria-selected={isSelected}
+          className={cn(
+            'flex w-full flex-col items-start gap-0.5 px-3 py-2 text-left text-sm hover:bg-accent',
+            isSelected && 'bg-aurora-accent-muted',
+          )}
           onMouseDown={(e) => e.preventDefault()}
           onClick={() => {
             onSelect(c)
@@ -3382,8 +3571,12 @@ function ContactPicker({
           <span className="font-medium">{c.name || '(sem nome)'}</span>
           <span className="text-xs text-muted-foreground">
             {[c.email, c.phone].filter(Boolean).join(' · ') || 'sem e-mail/telefone'}
-            {c.scope === 'other' ? ' · outra empresa' : ''}
           </span>
+          {c.scope === 'other' ? (
+            <span className="text-[11px] text-muted-foreground">
+              Outra empresa{c.company_name ? ` · ${c.company_name}` : ''}
+            </span>
+          ) : null}
         </button>
       </li>
     )
@@ -3398,6 +3591,7 @@ function ContactPicker({
           placeholder="Buscar contato no TiFlux…"
           disabled={!canEdit}
           value={selected.name}
+          autoComplete="off"
           onFocus={() => setOpen(true)}
           onChange={(e) => {
             onNameChange(e.target.value)
@@ -3408,35 +3602,36 @@ function ContactPicker({
           <p className="text-xs text-muted-foreground">Buscando contatos TiFlux…</p>
         ) : null}
       </div>
-      {open && !loading && (
+      {open && !loading ? (
         <ul
+          ref={listRef}
           role="listbox"
-          className="relative z-50 max-h-56 overflow-auto rounded-md border border-aurora-border bg-popover p-1 text-sm shadow-md"
+          className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-aurora-border bg-popover py-1 text-sm shadow-md"
         >
           {companyHits.length === 0 && otherHits.length === 0 ? (
-            <li className="px-2 py-2 text-xs text-muted-foreground">
+            <li className="px-3 py-2 text-xs text-muted-foreground">
               Nenhum contato. Digite para buscar ou use Novo.
             </li>
           ) : (
             <>
               {companyHits.length > 0 ? (
-                <li className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <li className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Desta empresa
                 </li>
               ) : null}
               {companyHits.map(renderHit)}
               {otherHits.length > 0 ? (
-                <li className="px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                <li className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Outras empresas
                 </li>
               ) : null}
               {otherHits.map((c, i) => renderHit(c, i + companyHits.length))}
             </>
           )}
-          <li>
+          <li className="border-t border-aurora-border/70">
             <button
               type="button"
-              className="mt-0.5 w-full rounded-sm px-2 py-1.5 text-left text-xs font-medium hover:bg-accent"
+              className="w-full px-3 py-2 text-left text-xs font-medium hover:bg-accent"
               onMouseDown={(e) => e.preventDefault()}
               onClick={() => {
                 onSelect({ name: null, email: null, phone: null })
@@ -3447,7 +3642,7 @@ function ContactPicker({
             </button>
           </li>
         </ul>
-      )}
+      ) : null}
     </div>
   )
 }

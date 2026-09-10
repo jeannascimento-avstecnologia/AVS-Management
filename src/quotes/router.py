@@ -111,6 +111,16 @@ def _map_tiflux_requestor(row: dict[str, Any], *, scope: str) -> dict[str, Any]:
         str(row.get("name") or row.get("full_name") or row.get("contact_name") or composed).strip()
         or None
     )
+    client = row.get("client") or row.get("company") or {}
+    company_name = None
+    if isinstance(client, dict):
+        company_name = (
+            str(client.get("name") or client.get("company_name") or "").strip() or None
+        )
+    if not company_name:
+        company_name = (
+            str(row.get("client_name") or row.get("company_name") or "").strip() or None
+        )
     return {
         "name": name,
         "email": str(row.get("email") or "").strip() or None,
@@ -122,6 +132,7 @@ def _map_tiflux_requestor(row: dict[str, Any], *, scope: str) -> dict[str, Any]:
             or ""
         ).strip()
         or None,
+        "company_name": company_name,
         "scope": scope,
     }
 
@@ -136,7 +147,10 @@ def _tiflux_requestor_key(row: dict[str, Any]) -> str:
 
 
 def _tiflux_requestor_matches(row: dict[str, Any], needle: str) -> bool:
-    blob = f"{row.get('name') or ''} {row.get('email') or ''} {row.get('phone') or ''}"
+    blob = (
+        f"{row.get('name') or ''} {row.get('email') or ''} {row.get('phone') or ''} "
+        f"{row.get('company_name') or ''}"
+    )
     return needle in blob.casefold()
 
 

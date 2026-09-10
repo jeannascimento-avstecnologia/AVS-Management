@@ -14,6 +14,14 @@ QuoteSection = str
 BilledByType = Literal["distribuidor", "fornecedor"]
 LeadTemperature = Literal["quente", "morno", "frio"]
 
+# CNPJ válido (checksum) só para rascunho de modelo sem cliente. Enviar exige CNPJ real.
+QUOTE_TEMPLATE_PLACEHOLDER_CNPJ = "00000000000191"
+QUOTE_TEMPLATE_PLACEHOLDER_NAME = "Modelo de orçamento"
+
+
+def is_template_placeholder_cnpj(value: str | None) -> bool:
+    return normalize_cnpj(value or "") == QUOTE_TEMPLATE_PLACEHOLDER_CNPJ
+
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 _MODULE_ID_RE = re.compile(r"^[a-z][a-z0-9_\-]{0,63}$")
 

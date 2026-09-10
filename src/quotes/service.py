@@ -35,6 +35,7 @@ from src.quotes.schemas import (
     seed_default_modules,
     seed_quote_notes,
     validate_modules_and_items,
+    is_template_placeholder_cnpj,
 )
 
 _UUID_PDF_RE = re.compile(
@@ -1040,6 +1041,10 @@ class QuoteService:
             if current not in _SUBMITTABLE_STATUSES:
                 raise QuoteConflictError(
                     f"Só é possível submeter orçamento em draft (atual: '{current}')."
+                )
+            if is_template_placeholder_cnpj(str(row["cnpj"])):
+                raise QuoteConflictError(
+                    "Vincule um cliente TiFlux (CNPJ) antes de enviar o orçamento."
                 )
             now = _utcnow_iso()
             conn.execute(
