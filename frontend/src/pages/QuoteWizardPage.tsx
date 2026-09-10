@@ -639,6 +639,9 @@ export function QuoteWizardPage() {
 
   const locationStep = (location.state as { initialStep?: number } | null)?.initialStep
   const [step, setStep] = useState(() => (locationStep === 2 || locationStep === 3 ? locationStep : 1))
+  // #region agent log
+  fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'36a979'},body:JSON.stringify({sessionId:'36a979',hypothesisId:'A',location:'QuoteWizardPage.tsx:init',message:'wizard step init',data:{quoteId,locationStep:locationStep??null,stepInit:locationStep===2||locationStep===3?locationStep:1,pathname:location.pathname},timestamp:Date.now()})}).catch(()=>{});
+  // #endregion
   const [form, setForm] = useState<DraftForm | null>(null)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
@@ -714,12 +717,7 @@ export function QuoteWizardPage() {
     hydratedId.current = quote.id
     emailPrefillDone.current = false
     discountSourceByModule.current = {}
-    try {
-      const next = quoteToForm(quote)
-      setForm(next)
-    } catch (err) {
-      throw err
-    }
+    setForm(quoteToForm(quote))
     setTifluxSearch(quote.client_name?.trim() || '')
     setSaveStatus('idle')
     setLastSavedAt(quote.updated_at)
