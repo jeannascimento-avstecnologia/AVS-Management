@@ -97,9 +97,6 @@ export function QuotesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const openQuote = (id: number) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'E',location:'QuotesPage.tsx:openQuote',message:'navigate to quote',data:{id},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     navigate(`/orcamentos/${id}`)
   }
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | 'all'>('all')
@@ -298,12 +295,6 @@ export function QuotesPage() {
   }
 
   const quotes = listQuery.data?.quotes ?? []
-  // #region agent log
-  {
-    const first = quotes[0]
-    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'95d267'},body:JSON.stringify({sessionId:'95d267',runId:'pre-fix',hypothesisId:'H1',location:'QuotesPage.tsx:render',message:'quotes list shape',data:{pending:listQuery.isPending,hasData:Boolean(listQuery.data),rawQuotesIsArray:Array.isArray(listQuery.data?.quotes),quotesLen:quotes.length,firstItemsIsArray:first?Array.isArray(first.items):null,firstModulesIsArray:first?Array.isArray(first.modules):null,pipelineQuotesIsArray:Array.isArray(pipelineQuery.data?.quotes)},timestamp:Date.now()})}).catch(()=>{});
-  }
-  // #endregion
 
   return (
     <div className="mx-auto max-w-5xl space-y-6">

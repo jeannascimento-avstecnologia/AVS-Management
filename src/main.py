@@ -137,7 +137,7 @@ def _spa_index(request: Request | None = None) -> FileResponse | HTMLResponse | 
 def _skip_spa_html(path: str) -> bool:
     if path in {"/health", "/openapi.json", "/docs", "/redoc"}:
         return True
-    return path.startswith(("/static/", "/assets/", "/webhooks/", "/docs/", "/redoc/"))
+    return path.startswith(("/static/", "/assets/", "/webhooks/", "/docs/", "/redoc/", "/auth/"))
 
 
 class SpaHtmlNavigationMiddleware(BaseHTTPMiddleware):

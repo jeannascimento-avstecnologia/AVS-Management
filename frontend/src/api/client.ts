@@ -1025,20 +1025,7 @@ export const api = {
     return request<{ quotes: QuoteRead[] }>(`/orcamentos${suffix}`)
   },
 
-  getQuote: async (id: number) => {
-    try {
-      const data = await request<QuoteRead>(`/orcamentos/${id}`)
-      // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'A',location:'client.ts:getQuote',message:'getQuote ok',data:{id,items:data.items?.length ?? 0,modules:data.modules?.length ?? 0},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      return data
-    } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'A',location:'client.ts:getQuote',message:'getQuote fail',data:{id,err:err instanceof Error ? err.message : String(err),status:err instanceof ApiError ? err.status : null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      throw err
-    }
-  },
+  getQuote: (id: number) => request<QuoteRead>(`/orcamentos/${id}`),
 
   createQuote: (body: QuoteWrite) =>
     request<QuoteRead>('/orcamentos', { method: 'POST', body: JSON.stringify(body) }),
@@ -1233,20 +1220,8 @@ export const api = {
   refreshQuoteMarginCosts: (id: number) =>
     request<QuoteMarginRead>(`/orcamentos/${id}/margem/refresh-costs`, { method: 'POST' }),
 
-  listQuoteVersions: async (id: number) => {
-    try {
-      const data = await request<{ versions: QuoteVersionRead[] }>(`/orcamentos/${id}/versions`)
-      // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'D',location:'client.ts:listQuoteVersions',message:'versions ok',data:{id,count:data.versions?.length ?? 0},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      return data
-    } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'D',location:'client.ts:listQuoteVersions',message:'versions fail',data:{id,err:err instanceof Error ? err.message : String(err),status:err instanceof ApiError ? err.status : null},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
-      throw err
-    }
-  },
+  listQuoteVersions: (id: number) =>
+    request<{ versions: QuoteVersionRead[] }>(`/orcamentos/${id}/versions`),
 
   createQuoteVersion: (id: number) =>
     request<QuoteVersionRead>(`/orcamentos/${id}/versions`, {

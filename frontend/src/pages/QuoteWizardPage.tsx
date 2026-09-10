@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -495,9 +495,6 @@ function syncDraftItemIds(form: DraftForm, quote: QuoteRead): DraftForm {
 }
 
 function quoteToForm(quote: QuoteRead): DraftForm {
-  // #region agent log
-  fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'95d267'},body:JSON.stringify({sessionId:'95d267',runId:'pre-fix',hypothesisId:'H2',location:'QuoteWizardPage.tsx:quoteToForm',message:'quote shape before map',data:{id:quote.id,itemsIsArray:Array.isArray(quote.items),itemsLen:quote.items?.length??null,modulesIsArray:Array.isArray(quote.modules)},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
   return {
     cnpj: quote.cnpj,
     client_name: quote.client_name ?? '',
@@ -693,20 +690,11 @@ export function QuoteWizardPage() {
 
   useEffect(() => {
     const home = groupHomePath(location.pathname)
-    // #region agent log
-    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'A',location:'QuoteWizardPage.tsx:redirectEffect',message:'wizard query state',data:{quoteId,status:quoteQuery.status,isError:quoteQuery.isError,isPending:quoteQuery.isPending,hasForm:form!=null,err:quoteQuery.error instanceof Error?quoteQuery.error.message:String(quoteQuery.error??'')},timestamp:Date.now()})}).catch(()=>{});
-    // #endregion
     if (!Number.isFinite(quoteId) || quoteId <= 0) {
-      // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'C',location:'QuoteWizardPage.tsx:redirectEffect',message:'redirect invalid id',data:{quoteId,home},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       navigate(home, { replace: true })
       return
     }
     if (quoteQuery.isError) {
-      // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'A',location:'QuoteWizardPage.tsx:redirectEffect',message:'redirect on get error',data:{quoteId,home,err:quoteQuery.error instanceof Error?quoteQuery.error.message:String(quoteQuery.error??'')},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       navigate(home, { replace: true })
     }
   }, [quoteId, quoteQuery.isError, quoteQuery.status, quoteQuery.isPending, quoteQuery.error, form, location.pathname, navigate])
@@ -729,13 +717,7 @@ export function QuoteWizardPage() {
     try {
       const next = quoteToForm(quote)
       setForm(next)
-      // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'B',location:'QuoteWizardPage.tsx:hydrate',message:'hydrate ok',data:{id:quote.id,items:next.items.length,modules:next.modules.length},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
     } catch (err) {
-      // #region agent log
-      fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'49cf6c'},body:JSON.stringify({sessionId:'49cf6c',hypothesisId:'B',location:'QuoteWizardPage.tsx:hydrate',message:'hydrate throw',data:{id:quote.id,err:err instanceof Error?err.message:String(err)},timestamp:Date.now()})}).catch(()=>{});
-      // #endregion
       throw err
     }
     setTifluxSearch(quote.client_name?.trim() || '')
@@ -1246,71 +1228,6 @@ export function QuoteWizardPage() {
       contact_phone: '',
     }))
   }
-
-  // #region agent log
-  useLayoutEffect(() => {
-    if (step !== 1) return
-    const header = document.querySelector('header')
-    const headerRect = header?.getBoundingClientRect()
-    const listboxes = Array.from(document.querySelectorAll('ul[role="listbox"]'))
-    const stepEl = document.querySelector('.hub-panel-enter.space-y-6')
-    const insets = Array.from(document.querySelectorAll('.rounded-lg.border.border-border.bg-muted\\/40'))
-    const payload = {
-      sessionId: '95d267',
-      runId: 'pre-fix',
-      hypothesisId: 'E',
-      location: 'QuoteWizardPage.tsx:step1-layout',
-      message: 'wizard step1 boxes vs topbar',
-      data: {
-        listboxCount: listboxes.length,
-        listboxes: listboxes.map((ul) => {
-          const st = window.getComputedStyle(ul)
-          const r = ul.getBoundingClientRect()
-          const btnCount = ul.querySelectorAll('button').length
-          const overlapTopbar = Boolean(
-            headerRect && r.top < headerRect.bottom && r.bottom > headerRect.top,
-          )
-          return {
-            position: st.position,
-            zIndex: st.zIndex,
-            transform: st.transform,
-            display: st.display,
-            flexWrap: st.flexWrap,
-            btnCount,
-            width: Math.round(r.width),
-            height: Math.round(r.height),
-            top: Math.round(r.top),
-            overlapTopbar,
-          }
-        }),
-        insetCount: insets.length,
-        insets: insets.slice(0, 4).map((el) => {
-          const r = el.getBoundingClientRect()
-          const st = window.getComputedStyle(el)
-          return {
-            top: Math.round(r.top),
-            height: Math.round(r.height),
-            position: st.position,
-            transform: st.transform,
-            zIndex: st.zIndex,
-            overlapTopbar: Boolean(
-              headerRect && r.top < headerRect.bottom && r.bottom > headerRect.top,
-            ),
-          }
-        }),
-        stepTransform: stepEl ? window.getComputedStyle(stepEl).transform : null,
-        headerBottom: headerRect ? Math.round(headerRect.bottom) : null,
-        hasClientId: form?.tiflux_client_id != null,
-      },
-      timestamp: Date.now(),
-    }
-    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '95d267' },
-      body: JSON.stringify(payload),
-    }).catch(() => {})
-  }, [step, form?.tiflux_client_id, form?.contact_name, tifluxSearch])
-  // #endregion
 
   async function handleGeneratePdf() {
     setPdfPending(true)
@@ -2790,44 +2707,6 @@ function ItemsSection({
     })
   }
 
-  // #region agent log
-  useLayoutEffect(() => {
-    const simp = document.querySelectorAll('[data-quote-check="simplificar"]')
-    const mens = document.querySelectorAll('[data-quote-check="mensalidade"]')
-    const firstMens = mens[0]
-    const st = firstMens ? window.getComputedStyle(firstMens) : null
-    const r = firstMens?.getBoundingClientRect()
-    const header = firstMens?.closest('.flex.flex-col, .flex.flex-wrap')
-    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '95d267' },
-      body: JSON.stringify({
-        sessionId: '95d267',
-        runId: 'pre-fix',
-        hypothesisId: 'M1',
-        location: 'QuoteWizardPage.tsx:ItemsSection',
-        message: 'mensalidade checkbox layout',
-        data: {
-          section,
-          canEdit,
-          isMensalidade,
-          simpCount: simp.length,
-          mensCount: mens.length,
-          mensDisplay: st?.display ?? null,
-          mensVisibility: st?.visibility ?? null,
-          mensOpacity: st?.opacity ?? null,
-          mensW: r ? Math.round(r.width) : null,
-          mensH: r ? Math.round(r.height) : null,
-          mensTop: r ? Math.round(r.top) : null,
-          mensLeft: r ? Math.round(r.left) : null,
-          parentOverflow: header ? window.getComputedStyle(header).overflow : null,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-  }, [section, canEdit, isMensalidade])
-  // #endregion
-
   return (
     <Card className={accentBorder}>
       <CardHeader className="pb-3">
@@ -2869,10 +2748,7 @@ function ItemsSection({
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
               ) : null}
-              <label
-                data-quote-check="simplificar"
-                className="flex items-center gap-1.5 text-xs text-muted-foreground"
-              >
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Checkbox
                   checked={simplified}
                   disabled={!canEdit}
@@ -2881,10 +2757,7 @@ function ItemsSection({
                 />
                 Simplificar
               </label>
-              <label
-                data-quote-check="mensalidade"
-                className="flex items-center gap-1.5 text-xs text-muted-foreground"
-              >
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Checkbox
                   checked={isMensalidade}
                   disabled={!canEdit}
@@ -3498,56 +3371,6 @@ function ContactPicker({
   const otherHits = contacts.filter((c) => c.scope === 'other')
   const loading = search.isFetching
   const selectedKey = `${selected.email}|${selected.name}`
-  const listRef = useRef<HTMLUListElement>(null)
-
-  // #region agent log
-  useLayoutEffect(() => {
-    const header = document.querySelector('header')
-    const headerRect = header?.getBoundingClientRect()
-    const ul = listRef.current
-    const ulStyle = ul ? window.getComputedStyle(ul) : null
-    const ulRect = ul?.getBoundingClientRect()
-    const firstBtn = ul?.querySelector('button')
-    const btnStyle = firstBtn ? window.getComputedStyle(firstBtn) : null
-    const parentStyle = rootRef.current ? window.getComputedStyle(rootRef.current) : null
-    fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '95d267' },
-      body: JSON.stringify({
-        sessionId: '95d267',
-        runId: 'pre-fix',
-        hypothesisId: 'C',
-        location: 'QuoteWizardPage.tsx:ContactPicker',
-        message: 'contact picker layout',
-        data: {
-          open,
-          loading,
-          companyCount: companyHits.length,
-          otherCount: otherHits.length,
-          contactsLen: contacts.length,
-          ulMounted: Boolean(ul),
-          ulPosition: ulStyle?.position ?? null,
-          ulZ: ulStyle?.zIndex ?? null,
-          ulDisplay: ulStyle?.display ?? null,
-          ulFlexWrap: ulStyle?.flexWrap ?? null,
-          parentPosition: parentStyle?.position ?? null,
-          btnDisplay: btnStyle?.display ?? null,
-          btnWidth: firstBtn ? Math.round(firstBtn.getBoundingClientRect().width) : null,
-          ulWidth: ulRect ? Math.round(ulRect.width) : null,
-          ulHeight: ulRect ? Math.round(ulRect.height) : null,
-          ulTop: ulRect ? Math.round(ulRect.top) : null,
-          overlapTopbar: Boolean(
-            headerRect &&
-              ulRect &&
-              ulRect.top < headerRect.bottom &&
-              ulRect.bottom > headerRect.top,
-          ),
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {})
-  }, [open, loading, companyHits.length, otherHits.length, contacts.length])
-  // #endregion
 
   function renderHit(c: TifluxRequestorHit, i: number) {
     const key = `${c.email ?? ''}|${c.name ?? ''}`
@@ -3604,7 +3427,6 @@ function ContactPicker({
       </div>
       {open && !loading ? (
         <ul
-          ref={listRef}
           role="listbox"
           className="absolute z-50 mt-1 max-h-64 w-full overflow-y-auto rounded-md border border-aurora-border bg-popover py-1 text-sm shadow-md"
         >

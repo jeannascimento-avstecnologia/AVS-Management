@@ -798,63 +798,11 @@ class QuoteService:
             ]
 
     def get(self, quote_id: int) -> QuoteRead:
-        # #region agent log
-        def _dbg(msg: str, data: dict, hid: str) -> None:
-            try:
-                with open(
-                    "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-49cf6c.log",
-                    "a",
-                    encoding="utf-8",
-                ) as _f:
-                    _f.write(
-                        json.dumps(
-                            {
-                                "sessionId": "49cf6c",
-                                "hypothesisId": hid,
-                                "location": "service.py:get",
-                                "message": msg,
-                                "data": data,
-                                "timestamp": int(__import__("time").time() * 1000),
-                            },
-                            default=str,
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                pass
-        # #endregion
-        try:
-            with self._db.connect() as conn:
-                row = _get_quote_row(conn, quote_id)
-                if row is None:
-                    # #region agent log
-                    _dbg("quote not found", {"quote_id": quote_id}, "C")
-                    # #endregion
-                    raise QuoteNotFoundError(f"Orçamento {quote_id} não encontrado.")
-                quote = _row_to_quote(row, _fetch_items(conn, quote_id))
-                # #region agent log
-                _dbg(
-                    "quote get ok",
-                    {
-                        "quote_id": quote_id,
-                        "items": len(quote.items),
-                        "modules": len(quote.modules),
-                    },
-                    "A",
-                )
-                # #endregion
-                return quote
-        except QuoteNotFoundError:
-            raise
-        except Exception as exc:
-            # #region agent log
-            _dbg(
-                "quote get failed",
-                {"quote_id": quote_id, "err_type": type(exc).__name__, "err": str(exc)},
-                "A",
-            )
-            # #endregion
-            raise
+        with self._db.connect() as conn:
+            row = _get_quote_row(conn, quote_id)
+            if row is None:
+                raise QuoteNotFoundError(f"Orçamento {quote_id} não encontrado.")
+            return _row_to_quote(row, _fetch_items(conn, quote_id))
 
     def update(self, quote_id: int, data: QuoteUpdate) -> QuoteRead:
         with self._db.connect() as conn:
@@ -1698,61 +1646,30 @@ class QuoteService:
 
     def list_versions(self, quote_id: int, *, limit: int = 100) -> list[QuoteVersionRead]:
         limit = max(1, min(limit, 200))
-        try:
-            with self._db.connect() as conn:
-                rows = conn.execute(
-                    """
-                    SELECT id, quote_id, version_number, snapshot_notes, snapshot_monthly_json,
-                           pdf_path, created_at
-                    FROM quote_versions
-                    WHERE quote_id = ?
-                    ORDER BY version_number DESC, id DESC
-                    LIMIT ?
-                    """,
-                    (quote_id, limit),
-                ).fetchall()
-            return [
-                QuoteVersionRead(
-                    id=int(r["id"]),
-                    quote_id=int(r["quote_id"]),
-                    version_number=int(r["version_number"]),
-                    snapshot_notes=r["snapshot_notes"],
-                    snapshot_monthly_json=r["snapshot_monthly_json"],
-                    pdf_path=r["pdf_path"],
-                    created_at=str(r["created_at"]),
-                )
-                for r in rows
-            ]
-        except Exception as exc:
-            # #region agent log
-            try:
-                with open(
-                    "/Users/jean.nascimento/Projetos/avs-management/.cursor/debug-49cf6c.log",
-                    "a",
-                    encoding="utf-8",
-                ) as _f:
-                    _f.write(
-                        json.dumps(
-                            {
-                                "sessionId": "49cf6c",
-                                "hypothesisId": "D",
-                                "location": "service.py:list_versions",
-                                "message": "list_versions failed",
-                                "data": {
-                                    "quote_id": quote_id,
-                                    "err_type": type(exc).__name__,
-                                    "err": str(exc),
-                                },
-                                "timestamp": int(__import__("time").time() * 1000),
-                            },
-                            default=str,
-                        )
-                        + "\n"
-                    )
-            except Exception:
-                pass
-            # #endregion
-            raise
+        with self._db.connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT id, quote_id, version_number, snapshot_notes, snapshot_monthly_json,
+                       pdf_path, created_at
+                FROM quote_versions
+                WHERE quote_id = ?
+                ORDER BY version_number DESC, id DESC
+                LIMIT ?
+                """,
+                (quote_id, limit),
+            ).fetchall()
+        return [
+            QuoteVersionRead(
+                id=int(r["id"]),
+                quote_id=int(r["quote_id"]),
+                version_number=int(r["version_number"]),
+                snapshot_notes=r["snapshot_notes"],
+                snapshot_monthly_json=r["snapshot_monthly_json"],
+                pdf_path=r["pdf_path"],
+                created_at=str(r["created_at"]),
+            )
+            for r in rows
+        ]
 
     def _row_to_version(self, row: sqlite3.Row) -> QuoteVersionRead:
         return QuoteVersionRead(

@@ -54,9 +54,6 @@ export function QuoteLeadPipelinePanel({
   const sums = sumByLead(quotes)
   const hotPending = hotPendingQuotes(quotes, 5)
   const [pressedLead, setPressedLead] = useState<LeadTemperature | null>(null)
-  // #region agent log
-  fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'95d267'},body:JSON.stringify({sessionId:'95d267',runId:'pre-fix',hypothesisId:'H4',location:'QuoteLeadPipelinePanel.tsx:render',message:'pipeline quotes items',data:{quotesLen:quotes.length,loading,firstItemsIsArray:quotes[0]?Array.isArray(quotes[0].items):null},timestamp:Date.now()})}).catch(()=>{});
-  // #endregion
 
   return (
     <section className="space-y-4" aria-label="Pipeline por temperatura de lead">
