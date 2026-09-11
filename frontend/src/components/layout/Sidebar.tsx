@@ -157,13 +157,6 @@ export function Sidebar({ collapsed, onToggleCollapse, onNavigate, className }: 
         </nav>
 
         <div className="relative z-10 space-y-2 border-t border-aurora-sidebar-border p-2">
-          {!collapsed && (
-            <img
-              src="/static/powered_by_veivo.png?v=3"
-              alt="Powered by VEIVO Sistemas"
-              className="mx-auto h-10 w-auto max-w-[140px] object-contain opacity-80"
-            />
-          )}
           <DebugReportSidebarButton collapsed={collapsed} />
           {!collapsed && (
             <Button
