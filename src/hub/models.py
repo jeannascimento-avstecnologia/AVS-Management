@@ -106,10 +106,25 @@ class HubDatabase:
             ("contact_phone", "TEXT"),
             ("analyst_hourly_cost", "REAL"),
             ("implementation_hours", "REAL"),
+            ("ticket_link_status", "TEXT"),
+            ("ticket_link_checked_at", "TEXT"),
+            ("ticket_link_catalog", "TEXT"),
+            ("ticket_link_snapshot_json", "TEXT"),
         )
         for name, col_type in additions:
             if name not in existing:
                 conn.execute(f"ALTER TABLE quotes ADD COLUMN {name} {col_type}")
+                existing.add(name)
+        if "tiflux_ticket_number" in existing and "ticket_link_status" in existing:
+            conn.execute(
+                """
+                UPDATE quotes
+                SET ticket_link_status = 'novo'
+                WHERE tiflux_ticket_number IS NOT NULL
+                  AND TRIM(tiflux_ticket_number) != ''
+                  AND ticket_link_status IS NULL
+                """
+            )
 
     def _table_fk_targets_missing_parent(self, conn: sqlite3.Connection, table: str) -> bool:
         """True se algum FK aponta para tabela que não existe (ex.: quotes__old_status)."""

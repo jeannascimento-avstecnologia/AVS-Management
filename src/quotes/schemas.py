@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from src.cnpj.validator import normalize_cnpj, validate_cnpj
 
 QuoteStatus = Literal["draft", "submitted", "sent", "approved", "rejected", "contracted"]
+TicketLinkStatus = Literal["novo", "aprovado", "rejeitado"]
 LegacyModuleKind = Literal["implantacao", "mensalidade"]
 # section = module.id (seed + custom); keep aliases for callers/tests
 QuoteSection = str
@@ -604,6 +605,104 @@ class QuoteUpdate(BaseModel):
         return self
 
 
+class TifluxTicketPreview(BaseModel):
+    ticket_number: str
+    subject: str | None = None
+    client_name: str | None = None
+    status: str | None = None
+    catalog: str | None = None
+    closed: bool
+    suggested_link_status: TicketLinkStatus
+
+
+class QuoteTicketLinkBody(BaseModel):
+    ticket_number: str = Field(min_length=1, max_length=32)
+
+    @field_validator("ticket_number")
+    @classmethod
+    def _digits_only(cls, value: str) -> str:
+        cleaned = value.strip()
+        if not cleaned.isdigit():
+            raise ValueError("Número de ticket inválido.")
+        return cleaned
+
+
+class TifluxNamedOption(BaseModel):
+    id: int
+    name: str
+
+
+class TifluxCatalogItemOption(BaseModel):
+    id: int
+    name: str
+    area_name: str | None = None
+    catalog_name: str | None = None
+
+
+class TifluxRequestorOption(BaseModel):
+    id: int
+    name: str | None = None
+    email: str | None = None
+
+
+class QuoteTicketCreateDefaults(BaseModel):
+    desk_id: int
+    desk_name: str | None = None
+    client_id: int
+    client_name: str | None = None
+    title: str
+    description: str
+    catalog_items: list[TifluxCatalogItemOption] = Field(default_factory=list)
+    default_catalog_item_id: int | None = None
+    priorities: list[TifluxNamedOption] = Field(default_factory=list)
+    default_priority_id: int | None = None
+    requestors: list[TifluxRequestorOption] = Field(default_factory=list)
+    default_requestor_id: int | None = None
+
+
+class QuoteTicketCreateBody(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(min_length=1, max_length=8000)
+    services_catalogs_item_id: int | None = Field(default=None, ge=1)
+    priority_id: int | None = Field(default=None, ge=1)
+    requestor_id: int | None = Field(default=None, ge=1)
+    requestor_name: str | None = Field(default=None, max_length=200)
+    requestor_email: str | None = Field(default=None, max_length=200)
+
+    @field_validator("title", "description")
+    @classmethod
+    def _strip_required(cls, value: str) -> str:
+        text = value.strip()
+        if not text:
+            raise ValueError("Campo obrigatório.")
+        return text
+
+
+class QuoteTicketLinksRefreshBody(BaseModel):
+    quote_ids: list[int] = Field(default_factory=list, max_length=100)
+
+    @field_validator("quote_ids")
+    @classmethod
+    def _unique_positive(cls, value: list[int]) -> list[int]:
+        seen: set[int] = set()
+        out: list[int] = []
+        for raw in value:
+            if raw < 1:
+                raise ValueError("quote_ids deve conter IDs positivos.")
+            if raw in seen:
+                continue
+            seen.add(raw)
+            out.append(raw)
+        return out
+
+
+class QuoteTicketLinkRefreshFailure(BaseModel):
+    quote_id: int
+    ticket_number: str | None = None
+    error: str
+    status_code: int | None = None
+
+
 class QuoteRead(BaseModel):
     id: int
     cnpj: str
@@ -639,6 +738,10 @@ class QuoteRead(BaseModel):
     internal_notes: str | None = None
     title: str | None = None
     tiflux_ticket_number: str | None
+    ticket_link_status: TicketLinkStatus | None = None
+    ticket_link_catalog: str | None = None
+    ticket_link_checked_at: str | None = None
+    ticket_link_snapshot: TifluxTicketPreview | None = None
     vhsys_os_id: str | None
     pdf_path: str | None
     created_by: int | None
@@ -653,6 +756,11 @@ class QuoteRead(BaseModel):
     @classmethod
     def _normalize_internal_notes(cls, value: str | None) -> str | None:
         return _normalize_optional_internal_notes(value)
+
+
+class QuoteTicketLinksRefreshResult(BaseModel):
+    updated: list[QuoteRead]
+    failures: list[QuoteTicketLinkRefreshFailure] = Field(default_factory=list)
 
 
 class QuoteMonthlyChargeWrite(BaseModel):

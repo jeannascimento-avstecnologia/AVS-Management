@@ -36,6 +36,7 @@ def _apply_quote_external(db: HubDatabase, payload: CallbackPayload) -> None:
     if external.tiflux_ticket_number:
         sets.append("tiflux_ticket_number = ?")
         values.append(external.tiflux_ticket_number)
+        sets.append("ticket_link_status = COALESCE(ticket_link_status, 'novo')")
     if external.vhsys_os_id:
         sets.append("vhsys_os_id = ?")
         values.append(external.vhsys_os_id)

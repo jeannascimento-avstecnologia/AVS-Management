@@ -17,6 +17,7 @@ import {
   Send,
   StickyNote,
   Thermometer,
+  Ticket,
   Trash2,
   ChevronUp,
   ChevronDown,
@@ -26,6 +27,7 @@ import {
   UserPlus,
   UserRound,
   Contact,
+  Link2,
   X,
 } from 'lucide-react'
 import { toast } from 'sonner'
@@ -57,6 +59,8 @@ import {
 import { QuoteModuleTemplatesPanel } from '@/components/quotes/QuoteModuleTemplatesPanel'
 import { QuoteMarginPanel } from '@/components/quotes/QuoteMarginPanel'
 import { QuoteProposalTemplatesPanel } from '@/components/quotes/QuoteProposalTemplatesPanel'
+import { QuoteTicketCreateDialog } from '@/components/quotes/QuoteTicketCreateDialog'
+import { QuoteTicketLinkDialog } from '@/components/quotes/QuoteTicketLinkDialog'
 import { localId } from '@/lib/localId'
 import { groupHomePath } from '@/lib/groupHome'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
@@ -104,7 +108,13 @@ import { usePermission } from '@/hooks/useAuth'
 import { digitsOnly, formatCnpj, formatDate } from '@/lib/format'
 import { isQuoteTemplatePlaceholderCnpj } from '@/lib/quoteTemplate'
 import {
+  hasLinkedTicket,
+  TICKET_LINK_LABELS,
+  ticketLinkVariant,
+} from '@/lib/quoteTicketLink'
+import {
   btnAccentClass,
+  btnGreenClass,
   btnSecondaryClass,
   btnDangerClass,
   inputClass,
@@ -656,6 +666,8 @@ export function QuoteWizardPage() {
   const [saveProposalName, setSaveProposalName] = useState('')
   const [versionSaving, setVersionSaving] = useState(false)
   const [versionPdfPending, setVersionPdfPending] = useState<number | null>(null)
+  const [ticketDialogOpen, setTicketDialogOpen] = useState(false)
+  const [ticketCreateOpen, setTicketCreateOpen] = useState(false)
   const emailPrefillDone = useRef(false)
   const discountSourceByModule = useRef<Record<string, 'pct' | 'value' | null>>({})
 
@@ -720,7 +732,8 @@ export function QuoteWizardPage() {
     hydratedId.current = quote.id
     emailPrefillDone.current = false
     discountSourceByModule.current = {}
-    setForm(quoteToForm(quote))
+    const next = quoteToForm(quote)
+    setForm(next)
     setTifluxSearch(quote.client_name?.trim() || '')
     setSaveStatus('idle')
     setLastSavedAt(quote.updated_at)
@@ -2435,6 +2448,45 @@ export function QuoteWizardPage() {
               ) : null}
             </CardContent>
           </Card>
+
+          <div className="flex flex-wrap gap-2">
+            {hasLinkedTicket(quote) ? (
+              <Button
+                type="button"
+                className={btnSecondaryClass}
+                onClick={() => setTicketDialogOpen(true)}
+                aria-label={`Ticket ${quote.tiflux_ticket_number}`}
+              >
+                <span className="font-mono">#{quote.tiflux_ticket_number}</span>
+                <Badge variant={ticketLinkVariant(quote.ticket_link_status)}>
+                  {quote.ticket_link_status
+                    ? TICKET_LINK_LABELS[quote.ticket_link_status]
+                    : 'Ticket'}
+                </Badge>
+              </Button>
+            ) : (
+              <>
+                <Button
+                  type="button"
+                  className={btnSecondaryClass}
+                  onClick={() => setTicketDialogOpen(true)}
+                  aria-label="Associar Ticket"
+                >
+                  <Link2 className="h-4 w-4" />
+                  Associar Ticket
+                </Button>
+                <Button
+                  type="button"
+                  className={btnGreenClass}
+                  onClick={() => setTicketCreateOpen(true)}
+                  aria-label="Criar ticket"
+                >
+                  <Ticket className="h-4 w-4" />
+                  Criar ticket
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       )}
 
@@ -2506,6 +2558,17 @@ export function QuoteWizardPage() {
           onLinked={applyClientLink}
         />
       )}
+
+      <QuoteTicketLinkDialog
+        quote={quote}
+        open={ticketDialogOpen}
+        onOpenChange={setTicketDialogOpen}
+      />
+      <QuoteTicketCreateDialog
+        quote={quote}
+        open={ticketCreateOpen}
+        onOpenChange={setTicketCreateOpen}
+      />
     </div>
   )
 }

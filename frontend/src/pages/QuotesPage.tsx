@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FileDown, FileText, Plus, Send, Trash2, AlertCircle, Loader2, Boxes, ChevronDown, ChevronUp } from 'lucide-react'
+import { FileDown, FileText, Plus, Send, Trash2, AlertCircle, Loader2, Boxes, ChevronDown, ChevronUp, Link2 } from 'lucide-react'
 import { toast } from 'sonner'
 import {
   ApiError,
@@ -19,6 +19,7 @@ import { EmptyState } from '@/components/feedback/EmptyState'
 import { QuoteLeadPipelinePanel } from '@/components/quotes/QuoteLeadPipelinePanel'
 import { QuoteModuleTemplatesPanel } from '@/components/quotes/QuoteModuleTemplatesPanel'
 import { QuoteProposalTemplatesPanel } from '@/components/quotes/QuoteProposalTemplatesPanel'
+import { QuoteTicketLinkDialog } from '@/components/quotes/QuoteTicketLinkDialog'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -43,6 +44,15 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { digitsOnly, formatCnpj, formatDate } from '@/lib/format'
 import { TEMP_LABELS } from '@/lib/quoteLead'
 import {
+  hasLinkedTicket,
+  matchesTicketLinkFilter,
+  sortQuotesByTicketLink,
+  TICKET_LINK_LABELS,
+  ticketLinkVariant,
+  ticketRefreshSignature,
+  type TicketLinkFilter,
+} from '@/lib/quoteTicketLink'
+import {
   QUOTE_TEMPLATE_PLACEHOLDER_CNPJ,
   QUOTE_TEMPLATE_PLACEHOLDER_NAME,
   isQuoteTemplatePlaceholderCnpj,
@@ -60,6 +70,7 @@ const STATUS_FILTER_VALUES = new Set<string>([
   'rejected',
   'contracted',
 ])
+const LINK_FILTER_VALUES = new Set<string>(['all', 'none', 'linked', 'approved', 'rejected'])
 
 const STATUS_LABELS: Record<QuoteStatus, string> = {
   draft: 'Rascunho',
@@ -101,6 +112,8 @@ export function QuotesPage() {
   }
   const [statusFilter, setStatusFilter] = useState<QuoteStatus | 'all'>('all')
   const [leadFilter, setLeadFilter] = useState<LeadTemperature | 'all'>('all')
+  const [linkFilter, setLinkFilter] = useState<TicketLinkFilter>('all')
+  const [ticketDialogQuote, setTicketDialogQuote] = useState<QuoteRead | null>(null)
   const [clientFilter, setClientFilter] = useState('')
   const [numberFilter, setNumberFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
@@ -177,6 +190,50 @@ export function QuotesPage() {
     queryKey: ['quotes', 'pipeline-summary'],
     queryFn: () => api.listQuotes({ limit: 100, offset: 0 }),
   })
+
+  const visibleQuotes = useMemo(() => {
+    const source = listQuery.data?.quotes ?? []
+    return sortQuotesByTicketLink(
+      source.filter((quote) => matchesTicketLinkFilter(quote, linkFilter)),
+    )
+  }, [listQuery.data?.quotes, linkFilter])
+
+  const refreshedSignatures = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const pool = [
+      ...(listQuery.data?.quotes ?? []),
+      ...(pipelineQuery.data?.quotes ?? []),
+    ]
+    const pending = new Map<number, string>()
+    for (const quote of pool) {
+      const sig = ticketRefreshSignature(quote)
+      if (!sig || refreshedSignatures.current.has(sig)) continue
+      pending.set(quote.id, sig)
+    }
+    if (pending.size === 0) return
+    for (const sig of pending.values()) {
+      refreshedSignatures.current.add(sig)
+    }
+    const ids = [...pending.keys()]
+    void api
+      .refreshTicketLinks(ids)
+      .then((result) => {
+        if (result.updated.length > 0) {
+          void queryClient.invalidateQueries({ queryKey: ['quotes'] })
+        }
+        if (result.failures.length > 0) {
+          toast.error(
+            `Não foi possível atualizar ${result.failures.length} ticket(s) vinculado(s).`,
+          )
+        }
+      })
+      .catch((err: unknown) => {
+        for (const sig of pending.values()) {
+          refreshedSignatures.current.delete(sig)
+        }
+        toast.error(err instanceof Error ? err.message : 'Falha ao verificar tickets TiFlux')
+      })
+  }, [listQuery.data, pipelineQuery.data, queryClient])
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -294,18 +351,16 @@ export function QuotesPage() {
     }
   }
 
-  const quotes = listQuery.data?.quotes ?? []
-
   return (
     <div className="mx-auto max-w-5xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-        <div>
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <div className="mb-2 inline-flex items-center gap-2 rounded-lg bg-aurora-green-muted px-3 py-1.5 text-aurora-green">
             <FileText className="h-4 w-4" />
             <span className="text-xs font-semibold uppercase tracking-wide">Hub · Comercial</span>
           </div>
           <h1 className="text-2xl font-semibold tracking-tight">Orçamentos</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
+          <p className="mt-1 max-w-xl text-sm text-muted-foreground">
             Liste rascunhos e abra o wizard (cliente TiFlux → itens → revisão).
           </p>
           <p
@@ -317,67 +372,23 @@ export function QuotesPage() {
               : '\u00a0'}
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-            {!filtersCollapsed ? (
-              <>
-            <Select
-              value={leadFilter}
-              onValueChange={(v) => {
-                if (!LEAD_FILTER_VALUES.has(v)) return
-                setLeadFilter(v as LeadTemperature | 'all')
-              }}
-            >
-              <SelectTrigger className="w-[160px]" aria-label="Filtrar por lead">
-                <SelectValue placeholder="Lead" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Lead: todos</SelectItem>
-                {(Object.keys(TEMP_LABELS) as LeadTemperature[]).map((t) => (
-                  <SelectItem key={t} value={t}>
-                    Lead: {TEMP_LABELS[t]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={statusFilter}
-              onValueChange={(v) => {
-                if (!STATUS_FILTER_VALUES.has(v)) return
-                setStatusFilter(v as QuoteStatus | 'all')
-              }}
-            >
-              <SelectTrigger className="w-[180px]" aria-label="Filtrar por status">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Status: todos</SelectItem>
-                {(Object.keys(STATUS_LABELS) as QuoteStatus[]).map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {STATUS_LABELS[s]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-              </>
-            ) : null}
-            <Button
-              type="button"
-              className={btnGreenClass}
-              onClick={() =>
-                setShowCreate((v) => {
-                  const next = !v
-                  if (next) setFiltersCollapsed(true)
-                  else setFiltersCollapsed(false)
-                  return next
-                })
-              }
-            >
-              <Plus className="h-4 w-4" />
-              Novo
-            </Button>
-          </div>
-      </div>
-      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          className={cn(btnGreenClass, 'w-fit shrink-0')}
+          onClick={() =>
+            setShowCreate((v) => {
+              const next = !v
+              if (next) setFiltersCollapsed(true)
+              else setFiltersCollapsed(false)
+              return next
+            })
+          }
+        >
+          <Plus className="h-4 w-4" />
+          Novo
+        </Button>
+      </header>
+      <div className="flex flex-wrap gap-2" role="toolbar" aria-label="Bibliotecas de orçamento">
         <Button
           type="button"
           className={btnSecondaryClass}
@@ -441,7 +452,66 @@ export function QuotesPage() {
             </p>
           </CardContent>
         ) : (
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <Select
+              value={leadFilter}
+              onValueChange={(v) => {
+                if (!LEAD_FILTER_VALUES.has(v)) return
+                setLeadFilter(v as LeadTemperature | 'all')
+              }}
+            >
+              <SelectTrigger className="w-full min-w-0" aria-label="Filtrar por lead">
+                <SelectValue placeholder="Lead" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Lead: todos</SelectItem>
+                {(Object.keys(TEMP_LABELS) as LeadTemperature[]).map((t) => (
+                  <SelectItem key={t} value={t}>
+                    Lead: {TEMP_LABELS[t]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => {
+                if (!STATUS_FILTER_VALUES.has(v)) return
+                setStatusFilter(v as QuoteStatus | 'all')
+              }}
+            >
+              <SelectTrigger className="w-full min-w-0" aria-label="Filtrar por status">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Status: todos</SelectItem>
+                {(Object.keys(STATUS_LABELS) as QuoteStatus[]).map((s) => (
+                  <SelectItem key={s} value={s}>
+                    Status: {STATUS_LABELS[s]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={linkFilter}
+              onValueChange={(v) => {
+                if (!LINK_FILTER_VALUES.has(v)) return
+                setLinkFilter(v as TicketLinkFilter)
+              }}
+            >
+              <SelectTrigger className="w-full min-w-0" aria-label="Filtrar por vínculo de ticket">
+                <SelectValue placeholder="Ticket" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Ticket: todos</SelectItem>
+                <SelectItem value="none">Sem ticket</SelectItem>
+                <SelectItem value="linked">Com ticket (novo)</SelectItem>
+                <SelectItem value="approved">Ticket: aprovados</SelectItem>
+                <SelectItem value="rejected">Ticket: rejeitados</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="space-y-1">
             <label className="text-xs text-muted-foreground" htmlFor="quote-filter-client">
               Cliente
@@ -496,6 +566,7 @@ export function QuotesPage() {
               placeholder="Nome, CNPJ, M123, item ou valor (ex.: 1.866,60)"
               onChange={(e) => setQFilter(e.target.value)}
             />
+          </div>
           </div>
         </CardContent>
         )}
@@ -601,8 +672,8 @@ export function QuotesPage() {
       )}
 
       <QuoteLeadPipelinePanel
-        quotes={pipelineQuery.data?.quotes ?? []}
-        loading={pipelineQuery.isPending}
+        quotes={visibleQuotes}
+        loading={listQuery.isPending}
         activeLead={leadFilter}
         onSelectLead={(t) => setLeadFilter(t)}
         onOpenQuote={(id) => openQuote(id)}
@@ -627,22 +698,36 @@ export function QuotesPage() {
         </div>
       )}
 
-      {!listQuery.isPending && !listQuery.isError && quotes.length === 0 && (
+      {!listQuery.isPending && !listQuery.isError && visibleQuotes.length === 0 && (
         <EmptyState
           icon={FileText}
           title="Nenhum orçamento"
-          description="Busque o cliente no TiFlux para criar um rascunho."
+          description={
+            statusFilter !== 'all'
+              ? `Nenhum orçamento com status ${STATUS_LABELS[statusFilter]}. Status do orçamento é independente do ticket TiFlux.`
+              : linkFilter === 'approved'
+                ? 'Nenhum orçamento com ticket aprovado.'
+                : linkFilter === 'rejected'
+                  ? 'Nenhum orçamento com ticket rejeitado.'
+                  : linkFilter === 'linked'
+                    ? 'Nenhum orçamento com ticket novo.'
+                    : linkFilter === 'none'
+                      ? 'Nenhum orçamento sem ticket.'
+                      : leadFilter !== 'all'
+                        ? `Nenhum lead ${TEMP_LABELS[leadFilter]} aberto.`
+                        : 'Busque o cliente no TiFlux para criar um rascunho.'
+          }
           action={{ label: 'Novo rascunho', onClick: () => setShowCreate(true) }}
         />
       )}
 
-      {!listQuery.isPending && quotes.length > 0 && (
+      {!listQuery.isPending && visibleQuotes.length > 0 && (
         <ul className="space-y-3">
-          {quotes.map((quote) => (
-            <li key={quote.id}>
+          {visibleQuotes.map((quote) => (
+            <li key={quote.id} className="min-w-0">
                   <Card
                 className={cn(
-                  'aurora-motion cursor-pointer',
+                  'aurora-motion min-w-0 cursor-pointer overflow-hidden',
                   'hover:border-aurora-green/50 hover:shadow-md',
                 )}
                 role="link"
@@ -655,7 +740,7 @@ export function QuotesPage() {
                   }
                 }}
               >
-                <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <CardContent className="flex min-w-0 flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
                   <div className="min-w-0 space-y-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-mono text-sm font-medium">
@@ -686,7 +771,7 @@ export function QuotesPage() {
                       · atualizado {formatDate(quote.updated_at)}
                     </p>
                   </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
+                  <div className="flex min-w-0 flex-wrap gap-2">
                     {isQuoteSubmittable(quote.status) &&
                     !isQuoteTemplatePlaceholderCnpj(quote.cnpj) && (
                       <Button
@@ -726,6 +811,39 @@ export function QuotesPage() {
                       )}
                       PDF
                     </Button>
+                    {hasLinkedTicket(quote) ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className={btnSecondaryClass}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setTicketDialogQuote(quote)
+                        }}
+                        aria-label={`Ticket ${quote.tiflux_ticket_number}`}
+                      >
+                        <span className="font-mono">#{quote.tiflux_ticket_number}</span>
+                        <Badge variant={ticketLinkVariant(quote.ticket_link_status)}>
+                          {quote.ticket_link_status
+                            ? TICKET_LINK_LABELS[quote.ticket_link_status]
+                            : 'Ticket'}
+                        </Badge>
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className={btnSecondaryClass}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setTicketDialogQuote(quote)
+                        }}
+                        aria-label={`Associar ticket ao orçamento ${quote.id}`}
+                      >
+                        <Link2 className="h-4 w-4" />
+                        Associar a um Ticket
+                      </Button>
+                    )}
                     {quote.status === 'draft' && (
                       <Button
                         type="button"
@@ -787,6 +905,14 @@ export function QuotesPage() {
           />
         </DialogContent>
       </Dialog>
+
+      <QuoteTicketLinkDialog
+        quote={ticketDialogQuote}
+        open={ticketDialogQuote != null}
+        onOpenChange={(next) => {
+          if (!next) setTicketDialogQuote(null)
+        }}
+      />
     </div>
   )
 }

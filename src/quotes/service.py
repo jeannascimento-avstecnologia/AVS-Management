@@ -6,7 +6,7 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from src.config import Settings, get_settings
 from src.hub.models import HubDatabase
@@ -32,11 +32,14 @@ from src.quotes.schemas import (
     QuoteTemplateWrite,
     QuoteUpdate,
     QuoteWrite,
+    TicketLinkStatus,
+    TifluxTicketPreview,
     seed_default_modules,
     seed_quote_notes,
     validate_modules_and_items,
     is_template_placeholder_cnpj,
 )
+from src.quotes.ticket_link import TICKET_LINK_STATUSES
 
 _UUID_PDF_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$",
@@ -78,6 +81,10 @@ _QUOTE_COLUMNS = (
     "internal_notes",
     "title",
     "tiflux_ticket_number",
+    "ticket_link_status",
+    "ticket_link_catalog",
+    "ticket_link_checked_at",
+    "ticket_link_snapshot_json",
     "vhsys_os_id",
     "pdf_path",
     "created_by",
@@ -308,14 +315,18 @@ def _dump_extra_recipients(emails: list[str] | None) -> str | None:
     return json.dumps(list(emails), ensure_ascii=False)
 
 
-def _optional_notes(row: sqlite3.Row) -> str | None:
-    if "notes" not in row.keys():
+def _optional_notes_like(row: sqlite3.Row, key: str) -> str | None:
+    if key not in row.keys():
         return None
-    raw = row["notes"]
+    raw = row[key]
     if raw is None:
         return None
     cleaned = str(raw).strip()
     return cleaned or None
+
+
+def _optional_notes(row: sqlite3.Row) -> str | None:
+    return _optional_notes_like(row, "notes")
 
 
 def _optional_internal_notes(row: sqlite3.Row) -> str | None:
@@ -436,6 +447,47 @@ def _row_to_item(row: sqlite3.Row) -> QuoteItemRead:
     )
 
 
+def _parse_ticket_snapshot(raw: object) -> TifluxTicketPreview | None:
+    if raw is None:
+        return None
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8")
+    if isinstance(raw, str):
+        text = raw.strip()
+        if not text:
+            return None
+        try:
+            raw = json.loads(text)
+        except json.JSONDecodeError:
+            return None
+    if not isinstance(raw, dict):
+        return None
+    try:
+        return TifluxTicketPreview.model_validate(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _dump_ticket_snapshot(snapshot: TifluxTicketPreview | dict[str, Any] | None) -> str | None:
+    if snapshot is None:
+        return None
+    if isinstance(snapshot, TifluxTicketPreview):
+        return json.dumps(snapshot.model_dump(), ensure_ascii=False)
+    return json.dumps(snapshot, ensure_ascii=False)
+
+
+def _optional_ticket_link_status(row: sqlite3.Row) -> TicketLinkStatus | None:
+    if "ticket_link_status" not in row.keys():
+        return None
+    raw = row["ticket_link_status"]
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if text in TICKET_LINK_STATUSES:
+        return cast(TicketLinkStatus, text)
+    return None
+
+
 def _row_to_quote(row: sqlite3.Row, items: list[QuoteItemRead]) -> QuoteRead:
     modules = _parse_modules(row)
     return QuoteRead(
@@ -483,6 +535,14 @@ def _row_to_quote(row: sqlite3.Row, items: list[QuoteItemRead]) -> QuoteRead:
         internal_notes=_optional_internal_notes(row),
         title=_optional_title(row),
         tiflux_ticket_number=row["tiflux_ticket_number"],
+        ticket_link_status=_optional_ticket_link_status(row),
+        ticket_link_catalog=_optional_notes_like(row, "ticket_link_catalog"),
+        ticket_link_checked_at=_optional_notes_like(row, "ticket_link_checked_at"),
+        ticket_link_snapshot=_parse_ticket_snapshot(
+            row["ticket_link_snapshot_json"]
+            if "ticket_link_snapshot_json" in row.keys()
+            else None
+        ),
         vhsys_os_id=row["vhsys_os_id"],
         pdf_path=row["pdf_path"],
         created_by=row["created_by"],
@@ -723,6 +783,7 @@ class QuoteService:
             params.append(lead_temperature)
             # Filtro de lead = pipeline aberto (ainda não aprovados / contratados).
             where.append("q.status NOT IN ('approved', 'contracted')")
+            where.append("(q.ticket_link_status IS NULL OR q.ticket_link_status = 'novo')")
         if client:
             term = client.strip()
             digits = re.sub(r"\D", "", term)
@@ -803,6 +864,132 @@ class QuoteService:
             if row is None:
                 raise QuoteNotFoundError(f"Orçamento {quote_id} não encontrado.")
             return _row_to_quote(row, _fetch_items(conn, quote_id))
+
+    def link_ticket(
+        self,
+        quote_id: int,
+        ticket_number: str,
+        *,
+        catalog: str | None,
+        link_status: TicketLinkStatus,
+        snapshot: TifluxTicketPreview | dict[str, Any] | None,
+        checked_at: str | None = None,
+    ) -> QuoteRead:
+        now = checked_at or _utcnow_iso()
+        with self._db.connect() as conn:
+            row = _get_quote_row(conn, quote_id)
+            if row is None:
+                raise QuoteNotFoundError(f"Orçamento {quote_id} não encontrado.")
+            conn.execute(
+                """
+                UPDATE quotes
+                SET tiflux_ticket_number = ?,
+                    ticket_link_status = ?,
+                    ticket_link_catalog = ?,
+                    ticket_link_checked_at = ?,
+                    ticket_link_snapshot_json = ?,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (
+                    ticket_number,
+                    link_status,
+                    catalog,
+                    now,
+                    _dump_ticket_snapshot(snapshot),
+                    now,
+                    quote_id,
+                ),
+            )
+            updated = _get_quote_row(conn, quote_id)
+            assert updated is not None
+            return _row_to_quote(updated, _fetch_items(conn, quote_id))
+
+    def unlink_ticket(self, quote_id: int) -> QuoteRead:
+        now = _utcnow_iso()
+        with self._db.connect() as conn:
+            row = _get_quote_row(conn, quote_id)
+            if row is None:
+                raise QuoteNotFoundError(f"Orçamento {quote_id} não encontrado.")
+            conn.execute(
+                """
+                UPDATE quotes
+                SET tiflux_ticket_number = NULL,
+                    ticket_link_status = NULL,
+                    ticket_link_catalog = NULL,
+                    ticket_link_checked_at = NULL,
+                    ticket_link_snapshot_json = NULL,
+                    updated_at = ?
+                WHERE id = ?
+                """,
+                (now, quote_id),
+            )
+            updated = _get_quote_row(conn, quote_id)
+            assert updated is not None
+            return _row_to_quote(updated, _fetch_items(conn, quote_id))
+
+    def list_refreshable_ticket_links(self, quote_ids: list[int]) -> list[QuoteRead]:
+        if not quote_ids:
+            return []
+        placeholders = ",".join("?" for _ in quote_ids)
+        cols = ", ".join(f"q.{c}" for c in _QUOTE_COLUMNS)
+        sql = (
+            f"SELECT {cols} FROM quotes q "
+            f"WHERE q.id IN ({placeholders}) "
+            "AND q.ticket_link_status = 'novo' "
+            "AND q.tiflux_ticket_number IS NOT NULL "
+            "AND TRIM(q.tiflux_ticket_number) != ''"
+        )
+        with self._db.connect() as conn:
+            rows = conn.execute(sql, quote_ids).fetchall()
+            return [
+                _row_to_quote(row, _fetch_items(conn, int(row["id"])))
+                for row in rows
+            ]
+
+    def apply_ticket_link_updates(
+        self,
+        updates: list[dict[str, Any]],
+    ) -> list[QuoteRead]:
+        """Aplica classificações já resolvidas (idempotente). Cada item: quote_id + campos."""
+        if not updates:
+            return []
+        now = _utcnow_iso()
+        updated: list[QuoteRead] = []
+        with self._db.connect() as conn:
+            for item in updates:
+                quote_id = int(item["quote_id"])
+                row = _get_quote_row(conn, quote_id)
+                if row is None:
+                    continue
+                if str(row["ticket_link_status"] or "") != "novo":
+                    continue
+                checked_at = str(item.get("checked_at") or now)
+                conn.execute(
+                    """
+                    UPDATE quotes
+                    SET ticket_link_status = ?,
+                        ticket_link_catalog = ?,
+                        ticket_link_checked_at = ?,
+                        ticket_link_snapshot_json = ?,
+                        updated_at = ?
+                    WHERE id = ?
+                      AND ticket_link_status = 'novo'
+                    """,
+                    (
+                        item["link_status"],
+                        item.get("catalog"),
+                        checked_at,
+                        _dump_ticket_snapshot(item.get("snapshot")),
+                        checked_at,
+                        quote_id,
+                    ),
+                )
+                refreshed = _get_quote_row(conn, quote_id)
+                if refreshed is None:
+                    continue
+                updated.append(_row_to_quote(refreshed, _fetch_items(conn, quote_id)))
+        return updated
 
     def update(self, quote_id: int, data: QuoteUpdate) -> QuoteRead:
         with self._db.connect() as conn:

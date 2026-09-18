@@ -164,6 +164,31 @@ Ver `.env.example`. Nunca versionar `.env`.
 - [ ] Dedup impede duplicata por CNPJ quando já cadastrado.
 - [ ] Resposta JSON legível para sucesso, parcial e erro.
 
+## Fluxo vínculo de ticket em orçamento
+
+Lista `/orcamentos` e wizard passo Revisão: associação a ticket TiFlux da mesa Comercial do cliente (listagem live) ou criação `POST /tickets`. Classificação independente de `quote.status`.
+
+```mermaid
+flowchart TD
+  UI[QuotesPage / Wizard Revisão] -->|GET tickets client+desk| API[FastAPI]
+  UI -->|GET ticket-defaults| API
+  UI -->|POST ticket/create| API
+  UI -->|POST refresh-ticket-links so novo| API
+  UI -->|GET tickets n| API
+  UI -->|POST DELETE ticket| API
+  API -->|GET /tickets client_ids desk_ids| TF[TiFlux_v2]
+  API -->|GET /desks/id catalogs priorities| TF
+  API -->|GET /tickets/n| TF
+  API -->|POST /tickets| TF
+  API --> DB[(hub.db quotes)]
+  TF --> Class[is_closed + services_catalog.item_name]
+  Class -->|aberto| Novo[ticket_link_status novo]
+  Class -->|fechado e 3 - Aprovado| Apr[aprovado fora do lead]
+  Class -->|fechado outro catalogo| Rej[rejeitado fora do lead]
+```
+
+Contrato oficial: `GET/POST https://api.tiflux.com/api/v2/tickets` · `GET /desks/{id}/services-catalogs-items` · `GET /desks/{id}/priorities` · Bearer · `is_closed` · `services_catalog.item_name`.
+
 ## Execução local
 
 ```bash

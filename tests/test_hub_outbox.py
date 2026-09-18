@@ -171,7 +171,7 @@ def test_callback_valid_path_smoke(outbox_client: TestClient) -> None:
             (outbox_id,),
         ).fetchone()
         quote = conn.execute(
-            "SELECT tiflux_ticket_number, vhsys_os_id FROM quotes WHERE id = ?",
+            "SELECT tiflux_ticket_number, vhsys_os_id, ticket_link_status FROM quotes WHERE id = ?",
             (quote_id,),
         ).fetchone()
     assert outbox is not None
@@ -180,6 +180,7 @@ def test_callback_valid_path_smoke(outbox_client: TestClient) -> None:
     assert quote is not None
     assert quote["tiflux_ticket_number"] == "T-999"
     assert quote["vhsys_os_id"] == "OS-42"
+    assert quote["ticket_link_status"] == "novo"
 
 
 def test_mark_sent_dry_run(outbox_client: TestClient) -> None:

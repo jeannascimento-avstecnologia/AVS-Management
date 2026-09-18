@@ -113,7 +113,18 @@ O TiFlux exige **`desk_ids`** e **`technical_group_ids`** no `POST /clients`. Se
 | Inativar (fluxo “excluir”) | `PUT /clients/{id}` com `status: false` (após desvincular `desk_ids`/`technical_group_ids` se o TiFlux retornar erro 50004) — **não** existe `DELETE /clients/{id}` |
 | Teste E2E RTC | `python scripts/test_tiflux_delete_rtc.py` (exit 0 só com `status=false`) |
 
-Documentação: [API v2 TiFlux](https://guia-de-uso.tiflux.com/integracoes/api-tiflux/api-v2), [Relacionamentos](https://guia-de-uso.tiflux.com/sistema/clientes/relacionamentos.md).
+Documentação: [API v2 TiFlux](https://guia-de-uso.tiflux.com/integracoes/api-tiflux/api-v2), [OpenAPI](https://api.tiflux.com/api/v2/), [Relacionamentos](https://guia-de-uso.tiflux.com/sistema/clientes/relacionamentos.md).
+
+## Orçamentos — vincular ticket TiFlux
+
+1. Em **Orçamentos**, no card, clique **Associar a um Ticket**. O diálogo lista os tickets da **mesa Comercial** do cliente TiFlux; escolha um (um único resultado já vem selecionado). Dá para buscar por número se o ticket não aparecer.
+2. **Vincular** grava o número em `tiflux_ticket_number`. No card, o botão vira `#número` + flag Novo/Aprovado/Rejeitado.
+3. Chip **Ticket: Novo/Aprovado/Rejeitado** reabre o diálogo (trocar ou desvincular). Após F5, tickets já classificados usam o snapshot local — a API só é consultada de novo para **Novo**.
+4. Fechado + catálogo `3 - Aprovado` → **Ticket: Aprovado** (sai do lead). Fechado com outro catálogo → **Ticket: Rejeitado**. Aberto permanece **Novo** e conta no pipeline.
+5. Filtro **Ticket** no topo: sem ticket / com ticket (novo) / aprovados / rejeitados.
+6. No wizard, passo **Revisão**: **Associar Ticket** (mesmo diálogo) e **Criar ticket** (mesa Comercial, catálogo/prioridade pré-preenchidos). Ao criar, o orçamento fica vinculado ao número novo.
+
+Migração: colunas `ticket_link_*` são criadas no boot (`src/hub/models.py`). Quotes que já tinham número de ticket entram como `novo`.
 
 **Atenção:** exclusão no painel TiFlux pode exigir 2FA; via API costuma usar só o Bearer token. Teste em homologação antes de uso em massa.
 

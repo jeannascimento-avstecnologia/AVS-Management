@@ -54,6 +54,8 @@ export type QuoteStatus =
   | 'rejected'
   | 'contracted'
 
+export type TicketLinkStatus = 'novo' | 'aprovado' | 'rejeitado'
+
 /** section = module.id (seed implantacao|mensalidade + custom). */
 export type QuoteSection = string
 export type LegacyModuleKind = 'implantacao' | 'mensalidade'
@@ -150,6 +152,10 @@ export type QuoteRead = {
   internal_notes: string | null
   title: string | null
   tiflux_ticket_number: string | null
+  ticket_link_status?: TicketLinkStatus | null
+  ticket_link_catalog?: string | null
+  ticket_link_checked_at?: string | null
+  ticket_link_snapshot?: TifluxTicketPreview | null
   vhsys_os_id: string | null
   pdf_path: string | null
   created_by: number
@@ -412,6 +418,71 @@ export type TifluxQuoteClient = {
   id: number
   name: string
   cnpj: string | null
+}
+
+export type TifluxTicketPreview = {
+  ticket_number: string
+  subject: string | null
+  client_name: string | null
+  status: string | null
+  catalog: string | null
+  closed: boolean
+  suggested_link_status: TicketLinkStatus
+}
+
+export type TifluxNamedOption = {
+  id: number
+  name: string
+}
+
+export type TifluxCatalogItemOption = {
+  id: number
+  name: string
+  area_name: string | null
+  catalog_name: string | null
+}
+
+export type TifluxRequestorOption = {
+  id: number
+  name: string | null
+  email: string | null
+}
+
+export type QuoteTicketCreateDefaults = {
+  desk_id: number
+  desk_name: string | null
+  client_id: number
+  client_name: string | null
+  title: string
+  description: string
+  catalog_items: TifluxCatalogItemOption[]
+  default_catalog_item_id: number | null
+  priorities: TifluxNamedOption[]
+  default_priority_id: number | null
+  requestors: TifluxRequestorOption[]
+  default_requestor_id: number | null
+}
+
+export type QuoteTicketCreateBody = {
+  title: string
+  description: string
+  services_catalogs_item_id?: number | null
+  priority_id?: number | null
+  requestor_id?: number | null
+  requestor_name?: string | null
+  requestor_email?: string | null
+}
+
+export type QuoteTicketLinkRefreshFailure = {
+  quote_id: number
+  ticket_number: string | null
+  error: string
+  status_code: number | null
+}
+
+export type QuoteTicketLinksRefreshResult = {
+  updated: QuoteRead[]
+  failures: QuoteTicketLinkRefreshFailure[]
 }
 
 export type TifluxRequestorHit = {
@@ -1145,6 +1216,44 @@ export const api = {
       `/orcamentos/tiflux/clients?${qs}`,
     )
   },
+
+  getTifluxTicket: (ticketNumber: string) =>
+    request<TifluxTicketPreview>(
+      `/orcamentos/tiflux/tickets/${encodeURIComponent(ticketNumber)}`,
+    ),
+
+  listTifluxTickets: (clientId: number, limit = 50) => {
+    const qs = new URLSearchParams()
+    qs.set('client_id', String(clientId))
+    qs.set('limit', String(limit))
+    return request<{ tickets: TifluxTicketPreview[]; client_id: number; desk_id: number }>(
+      `/orcamentos/tiflux/tickets?${qs}`,
+    )
+  },
+
+  linkQuoteTicket: (id: number, ticketNumber: string) =>
+    request<QuoteRead>(`/orcamentos/${id}/ticket`, {
+      method: 'POST',
+      body: JSON.stringify({ ticket_number: ticketNumber }),
+    }),
+
+  unlinkQuoteTicket: (id: number) =>
+    request<QuoteRead>(`/orcamentos/${id}/ticket`, { method: 'DELETE' }),
+
+  getQuoteTicketDefaults: (id: number) =>
+    request<QuoteTicketCreateDefaults>(`/orcamentos/${id}/ticket-defaults`),
+
+  createQuoteTicket: (id: number, body: QuoteTicketCreateBody) =>
+    request<QuoteRead>(`/orcamentos/${id}/ticket/create`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  refreshTicketLinks: (quoteIds: number[]) =>
+    request<QuoteTicketLinksRefreshResult>('/orcamentos/refresh-ticket-links', {
+      method: 'POST',
+      body: JSON.stringify({ quote_ids: quoteIds }),
+    }),
 
   getTifluxClientContact: (clientId: number) =>
     request<{ id: number; name: string | null; email: string | null }>(

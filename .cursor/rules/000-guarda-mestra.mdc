@@ -1,5 +1,5 @@
 ---
-description: Guarda-mestra do NextGen Planner. Forca leitura do guia e do plano antes de qualquer alteracao ou implementacao (SDD, multi-tenancy, escopo MVP).
+description: Guarda-mestra do AVS Management. Forca leitura do guia e do plano antes de qualquer alteracao (SDD, FastAPI+SQLite, escopo MVP/fast-follow).
 alwaysApply: true
 ---
 
@@ -12,19 +12,20 @@ Fonte de verdade: @docs/GUIA_MESTRE.md
 1. Ler @docs/GUIA_MESTRE.md por completo.
 2. Ler o plano ativo em `.cursor/plans/` (decisoes travadas, escopo MVP vs fast-follow, riscos).
 3. SDD: confirmar que existe spec aprovada em `docs/` para a tarefa. Sem spec -> escrever/atualizar a spec ANTES do codigo.
-4. Confirmar isolamento multi-tenant (`org_id` + RLS) e que segredos ficam server-side.
+4. Confirmar que segredos (TiFlux/VHSYS/n8n) ficam server-side. Nunca token no frontend.
 5. Declarar em 1 linha antes de editar: `Guia+Plano lidos | spec: <arquivo> | escopo: MVP|fast-follow`.
 
 Se a tarefa contrariar o guia ou o plano: **PARE** e proponha atualizar o documento (ADR/plano) antes de codar. Nao prossiga.
 
 ## Inegociaveis (detalhes em @docs/GUIA_MESTRE.md)
 
-- Supabase-first; logica privilegiada SO em Edge Functions. Sem back-end separado no MVP.
-- Toda tabela de tenant: `org_id` + policy RLS + teste pgTAP. Sem teste = nao mergeia.
-- Segredo Cloudinary/API nunca no cliente; upload sempre assinado por Edge Function.
-- `dnd-kit` (nunca `react-beautiful-dnd`); TypeScript sem `any`; fractional indexing para ordem.
-- Comentarios SEMPRE no card (nunca chat). Calendario + feed iCal mantidos.
-- Nao implementar itens de fast-follow (rollup cross-board, audit log, automacao) dentro do MVP.
+- FastAPI + SQLite (`auth.db` + `hub.db`). Sem Supabase/Edge Functions neste produto.
+- Logica privilegiada de TiFlux/VHSYS so no backend. Token nunca no cliente.
+- Colunas novas: ALTER idempotente em `src/hub/models.py` + `docs/hub/schema/hub_v1.sql`.
+- Mutacoes: `require_permission` + `log_action`.
+- TypeScript sem `any` novo; Pydantic v2 tipado.
+- `quote.status` != `ticket_link_status` (dimensoes independentes).
+- Nao puxar fast-follow (create contract TiFlux, audit log avancado) para dentro do MVP de orcamento.
 
 ## Estilo (caveman mode, do `.cursorrules`)
 

@@ -8,10 +8,16 @@ function isOpen(status) {
   return OPEN.has(status)
 }
 
+function countsTowardLead(quote) {
+  const link = quote.ticket_link_status
+  if (link === 'aprovado' || link === 'rejeitado') return false
+  return isOpen(quote.status)
+}
+
 function countByLead(quotes) {
   const counts = { frio: 0, morno: 0, quente: 0 }
   for (const quote of quotes) {
-    if (!isOpen(quote.status)) continue
+    if (!countsTowardLead(quote)) continue
     const temp = quote.lead_temperature
     if (temp === null) continue
     counts[temp] += 1
@@ -22,7 +28,7 @@ function countByLead(quotes) {
 function sumByLead(quotes) {
   const sums = { frio: 0, morno: 0, quente: 0 }
   for (const quote of quotes) {
-    if (!isOpen(quote.status)) continue
+    if (!countsTowardLead(quote)) continue
     const temp = quote.lead_temperature
     if (temp === null) continue
     const total = quote.items.reduce((acc, item) => acc + item.total_value, 0)
@@ -33,7 +39,7 @@ function sumByLead(quotes) {
 
 function hotPendingQuotes(quotes, limit = 5) {
   return quotes
-    .filter((q) => isOpen(q.status) && q.lead_temperature === 'quente')
+    .filter((q) => countsTowardLead(q) && q.lead_temperature === 'quente')
     .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
     .slice(0, limit)
 }
@@ -43,7 +49,7 @@ function statsByLead(quotes) {
   const counts = { frio: 0, morno: 0, quente: 0 }
   const sums = { frio: 0, morno: 0, quente: 0 }
   for (const quote of quotes) {
-    if (!isOpen(quote.status)) continue
+    if (!countsTowardLead(quote)) continue
     const temp = quote.lead_temperature
     if (temp === null) continue
     counts[temp] += 1

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
+import httpx
 
 from src.auth.audit import log_action
 from src.auth.deps import require_permission
@@ -37,7 +40,30 @@ from src.quotes.schemas import (
     QuoteWrite,
     QuoteMonthlyDraftWrite,
     QuoteMonthlySuggestBody,
+    QuoteRead,
+    QuoteTicketLinkBody,
+    QuoteTicketLinkRefreshFailure,
+    QuoteTicketLinksRefreshBody,
+    QuoteTicketLinksRefreshResult,
+    QuoteTicketCreateBody,
+    QuoteTicketCreateDefaults,
+    TifluxCatalogItemOption,
+    TifluxNamedOption,
+    TifluxRequestorOption,
+    TifluxTicketPreview,
     VhsysCatalogCreateBody,
+)
+from src.quotes.ticket_link import (
+    build_create_ticket_payload,
+    build_ticket_preview,
+    default_ticket_description,
+    default_ticket_title,
+    extract_ticket_number,
+    option_id,
+    option_name,
+    pick_default_catalog_item_id,
+    pick_default_priority_id,
+    unwrap_ticket_payload,
 )
 from src.quotes.pdf_filename import PdfDownloadName, quote_pdf_download_name_from_quote
 from src.quotes.service import (
@@ -46,6 +72,61 @@ from src.quotes.service import (
     QuoteService,
     build_monthly_suggestion,
 )
+
+_logger = logging.getLogger(__name__)
+
+
+def _tiflux_http_error(exc: TifluxApiError) -> HTTPException:
+    status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
+    return HTTPException(status_code=status, detail=str(exc))
+
+
+def _comercial_desk_id() -> int:
+    settings = get_settings()
+    desk_id = int(settings.tiflux_desk_comercial_id) if settings.tiflux_desk_comercial_id else 0
+    if desk_id < 1:
+        raise HTTPException(status_code=503, detail="Mesa Comercial TiFlux não configurada.")
+    return desk_id
+
+
+def _catalog_option(row: dict[str, Any]) -> TifluxCatalogItemOption | None:
+    oid = option_id(row)
+    name = option_name(row)
+    if oid is None or not name:
+        return None
+    area_raw = row.get("area_name")
+    if not area_raw and isinstance(row.get("area"), dict):
+        area_raw = row["area"].get("name") or row["area"].get("area_name")
+    catalog_raw = row.get("catalog_name")
+    if not catalog_raw and isinstance(row.get("services_catalog"), dict):
+        catalog_raw = row["services_catalog"].get("name") or row["services_catalog"].get("catalog_name")
+    area = str(area_raw).strip() if area_raw else None
+    catalog = str(catalog_raw).strip() if catalog_raw else None
+    return TifluxCatalogItemOption(
+        id=oid,
+        name=name,
+        area_name=area or None,
+        catalog_name=catalog or None,
+    )
+
+
+def _named_option(row: dict[str, Any]) -> TifluxNamedOption | None:
+    oid = option_id(row)
+    name = option_name(row)
+    if oid is None or not name:
+        return None
+    return TifluxNamedOption(id=oid, name=name)
+
+
+def _requestor_option(row: dict[str, Any]) -> TifluxRequestorOption | None:
+    oid = option_id(row)
+    if oid is None:
+        return None
+    name_raw = row.get("name")
+    email_raw = row.get("email")
+    name = str(name_raw).strip() if name_raw else None
+    email = str(email_raw).strip() if email_raw else None
+    return TifluxRequestorOption(id=oid, name=name or None, email=email or None)
 
 
 def _user_id(user: dict[str, Any]) -> int | None:
@@ -486,6 +567,160 @@ def build_quotes_router() -> APIRouter:
                     break
         return {"id": client_id, "name": name, "email": email}
 
+    @router.get("/tiflux/tickets")
+    async def list_tiflux_tickets(
+        client_id: int = Query(..., ge=1),
+        limit: int = Query(default=50, ge=1, le=200),
+        _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        if not settings.tiflux_api_token:
+            raise HTTPException(status_code=503, detail="Credenciais TiFlux não configuradas.")
+        desk_id = int(settings.tiflux_desk_comercial_id) if settings.tiflux_desk_comercial_id else 0
+        if desk_id < 1:
+            raise HTTPException(status_code=503, detail="Mesa Comercial TiFlux não configurada.")
+        client = TifluxClient(settings)
+        try:
+            raw_tickets = await client.list_tickets(
+                client_id=client_id,
+                desk_id=desk_id,
+                limit=limit,
+            )
+        except TifluxApiError as exc:
+            raise _tiflux_http_error(exc) from exc
+        previews: list[TifluxTicketPreview] = []
+        seen: set[str] = set()
+        for raw in raw_tickets:
+            ticket = unwrap_ticket_payload(raw) or raw
+            if not isinstance(ticket, dict):
+                continue
+            try:
+                preview = TifluxTicketPreview.model_validate(build_ticket_preview(ticket))
+            except (TypeError, ValueError, ValidationError):
+                continue
+            number = preview.ticket_number.strip()
+            if not number or number in seen:
+                continue
+            seen.add(number)
+            previews.append(preview)
+        previews.sort(key=lambda item: (item.closed, -int(item.ticket_number or 0)))
+        return {
+            "tickets": [item.model_dump() for item in previews],
+            "client_id": client_id,
+            "desk_id": desk_id,
+        }
+
+    @router.get("/tiflux/tickets/{ticket_number}")
+    async def get_tiflux_ticket(
+        ticket_number: str,
+        _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        if not settings.tiflux_api_token:
+            raise HTTPException(status_code=503, detail="Credenciais TiFlux não configuradas.")
+        number = ticket_number.strip()
+        if not number.isdigit():
+            raise HTTPException(status_code=422, detail="Número de ticket inválido.")
+        client = TifluxClient(settings)
+        try:
+            ticket = await client.get_ticket_by_number(number)
+        except TifluxApiError as exc:
+            raise _tiflux_http_error(exc) from exc
+        if ticket is None:
+            raise HTTPException(status_code=404, detail="Ticket TiFlux não encontrado.")
+        return TifluxTicketPreview.model_validate(build_ticket_preview(ticket)).model_dump()
+
+    @router.post("/refresh-ticket-links")
+    async def refresh_ticket_links(
+        request: Request,
+        body: QuoteTicketLinksRefreshBody,
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        if not settings.tiflux_api_token:
+            raise HTTPException(status_code=503, detail="Credenciais TiFlux não configuradas.")
+        svc = _service()
+        targets = svc.list_refreshable_ticket_links(body.quote_ids)
+        if not targets:
+            return QuoteTicketLinksRefreshResult(updated=[], failures=[]).model_dump()
+
+        tiflux = TifluxClient(settings)
+        failures: list[QuoteTicketLinkRefreshFailure] = []
+        resolved: list[dict[str, Any]] = []
+
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            async def _refresh_one(quote: QuoteRead) -> None:
+                number = str(quote.tiflux_ticket_number or "").strip()
+                try:
+                    ticket = await tiflux.get_ticket_by_number(number, http=http)
+                except TifluxApiError as exc:
+                    _logger.warning(
+                        "Falha ao consultar ticket %s do orçamento %s: %s",
+                        number,
+                        quote.id,
+                        exc,
+                    )
+                    failures.append(
+                        QuoteTicketLinkRefreshFailure(
+                            quote_id=quote.id,
+                            ticket_number=number or None,
+                            error=str(exc),
+                            status_code=exc.status_code,
+                        )
+                    )
+                    return
+                except Exception as exc:  # noqa: BLE001 — lote resiliente
+                    _logger.exception(
+                        "Erro inesperado ao consultar ticket %s do orçamento %s",
+                        number,
+                        quote.id,
+                    )
+                    failures.append(
+                        QuoteTicketLinkRefreshFailure(
+                            quote_id=quote.id,
+                            ticket_number=number or None,
+                            error=str(exc),
+                            status_code=None,
+                        )
+                    )
+                    return
+                if ticket is None:
+                    failures.append(
+                        QuoteTicketLinkRefreshFailure(
+                            quote_id=quote.id,
+                            ticket_number=number or None,
+                            error="Ticket TiFlux não encontrado.",
+                            status_code=404,
+                        )
+                    )
+                    return
+                preview = TifluxTicketPreview.model_validate(build_ticket_preview(ticket))
+                resolved.append(
+                    {
+                        "quote_id": quote.id,
+                        "link_status": preview.suggested_link_status,
+                        "catalog": preview.catalog,
+                        "snapshot": preview,
+                    }
+                )
+
+            await asyncio.gather(*[_refresh_one(quote) for quote in targets])
+
+        updated = svc.apply_ticket_link_updates(resolved)
+        log_action(
+            request,
+            action="orcamento.ticket.refresh",
+            resource="quotes",
+            detail={
+                "requested": len(body.quote_ids),
+                "targets": len(targets),
+                "updated": len(updated),
+                "failures": len(failures),
+            },
+            user=user,
+        )
+        return QuoteTicketLinksRefreshResult(updated=updated, failures=failures).model_dump()
+
     @router.get("/vhsys/categories")
     async def list_vhsys_categories(
         _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
@@ -698,6 +933,218 @@ def build_quotes_router() -> APIRouter:
             quote = _service().get(quote_id)
         except QuoteNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
+        return quote.model_dump()
+
+    @router.get("/{quote_id}/ticket-defaults")
+    async def get_quote_ticket_defaults(
+        quote_id: int,
+        _user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        if not settings.tiflux_api_token:
+            raise HTTPException(status_code=503, detail="Credenciais TiFlux não configuradas.")
+        try:
+            quote = _service().get(quote_id)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        client_id = quote.tiflux_client_id
+        if client_id is None or int(client_id) < 1:
+            raise HTTPException(
+                status_code=422,
+                detail="Orçamento sem cliente TiFlux. Vincule o cliente no passo 1.",
+            )
+        desk_id = _comercial_desk_id()
+        tiflux = TifluxClient(settings)
+        try:
+            desk, priorities_raw, catalogs_raw, requestors_raw = await asyncio.gather(
+                tiflux.get_desk(desk_id),
+                tiflux.list_desk_priorities(desk_id),
+                tiflux.list_desk_catalog_items(desk_id),
+                tiflux.get_client_requestors(int(client_id), limit=40),
+            )
+        except TifluxApiError as exc:
+            raise _tiflux_http_error(exc) from exc
+        catalog_items = [
+            item
+            for item in (_catalog_option(row) for row in catalogs_raw)
+            if item is not None
+        ]
+        priorities = [
+            item for item in (_named_option(row) for row in priorities_raw) if item is not None
+        ]
+        requestors = [
+            item
+            for item in (_requestor_option(row) for row in requestors_raw)
+            if item is not None
+        ]
+        desk_name = None
+        if isinstance(desk, dict):
+            desk_name = str(desk.get("display_name") or desk.get("name") or "").strip() or None
+        total = sum(item.total_value for item in quote.items)
+        defaults = QuoteTicketCreateDefaults(
+            desk_id=desk_id,
+            desk_name=desk_name,
+            client_id=int(client_id),
+            client_name=quote.client_name,
+            title=default_ticket_title(
+                quote_id=quote.id,
+                title=quote.title,
+                client_name=quote.client_name,
+            ),
+            description=default_ticket_description(
+                quote_id=quote.id,
+                client_name=quote.client_name,
+                cnpj=quote.cnpj,
+                item_count=len(quote.items),
+                total=total,
+            ),
+            catalog_items=catalog_items,
+            default_catalog_item_id=pick_default_catalog_item_id(catalogs_raw),
+            priorities=priorities,
+            default_priority_id=pick_default_priority_id(priorities_raw),
+            requestors=requestors,
+            default_requestor_id=requestors[0].id if requestors else None,
+        )
+        return defaults.model_dump()
+
+    @router.post("/{quote_id}/ticket")
+    async def link_quote_ticket(
+        request: Request,
+        quote_id: int,
+        body: QuoteTicketLinkBody,
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        if not settings.tiflux_api_token:
+            raise HTTPException(status_code=503, detail="Credenciais TiFlux não configuradas.")
+        svc = _service()
+        try:
+            svc.get(quote_id)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        client = TifluxClient(settings)
+        try:
+            ticket = await client.get_ticket_by_number(body.ticket_number)
+        except TifluxApiError as exc:
+            raise _tiflux_http_error(exc) from exc
+        if ticket is None:
+            raise HTTPException(status_code=404, detail="Ticket TiFlux não encontrado.")
+        preview = TifluxTicketPreview.model_validate(build_ticket_preview(ticket))
+        quote = svc.link_ticket(
+            quote_id,
+            preview.ticket_number or body.ticket_number,
+            catalog=preview.catalog,
+            link_status=preview.suggested_link_status,
+            snapshot=preview,
+        )
+        log_action(
+            request,
+            action="orcamento.ticket.link",
+            resource=str(quote.id),
+            detail={
+                "ticket_number": quote.tiflux_ticket_number,
+                "ticket_link_status": quote.ticket_link_status,
+            },
+            user=user,
+        )
+        return quote.model_dump()
+
+    @router.post("/{quote_id}/ticket/create")
+    async def create_quote_ticket(
+        request: Request,
+        quote_id: int,
+        body: QuoteTicketCreateBody,
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        settings = get_settings()
+        if not settings.tiflux_api_token:
+            raise HTTPException(status_code=503, detail="Credenciais TiFlux não configuradas.")
+        svc = _service()
+        try:
+            quote = svc.get(quote_id)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if quote.tiflux_ticket_number:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Orçamento já vinculado ao ticket #{quote.tiflux_ticket_number}.",
+            )
+        client_id = quote.tiflux_client_id
+        if client_id is None or int(client_id) < 1:
+            raise HTTPException(
+                status_code=422,
+                detail="Orçamento sem cliente TiFlux. Vincule o cliente no passo 1.",
+            )
+        desk_id = _comercial_desk_id()
+        payload = build_create_ticket_payload(
+            title=body.title,
+            description=body.description,
+            client_id=int(client_id),
+            desk_id=desk_id,
+            services_catalogs_item_id=body.services_catalogs_item_id,
+            priority_id=body.priority_id,
+            requestor_id=body.requestor_id,
+            requestor_name=body.requestor_name,
+            requestor_email=body.requestor_email,
+        )
+        tiflux = TifluxClient(settings)
+        try:
+            created = await tiflux.create_ticket(payload)
+        except TifluxApiError as exc:
+            raise _tiflux_http_error(exc) from exc
+        ticket = unwrap_ticket_payload(created) or created
+        number = extract_ticket_number(ticket) if isinstance(ticket, dict) else None
+        if not number:
+            raise HTTPException(status_code=502, detail="TiFlux criou o ticket sem número.")
+        if isinstance(ticket, dict) and ticket.get("is_closed") is not None:
+            preview_source = ticket
+        else:
+            try:
+                fetched = await tiflux.get_ticket_by_number(number)
+            except TifluxApiError as exc:
+                raise _tiflux_http_error(exc) from exc
+            if fetched is None:
+                raise HTTPException(status_code=502, detail="Ticket criado, mas não foi possível consultá-lo.")
+            preview_source = fetched
+        preview = TifluxTicketPreview.model_validate(build_ticket_preview(preview_source))
+        linked = svc.link_ticket(
+            quote_id,
+            preview.ticket_number or number,
+            catalog=preview.catalog,
+            link_status=preview.suggested_link_status,
+            snapshot=preview,
+        )
+        log_action(
+            request,
+            action="orcamento.ticket.create",
+            resource=str(linked.id),
+            detail={
+                "ticket_number": linked.tiflux_ticket_number,
+                "ticket_link_status": linked.ticket_link_status,
+                "desk_id": desk_id,
+            },
+            user=user,
+        )
+        return linked.model_dump()
+
+    @router.delete("/{quote_id}/ticket")
+    async def unlink_quote_ticket(
+        request: Request,
+        quote_id: int,
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+    ) -> dict[str, Any]:
+        svc = _service()
+        try:
+            quote = svc.unlink_ticket(quote_id)
+        except QuoteNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        log_action(
+            request,
+            action="orcamento.ticket.unlink",
+            resource=str(quote_id),
+            detail={},
+            user=user,
+        )
         return quote.model_dump()
 
     @router.put("/{quote_id}")

@@ -57,7 +57,7 @@ export function QuoteLeadPipelinePanel({
 
   return (
     <section className="space-y-4" aria-label="Pipeline por temperatura de lead">
-      <div className="flex flex-nowrap items-center justify-center gap-3 overflow-visible sm:gap-6">
+      <div className="flex w-full flex-nowrap items-center justify-center gap-3 overflow-x-auto sm:gap-6">
         {loading
           ? LEAD_ORDER.map((temp) => (
               <div key={temp} className="lead-circle-slot">

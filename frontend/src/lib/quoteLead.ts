@@ -1,4 +1,5 @@
-import type { LeadTemperature, QuoteRead, QuoteStatus } from '@/api/client'
+import type { LeadTemperature, QuoteRead, QuoteStatus, TicketLinkStatus } from '@/api/client'
+import { isTerminalTicketLink } from '@/lib/quoteTicketLink'
 
 export const TEMP_LABELS: Record<LeadTemperature, string> = {
   frio: 'Frio',
@@ -57,10 +58,17 @@ export function isOpenPipelineStatus(status: QuoteStatus): status is OpenQuoteSt
   return (OPEN_QUOTE_STATUSES as readonly QuoteStatus[]).includes(status)
 }
 
+export function countsTowardLead(
+  quote: QuoteRead,
+  ticketLinkStatus: TicketLinkStatus | null | undefined = quote.ticket_link_status,
+): boolean {
+  return isOpenPipelineStatus(quote.status) && !isTerminalTicketLink(ticketLinkStatus)
+}
+
 export function countByLead(quotes: QuoteRead[]): Record<LeadTemperature, number> {
   const counts: Record<LeadTemperature, number> = { frio: 0, morno: 0, quente: 0 }
   for (const quote of quotes) {
-    if (!isOpenPipelineStatus(quote.status)) continue
+    if (!countsTowardLead(quote)) continue
     const temp = quote.lead_temperature
     if (temp === null) continue
     counts[temp] += 1
@@ -72,7 +80,7 @@ export function countByLead(quotes: QuoteRead[]): Record<LeadTemperature, number
 export function sumByLead(quotes: QuoteRead[]): Record<LeadTemperature, number> {
   const sums: Record<LeadTemperature, number> = { frio: 0, morno: 0, quente: 0 }
   for (const quote of quotes) {
-    if (!isOpenPipelineStatus(quote.status)) continue
+    if (!countsTowardLead(quote)) continue
     const temp = quote.lead_temperature
     if (temp === null) continue
     const total = quote.items.reduce((acc, item) => acc + item.total_value, 0)
@@ -83,9 +91,7 @@ export function sumByLead(quotes: QuoteRead[]): Record<LeadTemperature, number> 
 
 export function hotPendingQuotes(quotes: QuoteRead[], limit = 5): QuoteRead[] {
   return quotes
-    .filter(
-      (quote) => isOpenPipelineStatus(quote.status) && quote.lead_temperature === 'quente',
-    )
+    .filter((quote) => countsTowardLead(quote) && quote.lead_temperature === 'quente')
     .sort(
       (a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime(),
     )

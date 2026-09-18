@@ -697,16 +697,150 @@ class TifluxClient:
             return []
         return _extract_client_list(response.json())
 
+    async def get_ticket_by_number(
+        self,
+        ticket_number: int | str,
+        *,
+        http: httpx.AsyncClient | None = None,
+    ) -> dict | None:
+        """GET /tickets/{ticket_number} — OpenAPI `get_tickets_ticket_number`. 404 → None."""
+        number = str(ticket_number).strip()
+        if not number.isdigit():
+            raise TifluxApiError("Número de ticket inválido.", 422)
+
+        async def _fetch(client: httpx.AsyncClient) -> dict | None:
+            response = await self._get_with_retry(
+                client,
+                f"{self._base}/tickets/{number}",
+                headers=self._auth_headers(),
+                params=None,
+                action="consultar ticket TiFlux",
+                allow_statuses=frozenset({404}),
+            )
+            if response.status_code == 404:
+                return None
+            data = response.json()
+            if isinstance(data, dict):
+                nested = data.get("ticket")
+                if isinstance(nested, dict):
+                    return nested
+                return data
+            raise TifluxApiError("Resposta inesperada ao consultar ticket TiFlux.", 502, str(data))
+
+        if http is not None:
+            return await _fetch(http)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            return await _fetch(client)
+
+    async def list_tickets(
+        self,
+        *,
+        client_id: int,
+        desk_id: int | None = None,
+        is_closed: bool | None = None,
+        limit: int = 50,
+        offset: int = 1,
+        http: httpx.AsyncClient | None = None,
+    ) -> list[dict]:
+        """GET /tickets — filtros oficiais `client_ids` + `desk_ids` (CSV)."""
+        params: dict[str, int | str] = {
+            "offset": max(1, offset),
+            "limit": min(max(limit, 1), self.PAGE_LIMIT),
+            "client_ids": str(int(client_id)),
+        }
+        if desk_id:
+            params["desk_ids"] = str(int(desk_id))
+        if is_closed is not None:
+            params["is_closed"] = "true" if is_closed else "false"
+
+        async def _fetch(client: httpx.AsyncClient) -> list[dict]:
+            response = await self._get_with_retry(
+                client,
+                f"{self._base}/tickets",
+                headers=self._auth_headers(),
+                params=params,
+                action="listar tickets TiFlux",
+            )
+            return _extract_client_list(response.json())
+
+        if http is not None:
+            return await _fetch(http)
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            return await _fetch(client)
+
+    async def get_desk(self, desk_id: int) -> dict | None:
+        """GET /desks/{id}."""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await self._get_with_retry(
+                client,
+                f"{self._base}/desks/{int(desk_id)}",
+                headers=self._auth_headers(),
+                params=None,
+                action="consultar mesa TiFlux",
+                allow_statuses=frozenset({404}),
+            )
+        if response.status_code == 404:
+            return None
+        data = response.json()
+        return data if isinstance(data, dict) else None
+
+    async def list_desk_priorities(self, desk_id: int) -> list[dict]:
+        """GET /desks/{id}/priorities."""
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await self._get_with_retry(
+                client,
+                f"{self._base}/desks/{int(desk_id)}/priorities",
+                headers=self._auth_headers(),
+                params={"offset": 1, "limit": self.PAGE_LIMIT},
+                action="listar prioridades da mesa TiFlux",
+            )
+        return _extract_client_list(response.json())
+
+    async def list_desk_catalog_items(self, desk_id: int, *, limit: int = 200) -> list[dict]:
+        """GET /desks/{id}/services-catalogs-items."""
+        collected: list[dict] = []
+        offset = 1
+        cap = min(max(limit, 1), 400)
+        async with httpx.AsyncClient(timeout=30.0) as http:
+            while len(collected) < cap:
+                page_size = min(self.PAGE_LIMIT, cap - len(collected))
+                response = await self._get_with_retry(
+                    http,
+                    f"{self._base}/desks/{int(desk_id)}/services-catalogs-items",
+                    headers=self._auth_headers(),
+                    params={"offset": offset, "limit": page_size},
+                    action="listar catálogo da mesa TiFlux",
+                )
+                items = _extract_client_list(response.json())
+                if not items:
+                    break
+                collected.extend(item for item in items if isinstance(item, dict))
+                if len(items) < page_size:
+                    break
+                offset += 1
+        return collected
+
     async def create_ticket(self, payload: dict) -> dict:
-        """POST /tickets — O2.0 Go (doc). Sem create_contract (No-Go)."""
+        """POST /tickets — O2.0 Go (doc). Multipart; JSON dispara wrap Rails `:ticket`."""
         if not isinstance(payload, dict) or not payload:
             raise TifluxApiError("Payload de ticket TiFlux inválido.", 422)
+        if "ticket" in payload:
+            raise TifluxApiError("Payload de ticket TiFlux inválido.", 422)
+
+        form = {
+            str(key): str(value)
+            for key, value in payload.items()
+            if value is not None and str(value).strip() != ""
+        }
+        files = {key: (None, value) for key, value in form.items()}
 
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{self._base}/tickets",
-                headers=self._json_headers(),
-                json=payload,
+                headers=self._auth_headers(),
+                files=files,
             )
 
         self._ensure_ok(response, "criar ticket TiFlux")
@@ -1160,7 +1294,7 @@ def _extract_client_list(data: object) -> list[dict]:
 
     if isinstance(data, dict):
 
-        for key in ("clients", "data", "items", "results", "billings", "appointments"):
+        for key in ("clients", "tickets", "data", "items", "results", "billings", "appointments"):
 
             chunk = data.get(key)
 

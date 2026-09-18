@@ -17,6 +17,9 @@ todos:
   - id: o3-contrato-followup
     content: "O3: gerar contrato TiFlux + follow-up + temperatura/filtros"
     status: pending
+  - id: o3-ticket-link
+    content: "O3b: vínculo ticket TiFlux na lista de orçamentos (classificação novo/aprovado/rejeitado + pipeline)"
+    status: pending
   - id: p1-qa-docs
     content: "P1: testes dry-run + docs/hub + aceite financeiro"
     status: pending
@@ -235,6 +238,7 @@ Cada fase = um especialista por vez (evitar misturar FE+BE+n8n na mesma entrega)
 | **O2** | Extensões TiFlux/VHSYS + webhook commercial + fluxo n8n 1 | Backend → n8n |
 | **F1** | billing_runs UI/API + fluxo n8n 2 + retenção | Backend → Frontend → n8n |
 | **O3** | approve → gerar contrato; follow-up e-mail; temperatura/filtros | Backend/FE → n8n |
+| **O3b** | Vínculo ticket TiFlux na lista (`SPEC_QUOTE_TIFLUX_TICKET_LINK.md`): GET `/tickets/{n}`, classificar catálogo/`is_closed`, excluir terminais do lead | Backend → Frontend |
 | **P1** | Testes pytest + e2e dry-run + docs em `docs/hub/` | QA / Docs |
 
 Gate entre fases: dry-run com 1 cliente teste; sem POST fiscal real até F1 com `HUB_DRY_RUN=false` aprovado pelo financeiro.

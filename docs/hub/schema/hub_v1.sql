@@ -48,6 +48,12 @@ CREATE TABLE quotes (
     title                   TEXT,   -- nome interno (UI); NÃO vai ao PDF
     internal_notes          TEXT,   -- observações internas (UI/busca); NUNCA vai ao PDF
     tiflux_ticket_number    TEXT,
+    ticket_link_status      TEXT
+                            CHECK (ticket_link_status IS NULL
+                                OR ticket_link_status IN ('novo', 'aprovado', 'rejeitado')),
+    ticket_link_checked_at  TEXT,
+    ticket_link_catalog     TEXT,
+    ticket_link_snapshot_json TEXT,
     vhsys_os_id             TEXT,
     pdf_path                TEXT,   -- UUID filename; fora web root
     active_quote_version_id INTEGER NULL,
