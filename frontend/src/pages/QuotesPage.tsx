@@ -104,47 +104,6 @@ function quoteTotal(quote: QuoteRead): number {
   return quote.items.reduce((sum, item) => sum + item.total_value, 0)
 }
 
-// #region agent log
-function debugQuoteCardLayout(root: HTMLElement | null, quote: QuoteRead): void {
-  if (!root) return
-  const left = root.querySelector('[data-debug="quote-left"]') as HTMLElement | null
-  const actions = root.querySelector('[data-debug="quote-actions"]') as HTMLElement | null
-  const firstBtn = actions?.firstElementChild as HTMLElement | undefined
-  const lastBtn = actions?.lastElementChild as HTMLElement | undefined
-  const wrapped = Boolean(
-    firstBtn && lastBtn && lastBtn.offsetTop - firstBtn.offsetTop > 4,
-  )
-  fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2c5947' },
-    body: JSON.stringify({
-      sessionId: '2c5947',
-      runId: 'post-fix',
-      hypothesisId: 'A-E',
-      location: 'QuotesPage.tsx:card',
-      message: 'quote card layout',
-      data: {
-        quoteId: quote.id,
-        titleLen: (quote.title ?? '').length,
-        clientLen: (quote.client_name ?? '').length,
-        hasTitle: Boolean(quote.title),
-        hasLead: Boolean(quote.lead_temperature),
-        cardW: root.offsetWidth,
-        leftW: left?.offsetWidth ?? 0,
-        actionsW: actions?.offsetWidth ?? 0,
-        actionsScrollW: actions?.scrollWidth ?? 0,
-        actionsH: actions?.offsetHeight ?? 0,
-        wrapped,
-        firstBtnTop: firstBtn?.offsetTop ?? null,
-        lastBtnTop: lastBtn?.offsetTop ?? null,
-        innerW: window.innerWidth,
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {})
-}
-// #endregion
-
 export function QuotesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -781,15 +740,8 @@ export function QuotesPage() {
                   }
                 }}
               >
-                <CardContent
-                  className="grid min-w-0 grid-cols-1 items-start gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
-                  ref={(el) => {
-                    // #region agent log
-                    debugQuoteCardLayout(el, quote)
-                    // #endregion
-                  }}
-                >
-                  <div className="min-w-0 space-y-1 overflow-hidden" data-debug="quote-left">
+                <CardContent className="grid min-w-0 grid-cols-1 items-start gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
+                  <div className="min-w-0 space-y-1 overflow-hidden">
                     <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="font-mono text-sm font-medium">
                         {isQuoteTemplatePlaceholderCnpj(quote.cnpj)
@@ -824,10 +776,7 @@ export function QuotesPage() {
                       · atualizado {formatDate(quote.updated_at)}
                     </p>
                   </div>
-                  <div
-                    className="flex w-full flex-wrap gap-2 lg:w-auto lg:shrink-0 lg:flex-nowrap lg:justify-end"
-                    data-debug="quote-actions"
-                  >
+                  <div className="flex w-full flex-wrap gap-2 lg:w-auto lg:shrink-0 lg:flex-nowrap lg:justify-end">
                     {isQuoteSubmittable(quote.status) &&
                     !isQuoteTemplatePlaceholderCnpj(quote.cnpj) && (
                       <Button
