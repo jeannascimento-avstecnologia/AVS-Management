@@ -104,6 +104,47 @@ function quoteTotal(quote: QuoteRead): number {
   return quote.items.reduce((sum, item) => sum + item.total_value, 0)
 }
 
+// #region agent log
+function debugQuoteCardLayout(root: HTMLElement | null, quote: QuoteRead): void {
+  if (!root) return
+  const left = root.querySelector('[data-debug="quote-left"]') as HTMLElement | null
+  const actions = root.querySelector('[data-debug="quote-actions"]') as HTMLElement | null
+  const firstBtn = actions?.firstElementChild as HTMLElement | undefined
+  const lastBtn = actions?.lastElementChild as HTMLElement | undefined
+  const wrapped = Boolean(
+    firstBtn && lastBtn && lastBtn.offsetTop - firstBtn.offsetTop > 4,
+  )
+  fetch('http://127.0.0.1:7624/ingest/4fbad495-1d4e-4120-8a74-d59ccbb75445', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '2c5947' },
+    body: JSON.stringify({
+      sessionId: '2c5947',
+      runId: 'post-fix',
+      hypothesisId: 'A-E',
+      location: 'QuotesPage.tsx:card',
+      message: 'quote card layout',
+      data: {
+        quoteId: quote.id,
+        titleLen: (quote.title ?? '').length,
+        clientLen: (quote.client_name ?? '').length,
+        hasTitle: Boolean(quote.title),
+        hasLead: Boolean(quote.lead_temperature),
+        cardW: root.offsetWidth,
+        leftW: left?.offsetWidth ?? 0,
+        actionsW: actions?.offsetWidth ?? 0,
+        actionsScrollW: actions?.scrollWidth ?? 0,
+        actionsH: actions?.offsetHeight ?? 0,
+        wrapped,
+        firstBtnTop: firstBtn?.offsetTop ?? null,
+        lastBtnTop: lastBtn?.offsetTop ?? null,
+        innerW: window.innerWidth,
+      },
+      timestamp: Date.now(),
+    }),
+  }).catch(() => {})
+}
+// #endregion
+
 export function QuotesPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -352,7 +393,7 @@ export function QuotesPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="mx-auto w-full max-w-7xl space-y-6">
       <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <div className="mb-2 inline-flex items-center gap-2 rounded-lg bg-aurora-green-muted px-3 py-1.5 text-aurora-green">
@@ -740,9 +781,16 @@ export function QuotesPage() {
                   }
                 }}
               >
-                <CardContent className="flex min-w-0 flex-col gap-3 p-4 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="min-w-0 space-y-1">
-                    <div className="flex flex-wrap items-center gap-2">
+                <CardContent
+                  className="grid min-w-0 grid-cols-1 items-start gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center"
+                  ref={(el) => {
+                    // #region agent log
+                    debugQuoteCardLayout(el, quote)
+                    // #endregion
+                  }}
+                >
+                  <div className="min-w-0 space-y-1 overflow-hidden" data-debug="quote-left">
+                    <div className="flex min-w-0 flex-wrap items-center gap-2">
                       <span className="font-mono text-sm font-medium">
                         {isQuoteTemplatePlaceholderCnpj(quote.cnpj)
                           ? 'Sem cliente'
@@ -755,14 +803,19 @@ export function QuotesPage() {
                         <Badge variant="outline">{TEMP_LABELS[quote.lead_temperature]}</Badge>
                       ) : null}
                       <span className="text-xs text-muted-foreground">#{quote.id}</span>
-                      {quote.title ? (
-                        <span className="truncate text-xs text-muted-foreground">{quote.title}</span>
-                      ) : null}
                     </div>
-                    <p className="truncate text-sm">
+                    {quote.title ? (
+                      <p className="truncate text-xs text-muted-foreground" title={quote.title}>
+                        {quote.title}
+                      </p>
+                    ) : null}
+                    <p
+                      className="truncate text-sm"
+                      title={quote.client_name || undefined}
+                    >
                       {quote.client_name || 'Cliente não informado'}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="truncate text-xs text-muted-foreground">
                       {quote.items.length} item(ns) ·{' '}
                       {quoteTotal(quote).toLocaleString('pt-BR', {
                         style: 'currency',
@@ -771,7 +824,10 @@ export function QuotesPage() {
                       · atualizado {formatDate(quote.updated_at)}
                     </p>
                   </div>
-                  <div className="flex min-w-0 flex-wrap gap-2">
+                  <div
+                    className="flex w-full flex-wrap gap-2 lg:w-auto lg:shrink-0 lg:flex-nowrap lg:justify-end"
+                    data-debug="quote-actions"
+                  >
                     {isQuoteSubmittable(quote.status) &&
                     !isQuoteTemplatePlaceholderCnpj(quote.cnpj) && (
                       <Button
