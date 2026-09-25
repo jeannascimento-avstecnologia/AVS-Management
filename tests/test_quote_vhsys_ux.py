@@ -118,7 +118,17 @@ def test_vhsys_catalog_create_via_dupla(
     ) as mocked:
         res = quotes_client.post(
             "/orcamentos/vhsys/catalog",
-            json={"name": "Servico Novo AVS", "unit_value": 150, "tipo_produto": "Servico"},
+            json={
+                "name": "Servico Novo AVS",
+                "unit_value": 150,
+                "cost_value": 40,
+                "tipo_produto": "Servico",
+                "unidade_produto": "UN",
+                "id_categoria": 10,
+                "id_subcategoria": 22,
+                "observacao": "",
+                "status_produto": "Ativo",
+            },
         )
     assert res.status_code == 200
     body = res.json()
@@ -147,12 +157,48 @@ def test_vhsys_catalog_create_reuses_existing(
     ):
         res = quotes_client.post(
             "/orcamentos/vhsys/catalog",
-            json={"name": "Ja Existe", "unit_value": 99},
+            json={
+                "name": "Ja Existe",
+                "unit_value": 99,
+                "cost_value": 10,
+                "unidade_produto": "HR",
+                "id_categoria": 10,
+                "id_subcategoria": 22,
+            },
         )
     assert res.status_code == 200
     assert res.json()["created"] is False
     assert res.json()["item"]["id"] == 7
     clear_settings_cache()
+
+
+def test_vhsys_catalog_create_requires_service_fields(quotes_client: TestClient) -> None:
+    res = quotes_client.post("/orcamentos/vhsys/catalog", json={"name": "Sem custo"})
+    assert res.status_code == 422
+
+
+def test_vhsys_catalog_payload_omits_blank_fields() -> None:
+    from src.integrations.vhsys_client import build_vhsys_catalog_payload
+
+    payload = build_vhsys_catalog_payload(
+        desc_produto="Guilherme",
+        valor_produto=10,
+        tipo_produto="Servico",
+        unidade_produto="UN",
+        id_categoria=3,
+        id_subcategoria=8,
+        valor_custo_produto=2,
+        obs_produto="  ",
+        status_produto=None,
+        cod_produto="",
+    )
+    assert payload["desc_produto"] == "Guilherme"
+    assert payload["valor_custo_produto"] == "2.00"
+    assert payload["id_categoria"] == 3
+    assert "obs_produto" not in payload
+    assert "status_produto" not in payload
+    assert "cod_produto" not in payload
+    assert "" not in payload.values()
 
 
 def test_vhsys_catalog_all_default_limit_zero(
@@ -407,6 +453,43 @@ def test_tiflux_requestor_search_company_first(
     assert [c["scope"] for c in contacts] == ["company", "other"]
     assert contacts[0]["email"] == "ana@empresa.com"
     assert contacts[1]["email"] == "ana@outra.com"
+    clear_settings_cache()
+
+
+def test_tiflux_requestor_search_403_falls_back_to_client(
+    quotes_client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setenv("TIFLUX_API_TOKEN", "tf-tok")
+    clear_settings_cache()
+    guilherme = {
+        "first_name": "Guilherme",
+        "last_name": "Silva",
+        "email": "guilherme@cliente.com",
+        "phone": "11999990000",
+    }
+    with (
+        patch(
+            "src.quotes.router.TifluxClient.get_client_requestors",
+            new=AsyncMock(return_value=[guilherme]),
+        ) as client_requestors,
+        patch(
+            "src.quotes.router.TifluxClient.search_requestors",
+            new=AsyncMock(return_value=([], 403)),
+        ) as global_search,
+        caplog.at_level("WARNING"),
+    ):
+        listed = quotes_client.get("/orcamentos/tiflux/requestors?client_id=99")
+        searched = quotes_client.get("/orcamentos/tiflux/requestors?client_id=99&q=Guilherme")
+    assert listed.status_code == 200, listed.text
+    assert searched.status_code == 200, searched.text
+    assert listed.json()["contacts"][0]["name"] == "Guilherme Silva"
+    assert listed.json()["contacts"][0]["scope"] == "company"
+    assert searched.json()["contacts"][0]["email"] == "guilherme@cliente.com"
+    assert searched.json()["contacts"][0]["scope"] == "company"
+    assert global_search.await_count == 1
+    assert client_requestors.await_count == 2
+    assert "fallback para GET /clients/99/requestors" in caplog.text
+    assert "status=403" in caplog.text
     clear_settings_cache()
 
 

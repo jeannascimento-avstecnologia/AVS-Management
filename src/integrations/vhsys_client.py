@@ -529,6 +529,9 @@ class VhsysClient:
         cod_produto: str | None = None,
         id_categoria: int | None = None,
         id_subcategoria: int | None = None,
+        valor_custo_produto: float | None = None,
+        obs_produto: str | None = None,
+        status_produto: str | None = None,
     ) -> dict:
         """POST /produtos — cadastra produto/serviço no VHSYS (via dupla do orçamento)."""
         name = (desc_produto or "").strip()
@@ -537,19 +540,18 @@ class VhsysClient:
         tipo = (tipo_produto or "Servico").strip()
         if tipo not in {"Servico", "Produto"}:
             raise VhsysApiError("tipo_produto deve ser Servico ou Produto.", 422)
-        payload: dict[str, str | float | int] = {
-            "desc_produto": name,
-            "tipo_produto": tipo,
-            "valor_produto": f"{max(0.0, float(valor_produto)):.2f}",
-            "unidade_produto": (unidade_produto or "UN").strip() or "UN",
-        }
-        code = (cod_produto or "").strip()
-        if code:
-            payload["cod_produto"] = code
-        if id_categoria is not None and int(id_categoria) > 0:
-            payload["id_categoria"] = int(id_categoria)
-        if id_subcategoria is not None and int(id_subcategoria) > 0:
-            payload["id_subcategoria"] = int(id_subcategoria)
+        payload = build_vhsys_catalog_payload(
+            desc_produto=name,
+            valor_produto=valor_produto,
+            tipo_produto=tipo,
+            unidade_produto=unidade_produto,
+            cod_produto=cod_produto,
+            id_categoria=id_categoria,
+            id_subcategoria=id_subcategoria,
+            valor_custo_produto=valor_custo_produto,
+            obs_produto=obs_produto,
+            status_produto=status_produto,
+        )
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{self._base}/produtos",
@@ -585,6 +587,8 @@ class VhsysClient:
             row["id_categoria"] = int(id_categoria)
         if id_subcategoria is not None and "id_subcategoria" not in row:
             row["id_subcategoria"] = int(id_subcategoria)
+        if valor_custo_produto is not None and "valor_custo_produto" not in row:
+            row["valor_custo_produto"] = payload["valor_custo_produto"]
         return row
 
     async def find_or_create_catalog_item(
@@ -596,6 +600,9 @@ class VhsysClient:
         unidade_produto: str = "UN",
         id_categoria: int | None = None,
         id_subcategoria: int | None = None,
+        cost_value: float | None = None,
+        observacao: str | None = None,
+        status_produto: str | None = None,
     ) -> tuple[dict, bool]:
         """
         Via dupla: se nome já existir (casefold) no catálogo ativo, devolve existente.
@@ -619,6 +626,9 @@ class VhsysClient:
             unidade_produto=unidade_produto,
             id_categoria=id_categoria,
             id_subcategoria=id_subcategoria,
+            valor_custo_produto=cost_value,
+            obs_produto=observacao,
+            status_produto=status_produto,
         )
         normalized = _normalize_catalog_product(raw)
         if normalized is None:
@@ -846,6 +856,46 @@ def _normalize_catalog_category(row: dict) -> dict | None:
         "name": name,
         "subcategories": _subcategories_from_category_row(row),
     }
+
+
+def build_vhsys_catalog_payload(
+    *,
+    desc_produto: str,
+    valor_produto: float,
+    tipo_produto: str,
+    unidade_produto: str,
+    cod_produto: str | None = None,
+    id_categoria: int | None = None,
+    id_subcategoria: int | None = None,
+    valor_custo_produto: float | None = None,
+    obs_produto: str | None = None,
+    status_produto: str | None = None,
+) -> dict[str, str | float | int]:
+    """Monta POST /produtos. Chave vazia não entra no JSON."""
+    payload: dict[str, str | float | int] = {
+        "desc_produto": desc_produto.strip(),
+        "tipo_produto": tipo_produto.strip(),
+        "valor_produto": f"{max(0.0, float(valor_produto)):.2f}",
+    }
+    unit = (unidade_produto or "").strip()
+    if unit:
+        payload["unidade_produto"] = unit
+    code = (cod_produto or "").strip()
+    if code:
+        payload["cod_produto"] = code
+    if id_categoria is not None and int(id_categoria) > 0:
+        payload["id_categoria"] = int(id_categoria)
+    if id_subcategoria is not None and int(id_subcategoria) > 0:
+        payload["id_subcategoria"] = int(id_subcategoria)
+    if valor_custo_produto is not None:
+        payload["valor_custo_produto"] = f"{max(0.0, float(valor_custo_produto)):.2f}"
+    note = (obs_produto or "").strip()
+    if note:
+        payload["obs_produto"] = note
+    status = (status_produto or "").strip()
+    if status:
+        payload["status_produto"] = status
+    return payload
 
 
 def _normalize_catalog_product(row: dict) -> dict | None:

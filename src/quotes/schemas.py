@@ -285,22 +285,33 @@ class QuoteItemWrite(BaseModel):
 
 
 class VhsysCatalogCreateBody(BaseModel):
-    """Via dupla — cadastra no VHSYS se nome ainda não existir."""
+    """Cadastro de serviço VHSYS a partir do orçamento. Produto fica fora deste contrato."""
 
     name: str = Field(min_length=1, max_length=500)
-    unit_value: float = Field(default=0.0, ge=0)
-    tipo_produto: Literal["Servico", "Produto"] = "Servico"
-    unidade_produto: str = Field(default="UN", min_length=1, max_length=20)
-    id_categoria: int | None = Field(default=None, ge=1)
-    id_subcategoria: int | None = Field(default=None, ge=1)
+    unit_value: float = Field(ge=0)
+    cost_value: float = Field(ge=0)
+    tipo_produto: Literal["Servico"] = "Servico"
+    unidade_produto: str = Field(min_length=1, max_length=20)
+    id_categoria: int = Field(ge=1)
+    id_subcategoria: int = Field(ge=1)
+    observacao: str | None = Field(default=None, max_length=2000)
+    status_produto: Literal["Ativo", "Inativo"] | None = None
 
-    @field_validator("name")
+    @field_validator("name", "unidade_produto")
     @classmethod
-    def _strip_name(cls, value: str) -> str:
+    def _strip_required(cls, value: str) -> str:
         cleaned = value.strip()
         if not cleaned:
-            raise ValueError("Nome do produto é obrigatório.")
+            raise ValueError("Campo obrigatório.")
         return cleaned
+
+    @field_validator("observacao", mode="before")
+    @classmethod
+    def _blank_observacao(cls, value: object) -> str | None:
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
 
 
 class QuoteItemRead(BaseModel):

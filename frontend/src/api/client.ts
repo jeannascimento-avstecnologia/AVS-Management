@@ -1197,11 +1197,14 @@ export const api = {
   /** Via dupla: reutiliza se nome existir; senão POST /produtos no VHSYS. */
   createVhsysCatalogItem: (body: {
     name: string
-    unit_value?: number
-    tipo_produto?: 'Servico' | 'Produto'
-    unidade_produto?: string
-    id_categoria?: number | null
-    id_subcategoria?: number | null
+    unit_value: number
+    cost_value: number
+    tipo_produto?: 'Servico'
+    unidade_produto: string
+    id_categoria: number
+    id_subcategoria: number
+    observacao?: string
+    status_produto?: 'Ativo' | 'Inativo'
   }) =>
     request<{ item: VhsysCatalogItem; created: boolean }>('/orcamentos/vhsys/catalog', {
       method: 'POST',

@@ -399,11 +399,7 @@ class TifluxClient:
                     params={"offset": offset, "limit": page_size},
                 )
                 self._ensure_ok(response, "listar solicitantes do cliente TiFlux")
-                payload = response.json()
-                if isinstance(payload, list):
-                    items = [x for x in payload if isinstance(x, dict)]
-                else:
-                    items = _extract_client_list(payload)
+                items = _extract_requestor_list(response.json())
                 if not items:
                     break
                 collected.extend(items)
@@ -438,12 +434,7 @@ class TifluxClient:
         if response.status_code == 403:
             return [], 403
         self._ensure_ok(response, "buscar solicitantes TiFlux")
-        payload = response.json()
-        if isinstance(payload, list):
-            items = [x for x in payload if isinstance(x, dict)]
-        else:
-            items = _extract_client_list(payload)
-        return items, response.status_code
+        return _extract_requestor_list(response.json()), response.status_code
 
     async def get_client_desks(self, client_id: int) -> list[dict]:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -1284,6 +1275,17 @@ def _latest_datetime_from_items(items: list[dict], keys: tuple[str, ...]) -> dat
             if dt and (latest is None or dt > latest):
                 latest = dt
     return latest
+
+
+def _extract_requestor_list(data: object) -> list[dict]:
+    if isinstance(data, list):
+        return [row for row in data if isinstance(row, dict)]
+    if isinstance(data, dict):
+        for key in ("requestors", "data", "items", "results"):
+            chunk = data.get(key)
+            if isinstance(chunk, list):
+                return [row for row in chunk if isinstance(row, dict)]
+    return _extract_client_list(data)
 
 
 def _extract_client_list(data: object) -> list[dict]:

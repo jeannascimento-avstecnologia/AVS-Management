@@ -51,6 +51,7 @@ import {
   type QuoteMarginKind,
   type LegacyModuleKind,
   type TifluxRequestorHit,
+  type VhsysCatalogItem,
 } from '@/api/client'
 import {
   QuoteClientRegisterDialog,
@@ -65,6 +66,7 @@ import { localId } from '@/lib/localId'
 import { groupHomePath } from '@/lib/groupHome'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
 import { VhsysItemSearch } from '@/components/quotes/VhsysItemSearch'
+import { VhsysServiceCreateDialog } from '@/components/quotes/VhsysServiceCreateDialog'
 import { inferMarginKindFromCatalog } from '@/lib/quoteMargin'
 import { moduleTitleFromTemplate } from '@/lib/quoteModuleTemplates'
 import { VhsysPartySearch } from '@/components/quotes/VhsysPartySearch'
@@ -710,7 +712,7 @@ export function QuoteWizardPage() {
     if (quoteQuery.isError) {
       navigate(home, { replace: true })
     }
-  }, [quoteId, quoteQuery.isError, quoteQuery.status, quoteQuery.isPending, quoteQuery.error, form, location.pathname, navigate])
+  }, [quoteId, quoteQuery.isError, location.pathname, navigate])
   const moduleTemplates = moduleTemplatesQuery.data?.templates ?? []
   const filteredInsertTemplates = useMemo(() => {
     const q = insertBlockSearch.trim().toLocaleLowerCase('pt-BR')
@@ -934,6 +936,27 @@ export function QuoteWizardPage() {
       if (saveTimer.current) clearTimeout(saveTimer.current)
     }
   }, [form, canEdit, saveStatus, persist])
+
+  function addCreatedService(section: QuoteSection, catalog: VhsysCatalogItem) {
+    patchForm((prev) => ({
+      ...prev,
+      items: [
+        ...prev.items,
+        {
+          localKey: newLocalKey(),
+          itemId: null,
+          section,
+          name: catalog.name,
+          qty: '1',
+          unit_value: String(catalog.unit_value),
+          template_key: null,
+          vhsys_product_id: catalog.id,
+          unit_cost: catalog.cost_value ?? null,
+          margin_kind: inferMarginKindFromCatalog(catalog),
+        },
+      ],
+    }))
+  }
 
   function addItem(section: QuoteSection) {
     patchForm((prev) => ({
@@ -1815,6 +1838,7 @@ export function QuoteWizardPage() {
                   onIsMensalidade={(v) => patchModule(mod.id, { is_mensalidade: v })}
                   onDisplayName={(v) => patchModule(mod.id, { display_name: v })}
                   onAdd={() => addItem(mod.id)}
+                  onServiceCreated={(catalog) => addCreatedService(mod.id, catalog)}
                   onRemove={removeItem}
                   onUpdate={updateItem}
                 />
@@ -2682,6 +2706,7 @@ function ItemsSection({
   onIsMensalidade,
   onDisplayName,
   onAdd,
+  onServiceCreated,
   onRemove,
   onUpdate,
 }: {
@@ -2720,12 +2745,14 @@ function ItemsSection({
   onIsMensalidade: (v: boolean) => void
   onDisplayName: (v: string) => void
   onAdd: () => void
+  onServiceCreated: (item: VhsysCatalogItem) => void
   onRemove: (localKey: string) => void
   onUpdate: (localKey: string, patch: Partial<DraftItem>) => void
 }) {
   const queryClient = useQueryClient()
   const reduceMotion = useReducedMotion()
   const [saveAsModuleOpen, setSaveAsModuleOpen] = useState(false)
+  const [serviceDialogOpen, setServiceDialogOpen] = useState(false)
   const [saveAsModuleName, setSaveAsModuleName] = useState('')
   const [editingTitle, setEditingTitle] = useState(false)
   const [titleDraft, setTitleDraft] = useState(title)
@@ -2871,10 +2898,20 @@ function ItemsSection({
             {canEdit && (
               <>
                 {!simplified && (
-                  <Button type="button" size="sm" className={btnSecondaryClass} onClick={onAdd}>
-                    <Plus className="h-4 w-4" />
-                    Item
-                  </Button>
+                  <>
+                    <Button type="button" size="sm" className={btnSecondaryClass} onClick={onAdd}>
+                      <Plus className="h-4 w-4" />
+                      Item
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className={btnSecondaryClass}
+                      onClick={() => setServiceDialogOpen(true)}
+                    >
+                      Novo serviço
+                    </Button>
+                  </>
                 )}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -3224,6 +3261,11 @@ function ItemsSection({
         </Button>
       </div>
     ) : null}
+      <VhsysServiceCreateDialog
+        open={serviceDialogOpen}
+        onOpenChange={setServiceDialogOpen}
+        onCreated={onServiceCreated}
+      />
     </motion.div>
   )
 }

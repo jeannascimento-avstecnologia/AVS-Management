@@ -495,12 +495,22 @@ def build_quotes_router() -> APIRouter:
             company_hits = company
         seen = {_tiflux_requestor_key(row) for row in company_hits}
         others: list[dict[str, Any]] = []
+        global_raw: list[dict[str, Any]] = []
         if needle:
             try:
-                global_raw, _ = await client.search_requestors(term, limit=limit)
+                global_raw, global_status = await client.search_requestors(term, limit=limit)
             except TifluxApiError as exc:
                 status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
                 raise HTTPException(status_code=status, detail=str(exc)) from exc
+            if global_status == 403 or not global_raw:
+                _logger.warning(
+                    "TiFlux GET /requestors sem lista global (status=%s, client_id=%s, q=%r); "
+                    "fallback para GET /clients/%s/requestors",
+                    global_status,
+                    client_id,
+                    term,
+                    client_id,
+                )
             for row in global_raw:
                 mapped = _map_tiflux_requestor(row, scope="other")
                 if not _tiflux_requestor_matches(mapped, needle):
@@ -802,6 +812,9 @@ def build_quotes_router() -> APIRouter:
                 unidade_produto=body.unidade_produto,
                 id_categoria=body.id_categoria,
                 id_subcategoria=body.id_subcategoria,
+                cost_value=body.cost_value,
+                observacao=body.observacao,
+                status_produto=body.status_produto,
             )
         except VhsysApiError as exc:
             status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502

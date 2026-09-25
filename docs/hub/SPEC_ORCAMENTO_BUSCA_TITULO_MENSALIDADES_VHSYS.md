@@ -39,6 +39,12 @@ Ao abrir **Novo** (rascunho), Pesquisa + filtros lead/status compactam numa barr
 
 Preenchido ao selecionar item no `VhsysItemSearch`. Edição manual do nome zera o id.
 
+## 4.1) Novo serviço VHSYS (passo 2)
+
+Modal **Novo serviço** no cabeçalho do bloco, ao lado de **Item**. Não troca o passo nem descarta o rascunho.
+
+`POST /orcamentos/vhsys/catalog` — só `tipo_produto=Servico`. Obrigatórios: `name`, `unit_value`, `cost_value`, `unidade_produto`, `id_categoria`, `id_subcategoria`. Opcionais: `observacao`, `status_produto` (`Ativo`|`Inativo`). String vazia vira omissão da chave no POST `/produtos`. Sucesso inclui a linha no bloco (`vhsys_product_id`, valor, custo).
+
 ## 5) Contato (solicitante TiFlux)
 
 - Sem grade de chips. Campo **Nome** = busca. Resultados em **lista vertical** (dropdown), nunca wrap de botões.

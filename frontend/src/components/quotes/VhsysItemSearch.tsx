@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react'
 import { Loader2, Plus, Search } from 'lucide-react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api, type VhsysCatalogItem } from '@/api/client'
 import { Input } from '@/components/ui/input'
@@ -52,7 +52,6 @@ export function VhsysItemSearch({
 }: Props) {
   const listId = useId()
   const rootRef = useRef<HTMLDivElement>(null)
-  const queryClient = useQueryClient()
   const [open, setOpen] = useState(false)
   const [debounced, setDebounced] = useState(value)
 
@@ -83,45 +82,6 @@ export function VhsysItemSearch({
     gcTime: 30 * 60_000,
   })
 
-  const createMutation = useMutation({
-    mutationFn: (name: string) =>
-      api.createVhsysCatalogItem({
-        name,
-        unit_value: Number.isFinite(unitValue) ? Math.max(0, unitValue) : 0,
-        tipo_produto: 'Servico',
-        id_categoria: categoryId != null && categoryId > 0 ? categoryId : null,
-        id_subcategoria: subcategoryId != null && subcategoryId > 0 ? subcategoryId : null,
-      }),
-    onSuccess: (data) => {
-      const prev = queryClient.getQueryData<{
-        items: VhsysCatalogItem[]
-        query: string
-        count?: number
-      }>(catalogKey)
-      const withoutDup = (prev?.items ?? []).filter((i) => i.id !== data.item.id)
-      const nextItems = [...withoutDup, data.item].sort((a, b) =>
-        a.name.localeCompare(b.name, 'pt-BR', { sensitivity: 'base' }),
-      )
-      queryClient.setQueryData(catalogKey, {
-        items: nextItems,
-        query: '',
-        count: nextItems.length,
-        category_id: categoryId ?? null,
-        subcategory_id: subcategoryId ?? null,
-      })
-      onSelect(data.item)
-      setOpen(false)
-      if (data.created) {
-        toast.success('Produto cadastrado no VHSYS e aplicado à linha.')
-      } else {
-        toast.message('Produto já existia no VHSYS — vinculado à linha.')
-      }
-    },
-    onError: (err) => {
-      toast.error(err instanceof Error ? err.message : 'Falha ao cadastrar no VHSYS.')
-    },
-  })
-
   const excludeSet = useMemo(
     () => new Set(excludeNames.map((n) => n.trim().toLocaleLowerCase('pt-BR')).filter(Boolean)),
     [excludeNames],
@@ -143,8 +103,7 @@ export function VhsysItemSearch({
   const canCreate =
     Boolean(debounced.trim()) &&
     exact === null &&
-    !catalog.isFetching &&
-    !createMutation.isPending
+    !catalog.isFetching
 
   return (
     <div ref={rootRef} className="relative">
@@ -155,7 +114,7 @@ export function VhsysItemSearch({
           aria-expanded={open}
           aria-controls={listId}
           aria-autocomplete="list"
-          disabled={disabled || createMutation.isPending}
+          disabled={disabled}
           value={value}
           placeholder={placeholder}
           className="pl-8"
@@ -165,7 +124,7 @@ export function VhsysItemSearch({
             setOpen(true)
           }}
         />
-        {(catalog.isFetching || createMutation.isPending) && (
+        {catalog.isFetching && (
           <Loader2 className="absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 animate-spin text-muted-foreground" />
         )}
       </div>
@@ -208,7 +167,10 @@ export function VhsysItemSearch({
                     role="option"
                     className="flex w-full items-start gap-2 rounded-sm px-2 py-2 text-left text-aurora-brand-red hover:bg-accent"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => createMutation.mutate(debounced.trim())}
+                    onClick={() => {
+                      toast.message('Use Novo serviço para cadastrar com custo, categoria e subcategoria.')
+                      setOpen(false)
+                    }}
                   >
                     <Plus className="mt-0.5 h-3.5 w-3.5 shrink-0" />
                     <span className="min-w-0">
