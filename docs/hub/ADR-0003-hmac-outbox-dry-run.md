@@ -85,7 +85,7 @@ Tabela `webhook_outbox` (ADR-0002).
 | event | Quando | Webhook URL Settings |
 |-------|--------|----------------------|
 | `quote.submit` | POST submit orçamento | `N8N_COMMERCIAL_WEBHOOK_URL` |
-| `quote.sent` | mark-sent | commercial |
+| `quote.sent` | mark-sent — **não usa outbox**; FastAPI aplica no TiFlux (`docs/N8N_QUOTE_SENT.md`) | — |
 | `quote.approved` | approve (payload contrato = O3; MVP pode só status local) | commercial |
 | `billing.approved` | approve fatura (sem retenção) | `N8N_BILLING_WEBHOOK_URL` |
 | `billing.nf_prefeitura` | após input NF prefeitura | billing |

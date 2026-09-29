@@ -3,6 +3,15 @@ import type { QuoteRead, TicketLinkStatus } from '@/api/client'
 
 export type TicketLinkFilter = 'all' | 'none' | 'linked' | 'approved' | 'rejected'
 
+export type TicketBandId = Exclude<TicketLinkFilter, 'all'>
+
+export const TICKET_BANDS: readonly { id: TicketBandId; title: string; empty: string }[] = [
+  { id: 'none', title: 'Sem ticket', empty: 'Nenhum orçamento sem ticket.' },
+  { id: 'linked', title: 'Com ticket', empty: 'Nenhum orçamento com ticket.' },
+  { id: 'approved', title: 'Aprovados', empty: 'Nenhum orçamento com ticket aprovado.' },
+  { id: 'rejected', title: 'Rejeitados', empty: 'Nenhum orçamento com ticket rejeitado.' },
+]
+
 export const TICKET_LINK_LABELS: Record<TicketLinkStatus, string> = {
   novo: 'Novo',
   aprovado: 'Aprovado',
@@ -34,6 +43,28 @@ export function matchesTicketLinkFilter(quote: QuoteRead, filter: TicketLinkFilt
   if (filter === 'linked') return quote.ticket_link_status === 'novo'
   if (filter === 'approved') return quote.ticket_link_status === 'aprovado'
   return quote.ticket_link_status === 'rejeitado'
+}
+
+export function ticketBandId(quote: QuoteRead): TicketBandId {
+  if (quote.ticket_link_status == null) return 'none'
+  if (quote.ticket_link_status === 'novo') return 'linked'
+  if (quote.ticket_link_status === 'aprovado') return 'approved'
+  return 'rejected'
+}
+
+export function groupQuotesByTicketLink(
+  quotes: QuoteRead[],
+): Record<TicketBandId, QuoteRead[]> {
+  const groups: Record<TicketBandId, QuoteRead[]> = {
+    none: [],
+    linked: [],
+    approved: [],
+    rejected: [],
+  }
+  for (const quote of sortQuotesByTicketLink(quotes)) {
+    groups[ticketBandId(quote)].push(quote)
+  }
+  return groups
 }
 
 export function ticketLinkVariant(

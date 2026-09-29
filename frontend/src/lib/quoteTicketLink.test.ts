@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  groupQuotesByTicketLink,
   matchesTicketLinkFilter,
   sortQuotesByTicketLink,
   ticketLinkRank,
@@ -30,6 +31,21 @@ describe('quoteTicketLink', () => {
     expect(all.filter((q) => matchesTicketLinkFilter(q, 'approved')).map((q) => q.id)).toEqual([3])
     expect(all.filter((q) => matchesTicketLinkFilter(q, 'rejected')).map((q) => q.id)).toEqual([4])
     expect(all.filter((q) => matchesTicketLinkFilter(q, 'all'))).toHaveLength(4)
+  })
+
+  it('groups quotes into ticket bands', () => {
+    const quotes = [
+      makeQuote({ id: 4, ticket_link_status: 'rejeitado', tiflux_ticket_number: '4' }),
+      makeQuote({ id: 2, ticket_link_status: 'novo', tiflux_ticket_number: '2' }),
+      makeQuote({ id: 5, ticket_link_status: 'rejeitado', tiflux_ticket_number: '5' }),
+      makeQuote({ id: 3, ticket_link_status: 'aprovado', tiflux_ticket_number: '3' }),
+      makeQuote({ id: 1 }),
+    ]
+    const groups = groupQuotesByTicketLink(quotes)
+    expect(groups.none.map((q) => q.id)).toEqual([1])
+    expect(groups.linked.map((q) => q.id)).toEqual([2])
+    expect(groups.approved.map((q) => q.id)).toEqual([3])
+    expect(groups.rejected.map((q) => q.id)).toEqual([5, 4])
   })
 
   it('builds refresh signature only for novo', () => {

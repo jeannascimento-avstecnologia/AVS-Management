@@ -2,17 +2,21 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import FileResponse
-from pydantic import ValidationError
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
+from pydantic import BaseModel, Field, ValidationError
 import httpx
 
 from src.auth.audit import log_action
 from src.auth.deps import require_permission
-from src.auth.permissions import PERMISSION_APROVAR_ORCAMENTO, PERMISSION_ORCAMENTOS
-from src.cnpj.validator import normalize_cnpj
+from src.auth.permissions import (
+    PERMISSION_APROVAR_ORCAMENTO,
+    PERMISSION_CADASTRAR,
+    PERMISSION_ORCAMENTOS,
+)
+from src.cnpj.validator import normalize_cnpj, validate_cpf
 from src.config import get_settings
 from src.hub.outbox import dispatch_outbox, get_outbox_row
 from src.hub.store import get_hub_db
@@ -21,6 +25,14 @@ from src.integrations.vhsys_client import (
     VhsysApiError,
     VhsysClient,
     normalize_vhsys_party,
+)
+from src.orchestrator import (
+    IntegrationResult,
+    OrchestratorError,
+    integrate_company,
+    partial_registration_message,
+    preview_cnpj,
+    preview_pf,
 )
 from src.quotes.margin import (
     compute_quote_margin,
@@ -38,6 +50,7 @@ from src.quotes.schemas import (
     QuoteTemplateWrite,
     QuoteUpdate,
     QuoteWrite,
+    QuoteMarkSentBody,
     QuoteMonthlyDraftWrite,
     QuoteMonthlySuggestBody,
     QuoteRead,
@@ -53,6 +66,7 @@ from src.quotes.schemas import (
     TifluxTicketPreview,
     VhsysCatalogCreateBody,
 )
+from src.security import safe_error_message
 from src.quotes.ticket_link import (
     build_create_ticket_payload,
     build_ticket_preview,
@@ -66,6 +80,7 @@ from src.quotes.ticket_link import (
     unwrap_ticket_payload,
 )
 from src.quotes.pdf_filename import PdfDownloadName, quote_pdf_download_name_from_quote
+from src.quotes.sent_tiflux import apply_quote_sent_to_tiflux, simulate_quote_sent_tiflux
 from src.quotes.service import (
     QuoteConflictError,
     QuoteNotFoundError,
@@ -181,7 +196,7 @@ def _normalize_tiflux_quote_client(row: dict) -> dict[str, Any] | None:
     return {
         "id": client_id,
         "name": name or f"Cliente #{client_id}",
-        "cnpj": cnpj_digits if len(cnpj_digits) == 14 else None,
+        "cnpj": cnpj_digits if len(cnpj_digits) in {11, 14} else None,
     }
 
 
@@ -246,6 +261,49 @@ def _dedupe_tiflux_requestors(rows: list[dict[str, Any]]) -> list[dict[str, Any]
         seen.add(key)
         out.append(row)
     return out
+
+
+class QuoteClientAddressIn(BaseModel):
+    street: str = ""
+    number: str = ""
+    complement: str = ""
+    district: str = ""
+    city: str = ""
+    state: str = ""
+    zip_code: str = ""
+
+
+class QuoteClientCompanyIn(BaseModel):
+    person_type: Literal["PJ", "PF"] = "PJ"
+    cnpj_digits: str = ""
+    cnpj: str = ""
+    legal_name: str = ""
+    trade_name: str = ""
+    phone: str = ""
+    email: str = ""
+    status_active: bool = True
+    registration_status: str = ""
+    address: QuoteClientAddressIn = Field(default_factory=QuoteClientAddressIn)
+
+
+class QuoteClientPreviewIn(BaseModel):
+    person_type: Literal["PJ", "PF"] = "PJ"
+    document: str = ""
+
+
+class QuoteClientRegisterIn(BaseModel):
+    company: QuoteClientCompanyIn
+    desk_ids: list[int] = Field(default_factory=list)
+    technical_group_ids: list[int] = Field(default_factory=list)
+    override_inactive_registration: bool = False
+
+
+def _integration_http_status(result: IntegrationResult) -> int:
+    if result.all_duplicates:
+        return 409
+    if result.success:
+        return 207 if result.partial else 200
+    return 502
 
 
 def build_quotes_router() -> APIRouter:
@@ -456,8 +514,8 @@ def build_quotes_router() -> APIRouter:
         client = TifluxClient(settings)
         try:
             digits = normalize_cnpj(term)
-            use_cnpj = len(digits) == 14
-            if use_cnpj:
+            use_document = len(digits) == 14 or (len(digits) == 11 and validate_cpf(digits))
+            if use_document:
                 raw = await client.find_matches_by_cnpj(digits, limit=limit)
             else:
                 raw = await client.find_by_name(term, limit=limit, active=True)
@@ -815,6 +873,8 @@ def build_quotes_router() -> APIRouter:
                 cost_value=body.cost_value,
                 observacao=body.observacao,
                 status_produto=body.status_produto,
+                marca=body.marca,
+                descricao=body.descricao,
             )
         except VhsysApiError as exc:
             status = exc.status_code if exc.status_code and exc.status_code >= 400 else 502
@@ -894,6 +954,81 @@ def build_quotes_router() -> APIRouter:
             "name": name,
             "email": email,
         }
+
+    @router.post("/clientes/preview")
+    async def preview_quote_client(
+        body: QuoteClientPreviewIn,
+        _user: dict[str, Any] = Depends(require_permission(PERMISSION_CADASTRAR)),
+    ) -> JSONResponse:
+        """Preview do cadastro no wizard: PJ via BrasilAPI, PF só dedup + mesas."""
+        settings = get_settings()
+        try:
+            if body.person_type == "PF":
+                result = await preview_pf(body.document, settings)
+            else:
+                result = await preview_cnpj(body.document, settings)
+        except OrchestratorError as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"success": False, "error": str(exc)},
+            )
+        except Exception as exc:
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "error": safe_error_message(exc)},
+            )
+        return JSONResponse(content=result.to_dict())
+
+    @router.post("/clientes")
+    async def register_quote_client(
+        request: Request,
+        body: QuoteClientRegisterIn,
+        user: dict[str, Any] = Depends(require_permission(PERMISSION_CADASTRAR)),
+    ) -> JSONResponse:
+        """Cadastro TiFlux+VHSYS a partir do wizard. Delega a integrate_company."""
+        settings = get_settings()
+        company = body.company.model_dump()
+        try:
+            result = await integrate_company(
+                company,
+                desk_ids=body.desk_ids,
+                technical_group_ids=body.technical_group_ids,
+                settings=settings,
+                override_inactive_registration=body.override_inactive_registration,
+            )
+        except OrchestratorError as exc:
+            return JSONResponse(
+                status_code=exc.status_code,
+                content={"success": False, "error": str(exc)},
+            )
+        except Exception as exc:
+            return JSONResponse(
+                status_code=500,
+                content={"success": False, "error": safe_error_message(exc)},
+            )
+
+        payload = result.to_dict()
+        notice = partial_registration_message(result)
+        if notice:
+            payload["partial_message"] = notice
+        status = _integration_http_status(result)
+        resource = str(company.get("cnpj_digits") or company.get("cnpj") or "")
+        if result.all_duplicates:
+            payload["error"] = "Cliente já cadastrado no TiFlux e no VHSYS."
+        elif result.success:
+            log_action(
+                request,
+                action="orcamento.cliente.integrar" if status == 200 else "orcamento.cliente.integrar.partial",
+                resource=resource,
+                detail={
+                    "partial": result.partial,
+                    "person_type": company.get("person_type"),
+                    "tiflux_ok": result.tiflux.success,
+                    "vhsys_ok": result.vhsys.success,
+                },
+                user=user,
+            )
+        return JSONResponse(status_code=status, content=payload)
 
     @router.get("")
     async def list_quotes(
@@ -1268,34 +1403,41 @@ def build_quotes_router() -> APIRouter:
         request: Request,
         quote_id: int,
         user: dict[str, Any] = Depends(require_permission(PERMISSION_ORCAMENTOS)),
+        body: QuoteMarkSentBody | None = Body(default=None),
     ) -> dict[str, Any]:
-        """submitted→sent + outbox quote.sent (stage kanban via n8n)."""
+        """submitted→sent e aplicação direta no TiFlux. Sem outbox quote.sent."""
         settings = get_settings()
+        if not settings.hub_dry_run and not settings.tiflux_api_token.strip():
+            raise HTTPException(status_code=503, detail="Credenciais TiFlux não configuradas.")
         svc = _service()
         try:
-            result, outbox_id = svc.mark_sent(quote_id, settings=settings)
+            quote = svc.mark_sent(quote_id)
         except QuoteNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except QuoteConflictError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
-        outbox_status = await dispatch_outbox(get_hub_db(), outbox_id, settings=settings)
-        row = get_outbox_row(get_hub_db(), outbox_id)
-        final_status = str(row["status"]) if row else outbox_status
+        sent_body = body or QuoteMarkSentBody()
+        if settings.hub_dry_run:
+            tiflux = simulate_quote_sent_tiflux(quote, sent_body, settings)
+        else:
+            tiflux = await apply_quote_sent_to_tiflux(
+                quote,
+                sent_body,
+                settings,
+                client=TifluxClient(settings),
+            )
 
         log_action(
             request,
             action="quote.sent",
             resource=f"quote:{quote_id}",
-            detail={
-                "outbox_id": outbox_id,
-                "outbox_status": final_status,
-                "dry_run": settings.hub_dry_run,
-            },
+            detail={"dry_run": settings.hub_dry_run, "tiflux": tiflux},
             user=user,
         )
-        payload = result.to_dict()
-        payload["outbox_status"] = final_status
+        payload = quote.model_dump()
+        payload["dry_run"] = settings.hub_dry_run
+        payload["tiflux"] = tiflux
         return payload
 
     @router.post("/{quote_id}/mensalidades/sugerir")

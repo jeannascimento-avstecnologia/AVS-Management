@@ -199,6 +199,21 @@ def test_vhsys_catalog_payload_omits_blank_fields() -> None:
     assert "status_produto" not in payload
     assert "cod_produto" not in payload
     assert "" not in payload.values()
+    product = build_vhsys_catalog_payload(
+        desc_produto="Switch",
+        valor_produto=80,
+        tipo_produto="Produto",
+        unidade_produto="UN",
+        id_categoria=3,
+        id_subcategoria=8,
+        valor_custo_produto=20,
+        marca_produto="Intelbras",
+        descricao="  ",
+        obs_produto="nao usar no produto",
+    )
+    assert product["tipo_produto"] == "Produto"
+    assert product["marca_produto"] == "Intelbras"
+    assert "obs_produto" not in product
 
 
 def test_vhsys_catalog_all_default_limit_zero(

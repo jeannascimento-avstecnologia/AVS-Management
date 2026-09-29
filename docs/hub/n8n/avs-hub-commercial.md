@@ -28,7 +28,7 @@ Management submit/mark-sent
                                     ├─ true  → monta callback dry (sem TiFlux/VHSYS)
                                     └─ false → Switch(event)
                                          ├─ quote.submit → VHSYS OS → TiFlux ticket → anexo PDF → callback ok|error
-                                         ├─ quote.sent   → TiFlux update stage → callback
+                                         ├─ quote.sent   → fora deste workflow (backend aplica no TiFlux)
                                          └─ quote.approved → Error (O3 No-Go) → callback error
             ↓
 HTTP POST callback_url + X-AVS-Signature (mesmo N8N_WEBHOOK_SECRET)
@@ -54,7 +54,7 @@ Referência código: `src/hub/hmac.py`, `src/hub/outbox.py` (`dispatch_outbox`),
 
 ## 4. Envelope JSON — Management → n8n (submit)
 
-Fonte: `build_envelope` + `insert_pending` (`src/hub/outbox.py`); payload de `QuotesService.submit` / `mark_sent`.
+Fonte: `build_envelope` + `insert_pending` (`src/hub/outbox.py`); payload de `QuotesService.submit`. `quote.sent` não entra aqui.
 
 ```json
 {
@@ -98,7 +98,7 @@ Fonte: `build_envelope` + `insert_pending` (`src/hub/outbox.py`); payload de `Qu
 }
 ```
 
-`quote.sent`: mesmo envelope; `event`/`idempotency_key` = `quote.sent`; `quote.status` = `sent`; `sent_at` preenchido.
+`quote.sent` não entra neste envelope. O mark-sent aplica o chamado no FastAPI (`docs/N8N_QUOTE_SENT.md`).
 
 `callback_url` = `{APP_BASE_URL}/webhooks/n8n/callback` (sem barra final em `APP_BASE_URL`).
 
@@ -198,9 +198,7 @@ Respostas HTTP callback: `200` ack; `401` HMAC inválido; `400` payload inválid
 
 ### `quote.sent` (live)
 
-1. Resolver `tiflux_ticket_number` do quote (já no envelope ou callback anterior).
-2. **TiFlux** `PUT /tickets/{id}` com `stage_id` / `stage_name` (ID de estágio = **env n8n** `TIFLUX_STAGE_SENT_ID` — preencher após mapeamento manual; não inventar ID no repo).
-3. Callback `ok`.
+Não passa por este workflow. O mark-sent aplica status, estágio, responsável, mensagem e PDF no TiFlux pelo FastAPI. Ver `docs/N8N_QUOTE_SENT.md`. O stub `quote.sent` do JSON não deve ser ligado, para não aplicar duas vezes.
 
 ### `quote.approved`
 

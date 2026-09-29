@@ -27,8 +27,9 @@ No passo Cliente do wizard (`QuoteWizardPage`), pesquisar CNPJ/nome no **TiFlux*
 - Gap: garantir wizard grava o id; teste unitário de `resolve_client` com mock TiFlux.
 
 ### Fora de escopo
-- Criar cliente TiFlux inline (já coberto pelo dialog cadastrar).
 - Autocomplete VHSYS no passo 1 (cadastro overlay cobre).
+
+Cadastro inline (PF e PJ) está na seção 4.
 
 ---
 
@@ -76,3 +77,43 @@ Catálogo normalizado inclui `category_id: number | null`.
 - Dialogs/listas (Biblioteca, Inserir bloco, cadastros): altura limitada à viewport (`max-h-[90vh]`) com **scroll vertical**.
 - Template persiste `notes` e `billed_by_name` (opcionais). Ao inserir no orçamento, copiar para o módulo; o wizard continua editável.
 - Sem card **Faturado por** geral no passo 2.
+
+---
+
+## 4) Cadastro de cliente no wizard (PF e PJ)
+
+Overlay no passo Cliente. Não recarrega a página e não mexe nos itens do rascunho. Ao sucesso, o wizard grava `tiflux_client_id` (e `vhsys_client_id` quando houver) no estado local; o autosave persiste o orçamento.
+
+### API (reusa o orchestrator)
+
+| Método | Path | Permissão | Comportamento |
+|--------|------|-----------|---------------|
+| `POST` | `/orcamentos/clientes/preview` | `cadastrar` | PJ: `preview_cnpj` (BrasilAPI + mesas/grupos + dedup). PF: valida CPF, dedup TiFlux/VHSYS, mesas/grupos. Sem token no cliente. |
+| `POST` | `/orcamentos/clientes` | `cadastrar` | `integrate_company`. Sempre TiFlux **e** VHSYS. |
+
+Body do preview: `{ person_type: "PJ"\|"PF", document }`.  
+Body do cadastro: `{ company, desk_ids, technical_group_ids, override_inactive_registration }`. `company.person_type` = `PJ` ou `PF`.
+
+HTTP igual a `/integrar`: 200 ok, 207 parcial, 409 já existe nos dois, 400/422 validação, 502 falha total.
+
+**207:** se o TiFlux criou e o VHSYS falhou, a resposta traz `partial_message` explícito. O wizard vincula o `tiflux_client_id` e avisa. Se o TiFlux falhou, não vincula — sem `desk_ids` + `technical_group_ids` o cliente nasce invisível.
+
+Documento no orçamento: `quotes.cnpj` aceita CPF (11, checksum) ou CNPJ (14, checksum). Coluna já é TEXT; sem ALTER.
+
+### Mapeamento PF
+
+| | TiFlux | VHSYS |
+|--|--------|-------|
+| Documento | `social_revenue` = CPF só dígitos | `cnpj_cliente` = CPF mascarado, `tipo_pessoa: "PF"` |
+| Nome | `name` / `social` | `razao_cliente` |
+
+PJ permanece no fluxo BrasilAPI atual.
+
+### UI
+
+Busca TiFlux vazia → **Cadastrar novo cliente** (perm `cadastrar`).
+
+1. PJ: CNPJ → preview (autofill) → revisão editável → mesas **e** grupos (obrigatórios) → confirmar.
+2. PF: CPF → preview (dedup + mesas, sem BrasilAPI) → revisão → mesas/grupos → confirmar.
+
+Sucesso fecha o modal e preenche o cliente no passo 1 sem reload.

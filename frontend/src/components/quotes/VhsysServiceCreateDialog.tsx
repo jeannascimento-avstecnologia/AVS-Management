@@ -24,16 +24,31 @@ import {
 } from '@/components/ui/select'
 import { btnGreenClass, btnSecondaryClass } from '@/lib/ui-classes'
 
-const serviceSchema = z.object({
+const sharedSchema = {
   name: z.string().trim().min(1, 'Informe o nome.'),
   unitValue: z.number().finite().min(0, 'Informe o valor.'),
   costValue: z.number().finite().min(0, 'Informe o valor de custo.'),
   unit: z.string().trim().min(1, 'Informe a unidade.'),
   categoryId: z.number().int().positive('Selecione a categoria.'),
   subcategoryId: z.number().int().positive('Selecione a subcategoria.'),
-  note: z.string().trim(),
   status: z.enum(['Ativo', 'Inativo']).optional(),
-})
+}
+
+const catalogSchema = z.discriminatedUnion('kind', [
+  z.object({
+    kind: z.literal('Servico'),
+    note: z.string().trim(),
+    ...sharedSchema,
+  }),
+  z.object({
+    kind: z.literal('Produto'),
+    brand: z.string().trim(),
+    description: z.string().trim(),
+    ...sharedSchema,
+  }),
+])
+
+type CatalogKind = 'Servico' | 'Produto'
 
 type Props = {
   open: boolean
@@ -47,25 +62,32 @@ function parseMoney(raw: string): number {
 
 export function VhsysServiceCreateDialog({ open, onOpenChange, onCreated }: Props) {
   const queryClient = useQueryClient()
+  const [kind, setKind] = useState<CatalogKind>('Servico')
   const [name, setName] = useState('')
+  const [brand, setBrand] = useState('')
   const [unitValue, setUnitValue] = useState('')
   const [costValue, setCostValue] = useState('')
   const [unit, setUnit] = useState('UN')
   const [categoryId, setCategoryId] = useState('')
   const [subcategoryId, setSubcategoryId] = useState('')
   const [note, setNote] = useState('')
+  const [description, setDescription] = useState('')
   const [status, setStatus] = useState<'' | 'Ativo' | 'Inativo'>('')
   const [error, setError] = useState<string | null>(null)
+  const isProduct = kind === 'Produto'
 
   useEffect(() => {
     if (!open) return
+    setKind('Servico')
     setName('')
+    setBrand('')
     setUnitValue('')
     setCostValue('')
     setUnit('UN')
     setCategoryId('')
     setSubcategoryId('')
     setNote('')
+    setDescription('')
     setStatus('')
     setError(null)
   }, [open])
@@ -90,38 +112,57 @@ export function VhsysServiceCreateDialog({ open, onOpenChange, onCreated }: Prop
       unidade_produto: string
       id_categoria: number
       id_subcategoria: number
-      tipo_produto: 'Servico'
+      tipo_produto: CatalogKind
       observacao?: string
+      marca?: string
+      descricao?: string
       status_produto?: 'Ativo' | 'Inativo'
     }) => api.createVhsysCatalogItem(body),
     onSuccess: (data) => {
       void queryClient.invalidateQueries({ queryKey: ['vhsys-catalog-all'] })
       onCreated(data.item)
       onOpenChange(false)
+      const label = data.item.kind === 'servico' ? 'Serviço' : 'Produto'
       toast.success(
         data.created
-          ? 'Serviço cadastrado no VHSYS e incluído no orçamento.'
-          : 'Serviço já existia no VHSYS — incluído no orçamento.',
+          ? `${label} cadastrado no VHSYS e incluído no orçamento.`
+          : `${label} já existia no VHSYS — incluído no orçamento.`,
       )
     },
     onError: (err) => {
-      const message = err instanceof Error ? err.message : 'Falha ao cadastrar serviço.'
+      const message = err instanceof Error ? err.message : 'Falha ao cadastrar item.'
       setError(message)
       toast.error(message)
     },
   })
 
   function submit() {
-    const parsed = serviceSchema.safeParse({
-      name,
-      unitValue: parseMoney(unitValue),
-      costValue: parseMoney(costValue),
-      unit,
-      categoryId: Number(categoryId),
-      subcategoryId: Number(subcategoryId),
-      note,
-      status: status || undefined,
-    })
+    const parsed = catalogSchema.safeParse(
+      isProduct
+        ? {
+            kind,
+            name,
+            brand,
+            description,
+            unitValue: parseMoney(unitValue),
+            costValue: parseMoney(costValue),
+            unit,
+            categoryId: Number(categoryId),
+            subcategoryId: Number(subcategoryId),
+            status: status || undefined,
+          }
+        : {
+            kind,
+            name,
+            note,
+            unitValue: parseMoney(unitValue),
+            costValue: parseMoney(costValue),
+            unit,
+            categoryId: Number(categoryId),
+            subcategoryId: Number(subcategoryId),
+            status: status || undefined,
+          },
+    )
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message ?? 'Revise os campos.')
       return
@@ -132,20 +173,26 @@ export function VhsysServiceCreateDialog({ open, onOpenChange, onCreated }: Prop
       name: data.name,
       unit_value: data.unitValue,
       cost_value: data.costValue,
-      tipo_produto: 'Servico',
+      tipo_produto: data.kind,
       unidade_produto: data.unit,
       id_categoria: data.categoryId,
       id_subcategoria: data.subcategoryId,
-      ...(data.note ? { observacao: data.note } : {}),
+      ...(data.kind === 'Servico' && data.note ? { observacao: data.note } : {}),
+      ...(data.kind === 'Produto' && data.brand ? { marca: data.brand } : {}),
+      ...(data.kind === 'Produto' && data.description ? { descricao: data.description } : {}),
       ...(data.status ? { status_produto: data.status } : {}),
     })
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent
+        className="max-w-lg"
+        onPointerDownOutside={(event) => event.preventDefault()}
+        onInteractOutside={(event) => event.preventDefault()}
+      >
         <DialogHeader>
-          <DialogTitle>Novo serviço</DialogTitle>
+          <DialogTitle>Novo item</DialogTitle>
           <DialogDescription>Cadastra no VHSYS e inclui uma linha neste bloco.</DialogDescription>
         </DialogHeader>
         <form
@@ -155,13 +202,35 @@ export function VhsysServiceCreateDialog({ open, onOpenChange, onCreated }: Prop
             submit()
           }}
         >
+          <div className="flex gap-2" role="group" aria-label="Tipo do item">
+            <Button
+              type="button"
+              className={kind === 'Produto' ? btnGreenClass : btnSecondaryClass}
+              onClick={() => setKind('Produto')}
+            >
+              Produto
+            </Button>
+            <Button
+              type="button"
+              className={kind === 'Servico' ? btnGreenClass : btnSecondaryClass}
+              onClick={() => setKind('Servico')}
+            >
+              Serviço
+            </Button>
+          </div>
           <div className="space-y-1">
             <Label htmlFor="vhsys-service-name">Nome</Label>
             <Input id="vhsys-service-name" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
+          {isProduct ? (
+            <div className="space-y-1">
+              <Label htmlFor="vhsys-service-brand">Marca</Label>
+              <Input id="vhsys-service-brand" value={brand} onChange={(e) => setBrand(e.target.value)} />
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="space-y-1">
-              <Label htmlFor="vhsys-service-value">Valor</Label>
+              <Label htmlFor="vhsys-service-value">{isProduct ? 'Valor de venda' : 'Valor'}</Label>
               <Input
                 id="vhsys-service-value"
                 inputMode="decimal"
@@ -221,10 +290,21 @@ export function VhsysServiceCreateDialog({ open, onOpenChange, onCreated }: Prop
               </Select>
             </div>
           </div>
-          <div className="space-y-1">
-            <Label htmlFor="vhsys-service-note">Observação</Label>
-            <Input id="vhsys-service-note" value={note} onChange={(e) => setNote(e.target.value)} />
-          </div>
+          {isProduct ? (
+            <div className="space-y-1">
+              <Label htmlFor="vhsys-service-description">Descrição</Label>
+              <Input
+                id="vhsys-service-description"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="space-y-1">
+              <Label htmlFor="vhsys-service-note">Observação</Label>
+              <Input id="vhsys-service-note" value={note} onChange={(e) => setNote(e.target.value)} />
+            </div>
+          )}
           <div className="space-y-1">
             <Label>Situação</Label>
             <Select value={status || 'none'} onValueChange={(value) => setStatus(value === 'none' ? '' : (value as 'Ativo' | 'Inativo'))}>
@@ -250,7 +330,7 @@ export function VhsysServiceCreateDialog({ open, onOpenChange, onCreated }: Prop
             </Button>
             <Button type="submit" className={btnGreenClass} disabled={createMutation.isPending}>
               {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              Salvar serviço
+              Salvar item
             </Button>
           </DialogFooter>
         </form>

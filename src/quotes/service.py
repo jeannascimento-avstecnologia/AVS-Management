@@ -1179,7 +1179,7 @@ class QuoteService:
                 )
             if is_template_placeholder_cnpj(str(row["cnpj"])):
                 raise QuoteConflictError(
-                    "Vincule um cliente TiFlux (CNPJ) antes de enviar o orçamento."
+                    "Vincule um cliente TiFlux (CPF ou CNPJ) antes de enviar o orçamento."
                 )
             now = _utcnow_iso()
             conn.execute(
@@ -1221,15 +1221,8 @@ class QuoteService:
             )
             return result, outbox_id
 
-    def mark_sent(
-        self,
-        quote_id: int,
-        *,
-        settings: Settings | None = None,
-    ) -> tuple[QuoteSubmitResult, int]:
-        """submitted → sent + outbox quote.sent."""
-        cfg = settings or get_settings()
-        dry_run = bool(cfg.hub_dry_run)
+    def mark_sent(self, quote_id: int) -> QuoteRead:
+        """submitted → sent. TiFlux é aplicado no router; sem outbox quote.sent."""
         with self._db.connect() as conn:
             row = _get_quote_row(conn, quote_id)
             if row is None:
@@ -1250,30 +1243,7 @@ class QuoteService:
             )
             updated = _get_quote_row(conn, quote_id)
             assert updated is not None
-            quote = _row_to_quote(updated, _fetch_items(conn, quote_id))
-            try:
-                outbox_id, _envelope = insert_pending(
-                    conn,
-                    event="quote.sent",
-                    resource_type="quote",
-                    resource_id=quote_id,
-                    payload={
-                        "quote": quote.model_dump(),
-                        "pdf_path": quote.pdf_path,
-                    },
-                    dry_run=dry_run,
-                    settings=cfg,
-                )
-            except OutboxConflictError as exc:
-                raise QuoteConflictError(str(exc)) from exc
-
-            result = QuoteSubmitResult(
-                quote,
-                outbox_id=outbox_id,
-                outbox_status="pending",
-                dry_run=dry_run,
-            )
-            return result, outbox_id
+            return _row_to_quote(updated, _fetch_items(conn, quote_id))
 
     def list_templates(self) -> list[QuoteTemplateRead]:
         with self._db.connect() as conn:

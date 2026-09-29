@@ -52,6 +52,9 @@ import {
   type LegacyModuleKind,
   type TifluxRequestorHit,
   type VhsysCatalogItem,
+  type PersonType,
+  type QuoteSentFollowerInput,
+  type QuoteSentTifluxSummary,
 } from '@/api/client'
 import {
   QuoteClientRegisterDialog,
@@ -63,6 +66,7 @@ import { QuoteProposalTemplatesPanel } from '@/components/quotes/QuoteProposalTe
 import { QuoteTicketCreateDialog } from '@/components/quotes/QuoteTicketCreateDialog'
 import { QuoteTicketLinkDialog } from '@/components/quotes/QuoteTicketLinkDialog'
 import { localId } from '@/lib/localId'
+import { quoteSentGreeting } from '@/lib/quoteSentGreeting'
 import { groupHomePath } from '@/lib/groupHome'
 import { TifluxQuoteClientSearch } from '@/components/quotes/TifluxQuoteClientSearch'
 import { VhsysItemSearch } from '@/components/quotes/VhsysItemSearch'
@@ -107,7 +111,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { WizardStepper } from '@/components/ui/wizard-stepper'
 import { usePermission } from '@/hooks/useAuth'
-import { digitsOnly, formatCnpj, formatDate } from '@/lib/format'
+import { digitsOnly, formatClientDocument, formatCnpj, formatDate, isClientDocument, maskCnpjInput, maskCpfInput } from '@/lib/format'
 import { isQuoteTemplatePlaceholderCnpj } from '@/lib/quoteTemplate'
 import {
   hasLinkedTicket,
@@ -642,6 +646,24 @@ function lineTotal(item: DraftItem): number {
   return parsePositiveNumber(item.qty, 0) * parseNonNegativeNumber(item.unit_value)
 }
 
+function registerSeedFromQuery(query: string): { person: PersonType; document: string } {
+  const digits = digitsOnly(query)
+  if (digits.length === 11) return { person: 'PF', document: maskCpfInput(digits) }
+  if (digits.length === 14) return { person: 'PJ', document: maskCnpjInput(digits) }
+  return { person: 'PJ', document: '' }
+}
+
+function sentApplyFailures(summary: QuoteSentTifluxSummary): string[] {
+  const failed: string[] = []
+  if (!summary.stage_ok) failed.push('estágio')
+  if (!summary.status_ok) failed.push('status')
+  if (!summary.responsible_ok) failed.push('responsável')
+  if (!summary.answer_ok) failed.push('mensagem')
+  if (!summary.attachment_ok) failed.push('anexo')
+  if (!summary.followers_ok) failed.push('seguidores')
+  return failed
+}
+
 export function QuoteWizardPage() {
   const { id: idParam } = useParams<{ id: string }>()
   const quoteId = Number(idParam)
@@ -656,8 +678,16 @@ export function QuoteWizardPage() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [lastSavedAt, setLastSavedAt] = useState<string | null>(null)
   const [clientDialogOpen, setClientDialogOpen] = useState(false)
+  const [registerSeed, setRegisterSeed] = useState<{ person: PersonType; document: string }>({
+    person: 'PJ',
+    document: '',
+  })
   const [pdfPending, setPdfPending] = useState(false)
   const [extraEmailDraft, setExtraEmailDraft] = useState('')
+  const [sentFreeMessage, setSentFreeMessage] = useState('')
+  const [sentFollowers, setSentFollowers] = useState<QuoteSentFollowerInput[]>([])
+  const [followerNameDraft, setFollowerNameDraft] = useState('')
+  const [followerEmailDraft, setFollowerEmailDraft] = useState('')
   const [tifluxSearch, setTifluxSearch] = useState('')
   const [addModuleOpen, setAddModuleOpen] = useState(false)
   const [insertBlockSearch, setInsertBlockSearch] = useState('')
@@ -702,6 +732,12 @@ export function QuoteWizardPage() {
 
   const quote = quoteQuery.data
   const canEdit = quote?.status === 'draft'
+  const canComposeSentMessage =
+    quote?.status === 'draft' || isQuoteMarkSentEligible(quote?.status ?? 'draft')
+  const sentGreetingPreview = useMemo(
+    () => quoteSentGreeting(form?.contact_name || form?.client_name || ''),
+    [form?.contact_name, form?.client_name],
+  )
 
   useEffect(() => {
     const home = groupHomePath(location.pathname)
@@ -914,7 +950,7 @@ export function QuoteWizardPage() {
   const persist = useCallback(() => {
     const current = formRef.current
     if (!current || !canEdit) return
-    if (digitsOnly(current.cnpj).length !== 14) {
+    if (!isClientDocument(current.cnpj)) {
       setSaveStatus('error')
       return
     }
@@ -925,7 +961,7 @@ export function QuoteWizardPage() {
 
   useEffect(() => {
     if (!form || !canEdit || saveStatus !== 'dirty') return
-    if (digitsOnly(form.cnpj).length !== 14) return
+    if (!isClientDocument(form.cnpj)) return
 
     if (saveTimer.current) clearTimeout(saveTimer.current)
     saveTimer.current = setTimeout(() => {
@@ -1183,8 +1219,8 @@ export function QuoteWizardPage() {
 
   async function handleManualSave() {
     if (!canEdit) return
-    if (digitsOnly(form?.cnpj ?? '').length !== 14) {
-      toast.error('CNPJ inválido — corrija no passo Cliente.')
+    if (!isClientDocument(form?.cnpj ?? '')) {
+      toast.error('CPF ou CNPJ inválido — corrija no passo Cliente.')
       setStep(1)
       return
     }
@@ -1248,6 +1284,32 @@ export function QuoteWizardPage() {
     setExtraEmailDraft('')
   }
 
+  function addSentFollower() {
+    const name = followerNameDraft.trim().replace(/\s+/g, ' ')
+    const email = followerEmailDraft.trim()
+    if (!name) {
+      toast.error('Informe o nome do seguidor.')
+      return
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast.error('E-mail do seguidor inválido.')
+      return
+    }
+    if (sentFollowers.length >= 20) {
+      toast.error('Limite de 20 seguidores.')
+      return
+    }
+    const key = (email || name).toLowerCase()
+    if (sentFollowers.some((item) => (item.email || item.name).toLowerCase() === key)) {
+      setFollowerNameDraft('')
+      setFollowerEmailDraft('')
+      return
+    }
+    setSentFollowers((prev) => [...prev, { name, email: email || null }])
+    setFollowerNameDraft('')
+    setFollowerEmailDraft('')
+  }
+
   /** Aplica refs do cliente sem tocar em `items`. */
   function applyClientLink(link: QuoteClientLink) {
     emailPrefillDone.current = false
@@ -1295,11 +1357,11 @@ export function QuoteWizardPage() {
     mutationFn: async () => {
       const current = formRef.current
       if (current && canEdit && dirtyRef.current) {
-        if (digitsOnly(current.cnpj).length !== 14) {
-          throw new Error('CNPJ inválido — corrija no passo Cliente.')
+        if (!isClientDocument(current.cnpj)) {
+          throw new Error('CPF ou CNPJ inválido — corrija no passo Cliente.')
         }
         if (isQuoteTemplatePlaceholderCnpj(current.cnpj)) {
-          throw new Error('Vincule um cliente TiFlux (CNPJ) antes de enviar.')
+          throw new Error('Vincule um cliente TiFlux (CPF ou CNPJ) antes de enviar.')
         }
         if (saveTimer.current) clearTimeout(saveTimer.current)
         dirtyRef.current = false
@@ -1332,13 +1394,22 @@ export function QuoteWizardPage() {
   })
 
   const markSentMutation = useMutation({
-    mutationFn: () => api.markSentQuote(quoteId),
+    mutationFn: () =>
+      api.markSentQuote(quoteId, {
+        free_message: sentFreeMessage.trim(),
+        followers: sentFollowers,
+      }),
     onSuccess: (result) => {
       const updated = quoteFromOutboxResult(result)
       queryClient.setQueryData(['quote', quoteId], updated)
       void queryClient.invalidateQueries({ queryKey: ['quotes'] })
       const dryNote = result.dry_run ? ' (dry-run)' : ''
-      toast.success(`Marcado como enviado ao cliente${dryNote}`)
+      const failed = sentApplyFailures(result.tiflux)
+      if (failed.length === 0) {
+        toast.success(`Marcado como enviado ao cliente${dryNote}`)
+        return
+      }
+      toast.warning(`Enviado com ressalvas${dryNote}: ${failed.join(', ')} não aplicado.`)
     },
     onError: (err: Error) => {
       toast.error(err.message || 'Falha ao marcar como enviado')
@@ -1346,8 +1417,8 @@ export function QuoteWizardPage() {
   })
 
   function handleSubmit() {
-    if (digitsOnly(form?.cnpj ?? '').length !== 14) {
-      toast.error('CNPJ inválido — corrija no passo Cliente.')
+    if (!isClientDocument(form?.cnpj ?? '')) {
+      toast.error('CPF ou CNPJ inválido — corrija no passo Cliente.')
       setStep(1)
       return
     }
@@ -1440,7 +1511,7 @@ export function QuoteWizardPage() {
           <p className="text-sm text-muted-foreground">
             {isQuoteTemplatePlaceholderCnpj(form.cnpj)
               ? 'Sem cliente'
-              : formatCnpj(form.cnpj)}
+              : formatClientDocument(form.cnpj)}
             {form.client_name ? ` · ${form.client_name}` : ''}
           </p>
         </div>
@@ -1493,7 +1564,7 @@ export function QuoteWizardPage() {
                   <CardTitle className="text-base">{form.client_name || 'Cliente'}</CardTitle>
                   <Badge variant="success">Vinculado</Badge>
                   {form.cnpj ? (
-                    <span className="font-mono text-xs text-muted-foreground">{formatCnpj(form.cnpj)}</span>
+                    <span className="font-mono text-xs text-muted-foreground">{formatClientDocument(form.cnpj)}</span>
                   ) : null}
                 </div>
                 {canEdit ? (
@@ -1524,7 +1595,7 @@ export function QuoteWizardPage() {
               )}
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
-              Busca só no TiFlux (CNPJ 14 dígitos ou nome). Contatos vêm dos solicitantes desse cliente.
+              Busca só no TiFlux (CPF, CNPJ ou nome). Contatos vêm dos solicitantes desse cliente.
             </p>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1554,6 +1625,14 @@ export function QuoteWizardPage() {
               <TifluxQuoteClientSearch
                 value={tifluxSearch}
                 disabled={!canEdit}
+                onCreateNew={
+                  canCadastrar && canEdit
+                    ? (query) => {
+                        setRegisterSeed(registerSeedFromQuery(query))
+                        setClientDialogOpen(true)
+                      }
+                    : undefined
+                }
                 onChange={(v) => {
                   setTifluxSearch(v)
                   if (
@@ -1573,12 +1652,13 @@ export function QuoteWizardPage() {
                   }
                 }}
                 onSelect={(client) => {
-                  const clientCnpj = client.cnpj ? digitsOnly(client.cnpj) : ''
+                  const clientDoc = client.cnpj ? digitsOnly(client.cnpj) : ''
+                  const docOk = isClientDocument(clientDoc)
                   setTifluxSearch(client.name)
                   emailPrefillDone.current = false
                   patchForm((prev) => ({
                     ...prev,
-                    cnpj: clientCnpj.length === 14 ? clientCnpj : '',
+                    cnpj: docOk ? clientDoc : '',
                     client_name: client.name || prev.client_name,
                     tiflux_client_id: client.id,
                     client_email: '',
@@ -1601,15 +1681,15 @@ export function QuoteWizardPage() {
                       /* prefill na revisão tenta de novo */
                     })
                   toast.success(`Cliente TiFlux #${client.id} vinculado`)
-                  if (clientCnpj.length !== 14) {
-                    toast.message('Sem CNPJ no TiFlux — preencha o CNPJ para o autosave.')
+                  if (!docOk) {
+                    toast.message('Sem CPF/CNPJ no TiFlux — preencha o documento para o autosave.')
                   }
                 }}
               />
               {form.tiflux_client_id != null && (
                 <p className="text-xs text-muted-foreground">
                   Vinculado TiFlux #{form.tiflux_client_id}
-                  {form.cnpj ? ` · ${formatCnpj(form.cnpj)}` : ''}
+                  {form.cnpj ? ` · ${formatClientDocument(form.cnpj)}` : ''}
                 </p>
               )}
             </div>
@@ -1723,10 +1803,16 @@ export function QuoteWizardPage() {
                   type="button"
                   className={cn(btnSecondaryClass)}
                   disabled={!canEdit}
-                  onClick={() => setClientDialogOpen(true)}
+                  onClick={() => {
+                    const seed = isQuoteTemplatePlaceholderCnpj(form.cnpj)
+                      ? tifluxSearch
+                      : form.cnpj || tifluxSearch
+                    setRegisterSeed(registerSeedFromQuery(seed))
+                    setClientDialogOpen(true)
+                  }}
                 >
                   <UserPlus className="h-4 w-4" />
-                  Cadastrar cliente
+                  Cadastrar novo cliente
                 </Button>
               ) : (
                 <p className="text-xs text-muted-foreground">
@@ -2107,7 +2193,7 @@ export function QuoteWizardPage() {
                   <dd className="mt-1 font-mono text-sm font-semibold">
                     {isQuoteTemplatePlaceholderCnpj(form.cnpj)
                       ? 'Sem cliente'
-                      : formatCnpj(form.cnpj)}
+                      : formatClientDocument(form.cnpj)}
                   </dd>
                 </div>
                 <div className={quoteInsetClass}>
@@ -2373,6 +2459,120 @@ export function QuoteWizardPage() {
             </CardContent>
           </Card>
 
+          {canComposeSentMessage && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Comunicação no chamado</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Ao marcar como enviado, o chamado no TiFlux recebe status Aguardando o cliente,
+                  estágio Orçamento enviado e responsável André.
+                </p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div>
+                  <p className="mb-1 text-xs font-medium text-muted-foreground">Texto padrão</p>
+                  <pre className="whitespace-pre-wrap rounded-md border bg-muted/40 px-3 py-2 text-sm">
+                    {sentGreetingPreview}
+                  </pre>
+                  <p className="mt-1 text-[11px] text-muted-foreground">
+                    Saudação por horário em America/Sao_Paulo. O servidor recalcula no envio.
+                  </p>
+                </div>
+                <div>
+                  <Label htmlFor="sent-free-message">Mensagem livre</Label>
+                  <textarea
+                    id="sent-free-message"
+                    rows={3}
+                    maxLength={4000}
+                    value={sentFreeMessage}
+                    placeholder="Texto extra que segue depois do padrão."
+                    className={cn(
+                      inputClass,
+                      'mt-1 h-auto min-h-[72px] min-w-0 resize-y whitespace-pre-wrap break-words py-2.5',
+                    )}
+                    onChange={(e) => setSentFreeMessage(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="follower-name">Seguidores</Label>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Input
+                      id="follower-name"
+                      value={followerNameDraft}
+                      placeholder="Nome"
+                      maxLength={200}
+                      onChange={(e) => setFollowerNameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          addSentFollower()
+                        }
+                      }}
+                    />
+                    <Input
+                      type="email"
+                      value={followerEmailDraft}
+                      placeholder="email opcional"
+                      maxLength={320}
+                      onChange={(e) => setFollowerEmailDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          addSentFollower()
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      className={btnSecondaryClass}
+                      onClick={addSentFollower}
+                    >
+                      <Plus className="h-4 w-4" />
+                      Adicionar
+                    </Button>
+                  </div>
+                  {sentFollowers.length > 0 && (
+                    <ul className="flex flex-wrap gap-2">
+                      {sentFollowers.map((follower) => (
+                        <li
+                          key={(follower.email || follower.name).toLowerCase()}
+                          className="flex items-center gap-1 rounded-full border px-2 py-1 text-xs"
+                        >
+                          <span>
+                            {follower.name}
+                            {follower.email ? ` · ${follower.email}` : ''}
+                          </span>
+                          <button
+                            type="button"
+                            className="text-muted-foreground hover:text-foreground"
+                            aria-label={`Remover seguidor ${follower.name}`}
+                            onClick={() =>
+                              setSentFollowers((prev) =>
+                                prev.filter(
+                                  (item) =>
+                                    (item.email || item.name).toLowerCase() !==
+                                    (follower.email || follower.name).toLowerCase(),
+                                ),
+                              )
+                            }
+                          >
+                            <X className="h-3 w-3" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {quote?.pdf_path
+                    ? 'O PDF é anexado na resposta do chamado.'
+                    : 'Gere o PDF antes de marcar enviado para anexar o arquivo.'}
+                </p>
+              </CardContent>
+            </Card>
+          )}
+
           <Card>
             <CardContent className="space-y-3 p-4">
               <Alert>
@@ -2380,7 +2580,7 @@ export function QuoteWizardPage() {
                   {isQuoteSubmittable(quote.status)
                     ? 'Enviar registra o orçamento e dispara o envio aos destinatários acima.'
                     : isQuoteMarkSentEligible(quote.status)
-                      ? 'Orçamento submetido. Opcional: marcar como enviado ao cliente (quote.sent).'
+                      ? 'Orçamento submetido. Marcar enviado atualiza o chamado no TiFlux com a comunicação acima.'
                       : 'PDF local disponível abaixo. Envio só a partir de rascunho.'}
                 </AlertDescription>
               </Alert>
@@ -2578,7 +2778,8 @@ export function QuoteWizardPage() {
         <QuoteClientRegisterDialog
           open={clientDialogOpen}
           onOpenChange={setClientDialogOpen}
-          initialCnpj={form.cnpj}
+          initialPersonType={registerSeed.person}
+          initialDocument={registerSeed.document}
           onLinked={applyClientLink}
         />
       )}
@@ -2874,24 +3075,6 @@ function ItemsSection({
                   <Pencil className="h-3.5 w-3.5" />
                 </Button>
               ) : null}
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Checkbox
-                  checked={simplified}
-                  disabled={!canEdit}
-                  onCheckedChange={(v) => onSimplified(v === true)}
-                  aria-label="Simplificar bloco"
-                />
-                Simplificar
-              </label>
-              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Checkbox
-                  checked={isMensalidade}
-                  disabled={!canEdit}
-                  onCheckedChange={(v) => onIsMensalidade(v === true)}
-                  aria-label="Bloco de mensalidade"
-                />
-                Mensalidade
-              </label>
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -2909,7 +3092,7 @@ function ItemsSection({
                       className={btnSecondaryClass}
                       onClick={() => setServiceDialogOpen(true)}
                     >
-                      Novo serviço
+                      Novo item
                     </Button>
                   </>
                 )}
@@ -3081,6 +3264,7 @@ function ItemsSection({
                 paymentPlan={paymentPlan}
                 canEdit={canEdit}
                 onPaymentPlan={onPaymentPlan}
+                onIsMensalidade={onIsMensalidade}
                 moduleNet={applySectionDiscount(subtotal, discountPct, discountValue).net}
               />
 
@@ -3167,22 +3351,44 @@ function ItemsSection({
           </div>
         </div>
 
-        {(() => {
-          const { discount, net } = applySectionDiscount(subtotal, discountPct, discountValue)
-          return (
-            <div className="space-y-1 text-right text-sm">
-              <p className="tabular-nums text-muted-foreground">
-                {showLabor
-                  ? `Subtotal (itens + mão de obra): ${money(subtotal)}`
-                  : `Subtotal (itens): ${money(subtotal)}`}
-              </p>
-              {discount > 0 ? (
-                <p className="tabular-nums text-muted-foreground">Desconto: −{money(discount)}</p>
-              ) : null}
-              <p className="font-semibold tabular-nums">Total: {money(net)}</p>
-            </div>
-          )
-        })()}
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Checkbox
+                checked={simplified}
+                disabled={!canEdit}
+                onCheckedChange={(v) => onSimplified(v === true)}
+                aria-label="Simplificar bloco"
+              />
+              Simplificar
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Checkbox
+                checked={isMensalidade}
+                disabled={!canEdit}
+                onCheckedChange={(v) => onIsMensalidade(v === true)}
+                aria-label="Bloco de mensalidade"
+              />
+              Mensalidade
+            </label>
+          </div>
+          {(() => {
+            const { discount, net } = applySectionDiscount(subtotal, discountPct, discountValue)
+            return (
+              <div className="space-y-1 text-right text-sm">
+                <p className="tabular-nums text-muted-foreground">
+                  {showLabor
+                    ? `Subtotal (itens + mão de obra): ${money(subtotal)}`
+                    : `Subtotal (itens): ${money(subtotal)}`}
+                </p>
+                {discount > 0 ? (
+                  <p className="tabular-nums text-muted-foreground">Desconto: −{money(discount)}</p>
+                ) : null}
+                <p className="font-semibold tabular-nums">Total: {money(net)}</p>
+              </div>
+            )
+          })()}
+        </div>
       </CardContent>
 
       <Dialog open={saveAsModuleOpen} onOpenChange={setSaveAsModuleOpen}>
@@ -3274,11 +3480,13 @@ function PaymentPlanFields({
   paymentPlan,
   canEdit,
   onPaymentPlan,
+  onIsMensalidade,
   moduleNet,
 }: {
   paymentPlan: string
   canEdit: boolean
   onPaymentPlan: (v: string) => void
+  onIsMensalidade: (v: boolean) => void
   moduleNet: number
 }) {
   const { mode, installments: nParcels } = parsePaymentPlan(paymentPlan)
@@ -3291,9 +3499,9 @@ function PaymentPlanFields({
       : null
 
   return (
-    <div className="space-y-3">
-    <div className="grid gap-3 sm:grid-cols-2">
-      <div className="space-y-2">
+    <div className="space-y-2">
+    <div className="flex flex-wrap items-end gap-x-3 gap-y-2">
+      <div className="min-w-[12rem] flex-1 space-y-1.5">
         <Label>Forma de pagamento</Label>
         <Select
           value={modeValue}
@@ -3308,7 +3516,8 @@ function PaymentPlanFields({
               return
             }
             if (v === 'recorrente_anual') {
-              onPaymentPlan(buildPaymentPlan('recorrente_anual', nParcels ?? 12))
+              onPaymentPlan(buildPaymentPlan('recorrente_anual', 12))
+              onIsMensalidade(true)
               return
             }
             onPaymentPlan(buildPaymentPlan('parcelado', nParcels ?? 2))
@@ -3326,7 +3535,7 @@ function PaymentPlanFields({
         </Select>
       </div>
       {showValueField ? (
-        <div className="space-y-2">
+        <div className="w-36 space-y-1.5">
           <Label>{mode === 'recorrente_anual' ? 'Meses (recorrência)' : 'Parcelas'}</Label>
           <Select
             value={monthsValue}

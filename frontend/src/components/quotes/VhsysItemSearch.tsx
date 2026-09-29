@@ -168,7 +168,7 @@ export function VhsysItemSearch({
                     className="flex w-full items-start gap-2 rounded-sm px-2 py-2 text-left text-aurora-brand-red hover:bg-accent"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => {
-                      toast.message('Use Novo serviço para cadastrar com custo, categoria e subcategoria.')
+                      toast.message('Use Novo item para cadastrar produto ou serviço.')
                       setOpen(false)
                     }}
                   >

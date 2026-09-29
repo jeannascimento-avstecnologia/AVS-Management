@@ -1,9 +1,9 @@
 import { useEffect, useId, useRef, useState } from 'react'
-import { Loader2, Search } from 'lucide-react'
+import { Loader2, Search, UserPlus } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { api, type TifluxQuoteClient } from '@/api/client'
 import { Input } from '@/components/ui/input'
-import { formatCnpj } from '@/lib/format'
+import { formatClientDocument } from '@/lib/format'
 import { cn } from '@/lib/cn'
 
 export type { TifluxQuoteClient }
@@ -14,14 +14,16 @@ type Props = {
   placeholder?: string
   onChange: (value: string) => void
   onSelect: (client: TifluxQuoteClient) => void
+  onCreateNew?: (query: string) => void
 }
 
 export function TifluxQuoteClientSearch({
   value,
   disabled,
-  placeholder = 'Buscar no TiFlux (CNPJ ou nome)…',
+  placeholder = 'Buscar no TiFlux (CPF, CNPJ ou nome)…',
   onChange,
   onSelect,
+  onCreateNew,
 }: Props) {
   const listId = useId()
   const rootRef = useRef<HTMLDivElement>(null)
@@ -96,6 +98,20 @@ export function TifluxQuoteClientSearch({
           ) : clients.length === 0 && !query.isFetching ? (
             <li className="px-2 py-2 text-xs text-muted-foreground">
               Nenhum cliente encontrado no TiFlux.
+              {onCreateNew ? (
+                <button
+                  type="button"
+                  className="mt-2 flex w-full items-center gap-1.5 rounded-md border border-aurora-border px-2 py-1.5 text-left text-xs font-medium text-foreground hover:bg-accent"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    onCreateNew(value)
+                    setOpen(false)
+                  }}
+                >
+                  <UserPlus className="h-3.5 w-3.5" />
+                  Cadastrar novo cliente
+                </button>
+              ) : null}
             </li>
           ) : (
             clients.map((client) => (
@@ -113,7 +129,7 @@ export function TifluxQuoteClientSearch({
                   <span className="font-medium">{client.name}</span>
                   <span className="text-xs text-muted-foreground">
                     TiFlux #{client.id}
-                    {client.cnpj ? ` · ${formatCnpj(client.cnpj)}` : ' · sem CNPJ'}
+                    {client.cnpj ? ` · ${formatClientDocument(client.cnpj)}` : ' · sem documento'}
                   </span>
                 </button>
               </li>

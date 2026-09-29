@@ -777,6 +777,39 @@ class TifluxClient:
         data = response.json()
         return data if isinstance(data, dict) else None
 
+    async def find_user_id_by_name(self, name: str) -> int | None:
+        """GET /users?name= — um id só se o nome bater uma vez. 404/ambíguo → None."""
+        wanted = " ".join(name.split()).casefold()
+        if not wanted:
+            return None
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await self._get_with_retry(
+                client,
+                f"{self._base}/users",
+                headers=self._auth_headers(),
+                params={"name": name.strip(), "offset": 1, "limit": 50},
+                action="listar usuários TiFlux",
+                allow_statuses=frozenset({404, 405}),
+            )
+        if response.status_code in (404, 405):
+            return None
+        matches: list[int] = []
+        prefixes: list[int] = []
+        for item in _user_rows(response.json()):
+            label = " ".join(str(item.get("name") or "").split()).casefold()
+            user_id = _positive_int(item.get("id"))
+            if user_id is None or not label:
+                continue
+            if label == wanted:
+                matches.append(user_id)
+            elif label.startswith(f"{wanted} "):
+                prefixes.append(user_id)
+        if len(matches) == 1:
+            return matches[0]
+        if not matches and len(prefixes) == 1:
+            return prefixes[0]
+        return None
+
     async def list_desk_priorities(self, desk_id: int) -> list[dict]:
         """GET /desks/{id}/priorities."""
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -1286,6 +1319,27 @@ def _extract_requestor_list(data: object) -> list[dict]:
             if isinstance(chunk, list):
                 return [row for row in chunk if isinstance(row, dict)]
     return _extract_client_list(data)
+
+
+def _positive_int(raw: object) -> int | None:
+    if isinstance(raw, bool) or not isinstance(raw, (int, str)):
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        return None
+    return value if value > 0 else None
+
+
+def _user_rows(data: object) -> list[dict]:
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict):
+        for key in ("users", "data", "items", "results"):
+            chunk = data.get(key)
+            if isinstance(chunk, list):
+                return [item for item in chunk if isinstance(item, dict)]
+    return []
 
 
 def _extract_client_list(data: object) -> list[dict]:

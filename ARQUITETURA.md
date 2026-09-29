@@ -10,6 +10,8 @@ Automatizar o cadastro de clientes PJ: entrada de CNPJ → consulta BrasilAPI �
 2. **Revisão** → usuário edita dados e marca mesas (`desk_ids`) e grupos (`technical_group_ids`)
 3. **Confirmar** → `POST /integrar` (JSON) → cadastro TiFlux + VHSYS
 
+O wizard de orçamento usa o mesmo núcleo (`preview_cnpj` / `integrate_company`) em `POST /orcamentos/clientes/preview` e `POST /orcamentos/clientes`. PF não consulta BrasilAPI: CPF vai em `social_revenue` (TiFlux) e `cnpj_cliente` + `tipo_pessoa: "PF"` (VHSYS). `desk_ids` + `technical_group_ids` continuam obrigatórios.
+
 ## Fluxo
 
 ```mermaid

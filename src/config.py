@@ -71,6 +71,8 @@ class Settings(BaseSettings):
     n8n_billing_webhook_url: str = ""
     n8n_webhook_secret: str = ""
     tiflux_desk_comercial_id: int = 36089
+    # 0 = n8n resolve o usuário TiFlux pelo nome "André" (não inventar id)
+    tiflux_quote_sent_responsible_id: int = 0
     # Emitente do PDF de orçamento (SPEC_PDF_ORCAMENTO) — TiFlux client AVS + fallbacks
     tiflux_issuer_client_id: int = 37443
     quote_issuer_name: str = "AVS TECNOLOGIA"

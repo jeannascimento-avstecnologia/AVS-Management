@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -183,7 +184,7 @@ def test_callback_valid_path_smoke(outbox_client: TestClient) -> None:
     assert quote["ticket_link_status"] == "novo"
 
 
-def test_mark_sent_dry_run(outbox_client: TestClient) -> None:
+def test_mark_sent_dry_run_skips_outbox(outbox_client: TestClient, outbox_env: Path) -> None:
     created = outbox_client.post("/orcamentos", json=QUOTE_PAYLOAD)
     quote_id = created.json()["id"]
     outbox_client.post(f"/orcamentos/{quote_id}/submit")
@@ -191,8 +192,121 @@ def test_mark_sent_dry_run(outbox_client: TestClient) -> None:
     assert marked.status_code == 202, marked.text
     body = marked.json()
     assert body["status"] == "sent"
-    assert body["outbox_status"] == "sent"
     assert body["dry_run"] is True
+    assert body["tiflux"]["dry_run"] is True
+    assert "outbox_status" not in body
+    assert any("não vinculado" in item for item in body["tiflux"]["errors"])
+    conn = sqlite3.connect(outbox_env)
+    row = conn.execute(
+        "SELECT id FROM webhook_outbox WHERE event = 'quote.sent'"
+    ).fetchone()
+    assert row is None
+
+
+def test_mark_sent_without_token_is_503_and_keeps_submitted(
+    outbox_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    created = outbox_client.post("/orcamentos", json=QUOTE_PAYLOAD)
+    quote_id = created.json()["id"]
+    assert outbox_client.post(f"/orcamentos/{quote_id}/submit").status_code == 202
+    monkeypatch.setenv("HUB_DRY_RUN", "false")
+    monkeypatch.setenv("TIFLUX_API_TOKEN", "")
+    marked = outbox_client.post(f"/orcamentos/{quote_id}/mark-sent")
+    assert marked.status_code == 503
+    assert marked.json()["detail"] == "Credenciais TiFlux não configuradas."
+    current = outbox_client.get(f"/orcamentos/{quote_id}")
+    assert current.json()["status"] == "submitted"
+
+
+def test_mark_sent_applies_tiflux_and_skips_n8n(
+    outbox_client: TestClient,
+    outbox_env: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = outbox_client.post("/orcamentos", json=QUOTE_PAYLOAD)
+    quote_id = created.json()["id"]
+    assert outbox_client.post(f"/orcamentos/{quote_id}/submit").status_code == 202
+    pdf_name = "12345678-1234-1234-1234-123456789abc.pdf"
+    pdf_dir = outbox_env.parent / "hub_pdfs"
+    pdf_dir.mkdir(parents=True, exist_ok=True)
+    (pdf_dir / pdf_name).write_bytes(b"%PDF-test")
+    conn = sqlite3.connect(outbox_env)
+    conn.execute(
+        "UPDATE quotes SET tiflux_ticket_number = ?, pdf_path = ? WHERE id = ?",
+        ("55", pdf_name, quote_id),
+    )
+    conn.commit()
+    conn.close()
+
+    calls: dict[str, list] = {"update": [], "answer": []}
+
+    class _Fake:
+        def __init__(self, _settings: object) -> None:
+            pass
+
+        async def get_ticket_by_number(self, number: str, **_kwargs: object) -> dict:
+            return {
+                "id": 15,
+                "ticket_number": str(number),
+                "desk": {
+                    "id": 36089,
+                    "stages": [{"id": 7, "name": "Orçamento enviado"}],
+                    "statuses": [{"id": 3, "name": "Aguardando o cliente"}],
+                },
+            }
+
+        async def get_desk(self, _desk_id: int) -> dict:
+            raise AssertionError("mesa não deveria ser consultada")
+
+        async def find_user_id_by_name(self, name: str) -> int:
+            assert name == "André"
+            return 9
+
+        async def update_ticket(self, ticket_id: int, **kwargs: object) -> dict:
+            calls["update"].append((ticket_id, kwargs))
+            return {}
+
+        async def create_ticket_answer(self, ticket_number: str, **kwargs: object) -> dict:
+            calls["answer"].append((ticket_number, kwargs))
+            return {}
+
+    monkeypatch.setattr("src.quotes.router.TifluxClient", _Fake)
+    monkeypatch.setenv("HUB_DRY_RUN", "false")
+    monkeypatch.setenv("TIFLUX_API_TOKEN", "test-token")
+    monkeypatch.setenv("TIFLUX_QUOTE_SENT_RESPONSIBLE_ID", "0")
+
+    sent = outbox_client.post(
+        f"/orcamentos/{quote_id}/mark-sent",
+        json={"free_message": "Texto livre."},
+    )
+    assert sent.status_code == 202, sent.text
+    body = sent.json()
+    assert body["dry_run"] is False
+    assert body["tiflux"]["stage_ok"] is True
+    assert body["tiflux"]["status_ok"] is True
+    assert body["tiflux"]["responsible_ok"] is True
+    assert body["tiflux"]["answer_ok"] is True
+    assert body["tiflux"]["attachment_ok"] is True
+    assert body["tiflux"]["followers_ok"] is True
+    ticket_id, update_kwargs = calls["update"][0]
+    assert ticket_id == 15
+    assert update_kwargs["stage_name"] == "Orçamento enviado"
+    assert update_kwargs["stage_id"] == 7
+    assert update_kwargs["extra"]["status_id"] == 3
+    assert update_kwargs["extra"]["responsible_id"] == 9
+    _number, answer_kwargs = calls["answer"][0]
+    answer = str(answer_kwargs["answer"])
+    assert "<br>" in answer
+    assert "Segue orçamento solicitado." in answer
+    assert "Texto livre." in answer
+    files = answer_kwargs["files_base64"]
+    assert isinstance(files, list)
+    assert files[0]["filename"] == pdf_name
+    conn = sqlite3.connect(outbox_env)
+    row = conn.execute(
+        "SELECT id FROM webhook_outbox WHERE event = 'quote.sent'"
+    ).fetchone()
+    assert row is None
 
 
 def test_submit_idempotent_conflict_after_sent(outbox_client: TestClient) -> None:

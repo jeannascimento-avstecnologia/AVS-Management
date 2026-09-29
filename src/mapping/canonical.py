@@ -2,7 +2,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
-from src.cnpj.validator import format_cnpj, normalize_cnpj
+from src.cnpj.validator import format_cnpj, format_cpf, normalize_cnpj
 
 
 @dataclass
@@ -29,6 +29,7 @@ class CompanyPayload:
     registration_status: str = ""
     cnae_fiscal: int | None = None
     cnae_description: str = ""
+    person_type: str = "PJ"
 
 
 def format_cep(digits: str) -> str:
@@ -120,11 +121,13 @@ def company_to_dict(company: CompanyPayload) -> dict[str, Any]:
         "registration_status": company.registration_status,
         "cnae_fiscal": company.cnae_fiscal,
         "cnae_description": company.cnae_description,
+        "person_type": company.person_type or "PJ",
     }
 
 
 def company_from_dict(data: dict[str, Any]) -> CompanyPayload:
     digits = normalize_cnpj(str(data.get("cnpj_digits") or data.get("cnpj") or ""))
+    person = str(data.get("person_type") or "PJ").strip().upper() or "PJ"
     addr = data.get("address") or {}
     if not isinstance(addr, dict):
         addr = {}
@@ -133,9 +136,16 @@ def company_from_dict(data: dict[str, Any]) -> CompanyPayload:
     if isinstance(status, str):
         status = status.lower() in ("true", "1", "on", "yes", "ativo")
 
+    if person == "PF" and len(digits) == 11:
+        formatted = format_cpf(digits)
+    elif digits:
+        formatted = format_cnpj(digits) if len(digits) == 14 else str(data.get("cnpj_formatted") or digits)
+    else:
+        formatted = str(data.get("cnpj_formatted") or "")
+
     return CompanyPayload(
         cnpj_digits=digits,
-        cnpj_formatted=format_cnpj(digits) if digits else str(data.get("cnpj_formatted") or ""),
+        cnpj_formatted=formatted,
         legal_name=str(data.get("legal_name") or "").strip(),
         trade_name=str(data.get("trade_name") or "").strip(),
         address=Address(
@@ -153,5 +163,6 @@ def company_from_dict(data: dict[str, Any]) -> CompanyPayload:
         registration_status=str(data.get("registration_status") or "").strip().upper(),
         cnae_fiscal=data.get("cnae_fiscal"),
         cnae_description=str(data.get("cnae_description") or "").strip(),
+        person_type=person,
     )
 

@@ -7,7 +7,7 @@ from typing import Any
 import httpx
 
 from src.cnpj.brasilapi_client import BrasilApiError, fetch_cnpj
-from src.cnpj.validator import format_cnpj, normalize_cnpj, validate_cnpj
+from src.cnpj.validator import format_cnpj, format_cpf, normalize_cnpj, validate_cnpj, validate_cpf
 from src.config import Settings
 from src.integrations.tiflux_client import (
     TifluxApiError,
@@ -289,11 +289,7 @@ async def preview_cnpj(raw_cnpj: str, settings: Settings) -> PreviewResult:
 
     tiflux = TifluxClient(settings)
     vhsys = VhsysClient(settings)
-
-    desks, groups = await asyncio.gather(
-        tiflux.list_desks(),
-        tiflux.list_technical_groups(),
-    )
+    options = await _tiflux_registration_options(tiflux, settings)
 
     existing_tf = None
     existing_vh = None
@@ -303,27 +299,66 @@ async def preview_cnpj(raw_cnpj: str, settings: Settings) -> PreviewResult:
     except (TifluxApiError, VhsysApiError) as exc:
         raise OrchestratorError(str(exc), getattr(exc, "status_code", None) or 502) from exc
 
-    default_desks = resolve_default_desk_ids(desks, settings.default_desk_name_list)
-    default_groups = [g["id"] for g in groups]
-
     warnings, requires_override = _build_preview_warnings(company, settings)
 
     return PreviewResult(
         company=company,
-        tiflux_options={
-            "desks": desks,
-            "technical_groups": groups,
-            "defaults": {
-                "desk_ids": default_desks,
-                "technical_group_ids": default_groups,
-            },
-        },
+        tiflux_options=options,
         duplicates={
             "tiflux": existing_tf is not None,
             "vhsys": existing_vh is not None,
         },
         warnings=warnings,
         requires_inactive_override=requires_override,
+    )
+
+
+async def _tiflux_registration_options(tiflux: TifluxClient, settings: Settings) -> dict[str, Any]:
+    desks, groups = await asyncio.gather(
+        tiflux.list_desks(),
+        tiflux.list_technical_groups(),
+    )
+    return {
+        "desks": desks,
+        "technical_groups": groups,
+        "defaults": {
+            "desk_ids": resolve_default_desk_ids(desks, settings.default_desk_name_list),
+            "technical_group_ids": [g["id"] for g in groups],
+        },
+    }
+
+
+async def preview_pf(raw_cpf: str, settings: Settings) -> PreviewResult:
+    """Dedup + mesas/grupos. Sem BrasilAPI — CPF não tem consulta de Receita neste fluxo."""
+    _ensure_credentials(settings)
+    digits = normalize_cnpj(raw_cpf)
+    if not validate_cpf(digits):
+        raise OrchestratorError("CPF inválido.", 400)
+
+    company = CompanyPayload(
+        cnpj_digits=digits,
+        cnpj_formatted=format_cpf(digits),
+        legal_name="",
+        trade_name="",
+        person_type="PF",
+        status_active=True,
+    )
+    tiflux = TifluxClient(settings)
+    vhsys = VhsysClient(settings)
+    options = await _tiflux_registration_options(tiflux, settings)
+    try:
+        existing_tf = await tiflux.find_by_cnpj(digits)
+        existing_vh = await vhsys.find_by_cnpj(company.cnpj_formatted)
+    except (TifluxApiError, VhsysApiError) as exc:
+        raise OrchestratorError(str(exc), getattr(exc, "status_code", None) or 502) from exc
+
+    return PreviewResult(
+        company=company,
+        tiflux_options=options,
+        duplicates={
+            "tiflux": existing_tf is not None,
+            "vhsys": existing_vh is not None,
+        },
     )
 
 
@@ -377,6 +412,25 @@ def _finalize_integration_result(
     return result
 
 
+def partial_registration_message(result: IntegrationResult) -> str | None:
+    """Falha real de um destino. Duplicata+criação no outro não entra aqui."""
+    tf = result.tiflux
+    vh = result.vhsys
+    if tf.success and not tf.skipped and not vh.success:
+        detail = vh.error or vh.message or "erro desconhecido"
+        return (
+            f"Cliente criado no TiFlux, mas o VHSYS falhou: {detail}. "
+            "O orçamento será vinculado ao TiFlux; o cadastro no VHSYS ficou pendente."
+        )
+    if vh.success and not vh.skipped and not tf.success:
+        detail = tf.error or tf.message or "erro desconhecido"
+        return (
+            f"VHSYS criado, mas o TiFlux falhou: {detail}. "
+            "Sem o TiFlux (mesa e grupo) o cliente fica invisível e não será vinculado ao orçamento."
+        )
+    return None
+
+
 async def integrate_company(
     company_data: dict[str, Any],
     desk_ids: list[int],
@@ -388,30 +442,43 @@ async def integrate_company(
 ) -> IntegrationResult:
     _ensure_credentials(settings)
     company = company_from_dict(company_data)
+    person = str(company.person_type or "PJ").strip().upper()
+    if person not in {"PJ", "PF"}:
+        raise OrchestratorError("Tipo de pessoa inválido. Use PJ ou PF.", 400)
+    company.person_type = person
 
-    if not validate_cnpj(company.cnpj_digits):
-        raise OrchestratorError("CNPJ inválido.", 400)
-    if not company.legal_name.strip():
-        raise OrchestratorError("Razão social é obrigatória.", 400)
-    if not company.trade_name.strip():
-        company.trade_name = company.legal_name
+    if person == "PF":
+        if not validate_cpf(company.cnpj_digits):
+            raise OrchestratorError("CPF inválido.", 400)
+        company.cnpj_formatted = format_cpf(company.cnpj_digits)
+        if not company.legal_name.strip():
+            raise OrchestratorError("Nome é obrigatório.", 400)
+        if not company.trade_name.strip():
+            company.trade_name = company.legal_name
+    else:
+        if not validate_cnpj(company.cnpj_digits):
+            raise OrchestratorError("CNPJ inválido.", 400)
+        if not company.legal_name.strip():
+            raise OrchestratorError("Razão social é obrigatória.", 400)
+        if not company.trade_name.strip():
+            company.trade_name = company.legal_name
 
-    try:
-        await _refresh_registration_status(company, settings)
-    except BrasilApiError as exc:
-        raise OrchestratorError(str(exc), exc.status_code or 502) from exc
+        try:
+            await _refresh_registration_status(company, settings)
+        except BrasilApiError as exc:
+            raise OrchestratorError(str(exc), exc.status_code or 502) from exc
 
-    if (
-        settings.require_active_cnpj
-        and not _receita_is_active(company)
-        and not override_inactive_registration
-    ):
-        situacao = company.registration_status or "INDETERMINADA"
-        raise OrchestratorError(
-            f"CNPJ com situação cadastral {situacao} na Receita Federal (BrasilAPI). "
-            "Marque a autorização na revisão para prosseguir.",
-            422,
-        )
+        if (
+            settings.require_active_cnpj
+            and not _receita_is_active(company)
+            and not override_inactive_registration
+        ):
+            situacao = company.registration_status or "INDETERMINADA"
+            raise OrchestratorError(
+                f"CNPJ com situação cadastral {situacao} na Receita Federal (BrasilAPI). "
+                "Marque a autorização na revisão para prosseguir.",
+                422,
+            )
 
     tiflux = TifluxClient(settings)
     vhsys = VhsysClient(settings)

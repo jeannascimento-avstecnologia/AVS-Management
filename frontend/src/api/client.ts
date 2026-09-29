@@ -420,6 +420,74 @@ export type TifluxQuoteClient = {
   cnpj: string | null
 }
 
+export type PersonType = 'PJ' | 'PF'
+
+export type QuoteClientAddress = {
+  street: string
+  number: string
+  complement: string
+  district: string
+  city: string
+  state: string
+  zip_code: string
+}
+
+export type QuoteClientCompanyPayload = {
+  person_type: PersonType
+  cnpj_digits: string
+  legal_name: string
+  trade_name: string
+  phone: string
+  email: string
+  status_active: boolean
+  registration_status: string
+  address: QuoteClientAddress
+}
+
+export type QuoteClientDesk = {
+  id: number
+  name?: string
+  display_name?: string
+}
+
+export type QuoteClientPreviewResponse = {
+  success: boolean
+  company: QuoteClientCompanyPayload
+  tiflux_options: {
+    desks: QuoteClientDesk[]
+    technical_groups: Array<{ id: number; name?: string }>
+    defaults?: { desk_ids?: number[]; technical_group_ids?: number[] }
+  }
+  duplicates: { tiflux?: boolean; vhsys?: boolean }
+  warnings?: string[]
+  requires_inactive_override?: boolean
+}
+
+export type ExternalClientData = {
+  id?: number | string
+  id_cliente?: number | string
+  data?: { id?: number | string; id_cliente?: number | string }
+}
+
+export type QuoteClientSystemResult = {
+  success: boolean
+  skipped?: boolean
+  message?: string
+  error?: string | null
+  data?: ExternalClientData | null
+}
+
+export type QuoteClientRegisterResponse = {
+  success: boolean
+  partial: boolean
+  all_duplicates: boolean
+  partial_message?: string
+  error?: string
+  company: QuoteClientCompanyPayload | null
+  tiflux: QuoteClientSystemResult
+  vhsys: QuoteClientSystemResult
+}
+
 export type TifluxTicketPreview = {
   ticket_number: string
   subject: string | null
@@ -608,9 +676,45 @@ export function isQuoteMarkSentEligible(status: QuoteStatus): boolean {
   return QUOTE_MARK_SENT_STATUSES.has(status)
 }
 
+export interface QuoteSentFollowerInput {
+  id?: number | null
+  name: string
+  email?: string | null
+}
+
+export interface QuoteMarkSentInput {
+  free_message?: string
+  followers?: QuoteSentFollowerInput[]
+}
+
+export interface QuoteSentTifluxSummary {
+  dry_run: boolean
+  stage_ok: boolean
+  status_ok: boolean
+  responsible_ok: boolean
+  answer_ok: boolean
+  attachment_ok: boolean
+  followers_ok: boolean
+  errors: string[]
+}
+
+/** 202 de mark-sent: quote + resumo da aplicação TiFlux (sem outbox). */
+export type QuoteMarkSentResult = QuoteRead & {
+  dry_run: boolean
+  tiflux: QuoteSentTifluxSummary
+}
+
 /** Extrai QuoteRead da resposta de submit/mark-sent. */
-export function quoteFromOutboxResult(result: QuoteOutboxActionResult): QuoteRead {
-  const { outbox_id: _oid, outbox_status: _ost, dry_run: _dr, ...quote } = result
+export function quoteFromOutboxResult(
+  result: QuoteOutboxActionResult | QuoteMarkSentResult,
+): QuoteRead {
+  const {
+    outbox_id: _oid,
+    outbox_status: _ost,
+    dry_run: _dr,
+    tiflux: _tf,
+    ...quote
+  } = result as QuoteOutboxActionResult & { tiflux?: QuoteSentTifluxSummary }
   return quote
 }
 
@@ -863,11 +967,11 @@ async function requestBlob(
   return { blob, filename }
 }
 
-/** Integra cliente; em 409 (já cadastrado) devolve o body com IDs existentes. */
-async function integrarAllowDuplicate(
-  body: Record<string, unknown>,
-): Promise<Record<string, unknown>> {
-  const url = '/integrar'
+/** Integra cliente; em 409 (já cadastrado) devolve o body com IDs existentes. 207 é parcial. */
+async function postJsonAllowPartial<T extends { all_duplicates?: boolean }>(
+  url: string,
+  body: unknown,
+): Promise<T> {
   const init: RequestInit = { method: 'POST', body: JSON.stringify(body) }
   const { headers } = await withCsrfHeaders(url, init)
   headers['Content-Type'] = 'application/json'
@@ -877,11 +981,17 @@ async function integrarAllowDuplicate(
     ...init,
     headers,
   })
-  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>
+  const data = (await res.json().catch(() => ({}))) as T & Record<string, unknown>
   if (res.ok || res.status === 207 || (res.status === 409 && data.all_duplicates)) {
     return data
   }
   throw new ApiError(errorMessageFromBody(data, res.status), res.status, data)
+}
+
+async function integrarAllowDuplicate(
+  body: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  return postJsonAllowPartial<Record<string, unknown>>('/integrar', body)
 }
 
 export function downloadBinaryBlob(blob: Blob, filename: string): void {
@@ -923,9 +1033,20 @@ export const api = {
       body: JSON.stringify(body),
     }),
   previewCnpj: (cnpj: string) => request<Record<string, unknown>>('/preview', { method: 'POST', body: JSON.stringify({ cnpj }) }),
+  previewQuoteClient: (body: { person_type: PersonType; document: string }) =>
+    request<QuoteClientPreviewResponse>('/orcamentos/clientes/preview', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   integrar: (body: Record<string, unknown>) => request<Record<string, unknown>>('/integrar', { method: 'POST', body: JSON.stringify(body) }),
   /** Preview+integrar no wizard: aceita 409 all_duplicates para linkar IDs existentes. */
   integrarForQuote: (body: Record<string, unknown>) => integrarAllowDuplicate(body),
+  registerQuoteClient: (body: {
+    company: QuoteClientCompanyPayload
+    desk_ids: number[]
+    technical_group_ids: number[]
+    override_inactive_registration?: boolean
+  }) => postJsonAllowPartial<QuoteClientRegisterResponse>('/orcamentos/clientes', body),
   inativarPreview: (query: string) => request<Record<string, unknown>>('/inativar/preview', { method: 'POST', body: JSON.stringify({ query }) }),
   inativar: (query: string, tiflux_client_id: number) =>
     request<Record<string, unknown>>('/inativar', { method: 'POST', body: JSON.stringify({ query, tiflux_client_id }) }),
@@ -1199,11 +1320,13 @@ export const api = {
     name: string
     unit_value: number
     cost_value: number
-    tipo_produto?: 'Servico'
+    tipo_produto?: 'Servico' | 'Produto'
     unidade_produto: string
     id_categoria: number
     id_subcategoria: number
     observacao?: string
+    marca?: string
+    descricao?: string
     status_produto?: 'Ativo' | 'Inativo'
   }) =>
     request<{ item: VhsysCatalogItem; created: boolean }>('/orcamentos/vhsys/catalog', {
@@ -1297,11 +1420,11 @@ export const api = {
       body: JSON.stringify({}),
     }),
 
-  /** submitted→sent + outbox `quote.sent` (202; opcional). */
-  markSentQuote: (id: number) =>
-    request<QuoteOutboxActionResult>(`/orcamentos/${id}/mark-sent`, {
+  /** submitted→sent e aplicação direta no TiFlux (202). */
+  markSentQuote: (id: number, body: QuoteMarkSentInput = {}) =>
+    request<QuoteMarkSentResult>(`/orcamentos/${id}/mark-sent`, {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify(body),
     }),
 
   /** POST gera PDF e devolve blob para download. */

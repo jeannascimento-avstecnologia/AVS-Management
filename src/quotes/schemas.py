@@ -5,7 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from src.cnpj.validator import normalize_cnpj, validate_cnpj
+from src.cnpj.validator import format_cnpj, normalize_cnpj, validate_cnpj, validate_cpf
 
 QuoteStatus = Literal["draft", "submitted", "sent", "approved", "rejected", "contracted"]
 TicketLinkStatus = Literal["novo", "aprovado", "rejeitado"]
@@ -285,16 +285,18 @@ class QuoteItemWrite(BaseModel):
 
 
 class VhsysCatalogCreateBody(BaseModel):
-    """Cadastro de serviço VHSYS a partir do orçamento. Produto fica fora deste contrato."""
+    """Cadastro VHSYS a partir do orçamento. Serviço e produto compartilham o mesmo POST."""
 
     name: str = Field(min_length=1, max_length=500)
     unit_value: float = Field(ge=0)
     cost_value: float = Field(ge=0)
-    tipo_produto: Literal["Servico"] = "Servico"
+    tipo_produto: Literal["Servico", "Produto"] = "Servico"
     unidade_produto: str = Field(min_length=1, max_length=20)
     id_categoria: int = Field(ge=1)
     id_subcategoria: int = Field(ge=1)
     observacao: str | None = Field(default=None, max_length=2000)
+    marca: str | None = Field(default=None, max_length=120)
+    descricao: str | None = Field(default=None, max_length=2000)
     status_produto: Literal["Ativo", "Inativo"] | None = None
 
     @field_validator("name", "unidade_produto")
@@ -305,9 +307,9 @@ class VhsysCatalogCreateBody(BaseModel):
             raise ValueError("Campo obrigatório.")
         return cleaned
 
-    @field_validator("observacao", mode="before")
+    @field_validator("observacao", "marca", "descricao", mode="before")
     @classmethod
-    def _blank_observacao(cls, value: object) -> str | None:
+    def _blank_optional(cls, value: object) -> str | None:
         if value is None:
             return None
         cleaned = str(value).strip()
@@ -327,6 +329,15 @@ class QuoteItemRead(BaseModel):
     unit_cost: float | None = None
     margin_kind: Literal["implantacao", "licenca", "produto"] | None = None
     sort_order: int = 0
+
+
+def normalize_quote_client_document(value: str) -> str:
+    digits = normalize_cnpj(value)
+    if len(digits) == 11 and validate_cpf(digits):
+        return digits
+    if len(digits) == 14 and validate_cnpj(digits):
+        return digits
+    raise ValueError("Informe CPF (11) ou CNPJ (14) válido.")
 
 
 def _normalize_optional_cnpj(value: str | None) -> str | None:
@@ -388,9 +399,7 @@ class QuoteWrite(BaseModel):
     @field_validator("cnpj")
     @classmethod
     def _normalize_and_validate_cnpj(cls, value: str) -> str:
-        digits = normalize_cnpj(value)
-        if len(digits) != 14 or not validate_cnpj(digits):
-            raise ValueError("CNPJ inválido (14 dígitos).")
+        digits = normalize_quote_client_document(value)
         return digits
 
     @field_validator("client_name")
@@ -534,9 +543,7 @@ class QuoteUpdate(BaseModel):
     def _normalize_and_validate_cnpj(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        digits = normalize_cnpj(value)
-        if len(digits) != 14 or not validate_cnpj(digits):
-            raise ValueError("CNPJ inválido (14 dígitos).")
+        digits = normalize_quote_client_document(value)
         return digits
 
     @field_validator("client_name")
@@ -704,6 +711,57 @@ class QuoteTicketLinksRefreshBody(BaseModel):
                 continue
             seen.add(raw)
             out.append(raw)
+        return out
+
+
+class QuoteSentFollower(BaseModel):
+    id: int | None = Field(default=None, ge=1)
+    name: str = Field(min_length=1, max_length=200)
+    email: str | None = Field(default=None, max_length=320)
+
+    @field_validator("name")
+    @classmethod
+    def _clean_name(cls, value: str) -> str:
+        cleaned = " ".join(value.split())
+        if not cleaned:
+            raise ValueError("Nome do seguidor é obrigatório.")
+        return cleaned
+
+    @field_validator("email")
+    @classmethod
+    def _clean_email(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        if "@" not in cleaned:
+            raise ValueError("E-mail do seguidor inválido.")
+        return cleaned
+
+
+class QuoteMarkSentBody(BaseModel):
+    """Corpo opcional de POST /orcamentos/{id}/mark-sent. Defaults vazios."""
+
+    free_message: str = Field(default="", max_length=4000)
+    followers: list[QuoteSentFollower] = Field(default_factory=list, max_length=20)
+
+    @field_validator("free_message")
+    @classmethod
+    def _clean_free_message(cls, value: str) -> str:
+        return value.strip()
+
+    @field_validator("followers")
+    @classmethod
+    def _dedupe_followers(cls, value: list[QuoteSentFollower]) -> list[QuoteSentFollower]:
+        seen: set[str] = set()
+        out: list[QuoteSentFollower] = []
+        for item in value:
+            key = (item.email or item.name).casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(item)
         return out
 
 

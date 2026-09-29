@@ -82,9 +82,8 @@ describe('QuotesPage ticket link', () => {
     })
     mocks.refreshTicketLinks.mockResolvedValue({ updated: [], failures: [] })
     renderPage()
-    expect(await screen.findByLabelText('Ticket 88')).toBeInTheDocument()
-    expect(screen.getByText('#88')).toBeInTheDocument()
-    expect(screen.getByText('Aprovado')).toBeInTheDocument()
+    expect(await screen.findByLabelText('Abrir ticket 88')).toBeInTheDocument()
+    expect(screen.getByText('#88 · Aprovado')).toBeInTheDocument()
     expect(screen.queryByLabelText('Associar ticket ao orçamento 12')).not.toBeInTheDocument()
   })
 
@@ -99,6 +98,10 @@ describe('QuotesPage ticket link', () => {
     mocks.refreshTicketLinks.mockResolvedValue({ updated: [], failures: [] })
     renderPage()
     await screen.findByText('Empresa Sem Vinculo')
+    expect(screen.getByRole('heading', { name: /Sem ticket/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Com ticket/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Aprovados/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Rejeitados/ })).toBeInTheDocument()
     expect(clientNameOrder()).toEqual([
       'Empresa Sem Vinculo',
       'Empresa Nova',
@@ -124,8 +127,7 @@ describe('QuotesPage ticket link', () => {
     const user = userEvent.setup({ pointerEventsCheck: 0 })
     renderPage()
     await screen.findByText('Empresa Sem Vinculo')
-    await user.click(screen.getByLabelText('Filtrar por vínculo de ticket'))
-    await user.click(await screen.findByRole('option', { name: 'Sem ticket' }))
+    await user.click(screen.getByRole('tab', { name: /Sem ticket/ }))
     expect(screen.getByText('Empresa Sem Vinculo')).toBeInTheDocument()
     expect(screen.queryByText('Empresa Com Ticket')).not.toBeInTheDocument()
   })
@@ -150,7 +152,7 @@ describe('QuotesPage ticket link', () => {
     })
     mocks.refreshTicketLinks.mockResolvedValue({ updated: [], failures: [] })
     renderPage()
-    await screen.findByLabelText('Ticket 77')
+    await screen.findByLabelText('Abrir ticket 77')
     await waitFor(() => expect(mocks.listQuotes).toHaveBeenCalled())
     expect(mocks.refreshTicketLinks).not.toHaveBeenCalled()
   })

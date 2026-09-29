@@ -532,6 +532,8 @@ class VhsysClient:
         valor_custo_produto: float | None = None,
         obs_produto: str | None = None,
         status_produto: str | None = None,
+        marca_produto: str | None = None,
+        descricao: str | None = None,
     ) -> dict:
         """POST /produtos — cadastra produto/serviço no VHSYS (via dupla do orçamento)."""
         name = (desc_produto or "").strip()
@@ -551,6 +553,8 @@ class VhsysClient:
             valor_custo_produto=valor_custo_produto,
             obs_produto=obs_produto,
             status_produto=status_produto,
+            marca_produto=marca_produto,
+            descricao=descricao,
         )
         async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
@@ -603,6 +607,8 @@ class VhsysClient:
         cost_value: float | None = None,
         observacao: str | None = None,
         status_produto: str | None = None,
+        marca: str | None = None,
+        descricao: str | None = None,
     ) -> tuple[dict, bool]:
         """
         Via dupla: se nome já existir (casefold) no catálogo ativo, devolve existente.
@@ -629,6 +635,8 @@ class VhsysClient:
             valor_custo_produto=cost_value,
             obs_produto=observacao,
             status_produto=status_produto,
+            marca_produto=marca,
+            descricao=descricao,
         )
         normalized = _normalize_catalog_product(raw)
         if normalized is None:
@@ -870,11 +878,14 @@ def build_vhsys_catalog_payload(
     valor_custo_produto: float | None = None,
     obs_produto: str | None = None,
     status_produto: str | None = None,
+    marca_produto: str | None = None,
+    descricao: str | None = None,
 ) -> dict[str, str | float | int]:
     """Monta POST /produtos. Chave vazia não entra no JSON."""
+    tipo = tipo_produto.strip()
     payload: dict[str, str | float | int] = {
         "desc_produto": desc_produto.strip(),
-        "tipo_produto": tipo_produto.strip(),
+        "tipo_produto": tipo,
         "valor_produto": f"{max(0.0, float(valor_produto)):.2f}",
     }
     unit = (unidade_produto or "").strip()
@@ -889,7 +900,11 @@ def build_vhsys_catalog_payload(
         payload["id_subcategoria"] = int(id_subcategoria)
     if valor_custo_produto is not None:
         payload["valor_custo_produto"] = f"{max(0.0, float(valor_custo_produto)):.2f}"
-    note = (obs_produto or "").strip()
+    brand = (marca_produto or "").strip()
+    if tipo == "Produto" and brand:
+        payload["marca_produto"] = brand
+    note = (descricao if tipo == "Produto" else obs_produto) or ""
+    note = note.strip()
     if note:
         payload["obs_produto"] = note
     status = (status_produto or "").strip()

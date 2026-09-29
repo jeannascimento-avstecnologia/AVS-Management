@@ -14,7 +14,7 @@ import unicodedata
 
 from fpdf import FPDF
 
-from src.cnpj.validator import format_cnpj
+from src.cnpj.validator import format_client_document, format_cnpj
 from src.quotes.pdf_parties import QuotePdfClient, QuotePdfIssuer, client_from_quote, issuer_from_settings
 from src.quotes.schemas import (
     DEFAULT_QUOTE_NOTES,
@@ -830,7 +830,7 @@ def _write_client_block(
 ) -> None:
     _section_band(pdf, "DADOS DO CLIENTE", _NAVY)
     name = (client.legal_name or quote.client_name or "").strip() or "-"
-    cnpj = client.cnpj or format_cnpj(quote.cnpj) or quote.cnpj
+    cnpj = client.cnpj or format_client_document(quote.cnpj) or quote.cnpj
     tech = (technician_name or "").strip() or "-"
     label_w = 25.0
     left_w = _CLIENT_LEFT_W

@@ -1,12 +1,17 @@
+from src.cnpj.validator import format_cnpj, format_cpf
 from src.mapping.canonical import CompanyPayload
 
 
 def to_vhsys_payload(company: CompanyPayload) -> dict:
+    person = "PF" if str(company.person_type or "PJ").upper() == "PF" else "PJ"
+    document = company.cnpj_formatted
+    if not document and company.cnpj_digits:
+        document = format_cpf(company.cnpj_digits) if person == "PF" else format_cnpj(company.cnpj_digits)
     payload: dict = {
         "razao_cliente": company.legal_name,
-        "tipo_pessoa": "PJ",
+        "tipo_pessoa": person,
         "tipo_cadastro": "Cliente",
-        "cnpj_cliente": company.cnpj_formatted,
+        "cnpj_cliente": document,
         "fantasia_cliente": company.trade_name,
         "situacao_cliente": "Ativo" if company.status_active else "Inativo",
     }

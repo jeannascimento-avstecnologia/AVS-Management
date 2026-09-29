@@ -6,7 +6,7 @@ import logging
 import re
 from dataclasses import dataclass
 
-from src.cnpj.validator import format_cnpj, normalize_cnpj
+from src.cnpj.validator import format_client_document, format_cnpj, normalize_cnpj
 from src.config import Settings, get_settings
 from src.integrations.tiflux_client import TifluxApiError, TifluxClient
 from src.mapping.canonical import format_cep
@@ -117,7 +117,7 @@ def issuer_from_settings(settings: Settings | None = None) -> QuotePdfIssuer:
 def client_from_quote(quote: QuoteRead) -> QuotePdfClient:
     return QuotePdfClient(
         legal_name=(quote.client_name or "").strip() or "-",
-        cnpj=format_cnpj(quote.cnpj) or quote.cnpj,
+        cnpj=format_client_document(quote.cnpj) or quote.cnpj,
         email=(quote.client_email or "").strip(),
         phone="",
         street="",
@@ -176,7 +176,7 @@ async def resolve_client(quote: QuoteRead, settings: Settings | None = None) -> 
     cep_raw = str(addr.get("cep") or "").strip()
     return QuotePdfClient(
         legal_name=legal,
-        cnpj=format_cnpj(cnpj_digits) or base.cnpj,
+        cnpj=format_client_document(cnpj_digits) or base.cnpj,
         email=email or base.email,
         phone=phone or base.phone,
         street=str(addr.get("street") or "").strip(),

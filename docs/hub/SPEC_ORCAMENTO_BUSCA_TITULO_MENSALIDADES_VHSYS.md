@@ -39,11 +39,11 @@ Ao abrir **Novo** (rascunho), Pesquisa + filtros lead/status compactam numa barr
 
 Preenchido ao selecionar item no `VhsysItemSearch`. Edição manual do nome zera o id.
 
-## 4.1) Novo serviço VHSYS (passo 2)
+## 4.1) Novo item VHSYS (passo 2)
 
-Modal **Novo serviço** no cabeçalho do bloco, ao lado de **Item**. Não troca o passo nem descarta o rascunho.
+Modal **Novo item** no cabeçalho do bloco, ao lado de **Item**. Seletor **Produto | Serviço** no topo; o formulário mostra só os campos daquele tipo. Não troca o passo nem descarta o rascunho.
 
-`POST /orcamentos/vhsys/catalog` — só `tipo_produto=Servico`. Obrigatórios: `name`, `unit_value`, `cost_value`, `unidade_produto`, `id_categoria`, `id_subcategoria`. Opcionais: `observacao`, `status_produto` (`Ativo`|`Inativo`). String vazia vira omissão da chave no POST `/produtos`. Sucesso inclui a linha no bloco (`vhsys_product_id`, valor, custo).
+`POST /orcamentos/vhsys/catalog`. Obrigatórios nos dois: `name`, `unit_value`, `cost_value`, `unidade_produto`, `id_categoria`, `id_subcategoria`. Serviço: `observacao` opcional. Produto: `marca` → `marca_produto`, `descricao` → `obs_produto`. `status_produto` opcional. String vazia não entra no POST `/produtos`. Sucesso inclui a linha no bloco.
 
 ## 5) Contato (solicitante TiFlux)
 

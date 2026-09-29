@@ -65,10 +65,12 @@ Regras: não fechado → `novo`; fechado + catálogo `3 - Aprovado` **ou** `item
 
 ## 4) UI
 
-- Botão **Associar a um Ticket** após PDF; vinculado: `#número` + flag no mesmo slot.
+- Lista em faixas, ordem estável: sem ticket → com ticket (`novo`) → aprovados → rejeitados.
+- Abas com contagem (Todos / Sem ticket / Com ticket / Aprovados / Rejeitados) no lugar do select de vínculo. Contagem usa a lista já filtrada por lead, status e busca, antes do filtro de ticket. **Todos** mostra as quatro `<section>`; faixa vazia mantém o título e uma linha. Aba isolada mostra só aquela faixa; vazia usa o empty state. Lista inteira vazia continua o empty state único.
+- Chip do vínculo na primeira linha do card, antes do status do orçamento e do lead. Sem ticket: "Sem ticket". Vinculado: `#{número} · {Novo|Aprovado|Rejeitado}`.
+- Botão **Associar ticket** só sem vínculo, depois do PDF. Vinculado: **Abrir ticket** (mesmo dialog). `quote.status` permanece badge secundário.
 - Dialog **Associar**: ao abrir, lista automática `GET /tickets?client_ids={quote.tiflux_client_id}&desk_ids={TIFLUX_DESK_COMERCIAL_ID}`. Clique seleciona; 1 resultado pré-seleciona. Fallback: buscar por número. Sem `tiflux_client_id`: pedir cliente no wizard.
 - Vinculado: snapshot + Trocar / Desvincular.
-- Ordem: sem ticket → novo → aprovado → rejeitado (estável).
 - Filtro `linkFilter`: todos / sem / com (`novo`) / aprovados / rejeitados.
 - Ao abrir a tela: refresh 1× por assinatura `quote_id:ticket_number` só nos `novo`.
 - Pipeline (`quoteLead.ts` + filtro lead backend) **exclui** `aprovado`/`rejeitado`.

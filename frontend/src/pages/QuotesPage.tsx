@@ -44,12 +44,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { digitsOnly, formatCnpj, formatDate } from '@/lib/format'
 import { TEMP_LABELS } from '@/lib/quoteLead'
 import {
+  groupQuotesByTicketLink,
   hasLinkedTicket,
-  matchesTicketLinkFilter,
-  sortQuotesByTicketLink,
+  TICKET_BANDS,
   TICKET_LINK_LABELS,
   ticketLinkVariant,
   ticketRefreshSignature,
+  type TicketBandId,
   type TicketLinkFilter,
 } from '@/lib/quoteTicketLink'
 import {
@@ -70,8 +71,6 @@ const STATUS_FILTER_VALUES = new Set<string>([
   'rejected',
   'contracted',
 ])
-const LINK_FILTER_VALUES = new Set<string>(['all', 'none', 'linked', 'approved', 'rejected'])
-
 const STATUS_LABELS: Record<QuoteStatus, string> = {
   draft: 'Rascunho',
   submitted: 'Enviado',
@@ -98,6 +97,20 @@ function statusVariant(
     default:
       return 'outline'
   }
+}
+
+const BAND_DOT: Record<TicketBandId, string> = {
+  none: 'bg-aurora-warning',
+  linked: 'bg-aurora-info',
+  approved: 'bg-aurora-success',
+  rejected: 'bg-aurora-danger',
+}
+
+const BAND_TAB_ACTIVE: Record<TicketBandId, string> = {
+  none: 'border-aurora-warning text-aurora-warning',
+  linked: 'border-aurora-info text-aurora-info',
+  approved: 'border-aurora-success text-aurora-success',
+  rejected: 'border-aurora-danger text-aurora-danger',
 }
 
 function quoteTotal(quote: QuoteRead): number {
@@ -191,12 +204,15 @@ export function QuotesPage() {
     queryFn: () => api.listQuotes({ limit: 100, offset: 0 }),
   })
 
+  const ticketSource = useMemo(() => listQuery.data?.quotes ?? [], [listQuery.data?.quotes])
+  const bandGroups = useMemo(() => groupQuotesByTicketLink(ticketSource), [ticketSource])
   const visibleQuotes = useMemo(() => {
-    const source = listQuery.data?.quotes ?? []
-    return sortQuotesByTicketLink(
-      source.filter((quote) => matchesTicketLinkFilter(quote, linkFilter)),
-    )
-  }, [listQuery.data?.quotes, linkFilter])
+    if (linkFilter === 'all') {
+      return TICKET_BANDS.flatMap((band) => bandGroups[band.id])
+    }
+    return bandGroups[linkFilter]
+  }, [bandGroups, linkFilter])
+  const visibleBands = linkFilter === 'all' ? TICKET_BANDS : TICKET_BANDS.filter((band) => band.id === linkFilter)
 
   const refreshedSignatures = useRef<Set<string>>(new Set())
   useEffect(() => {
@@ -453,7 +469,7 @@ export function QuotesPage() {
           </CardContent>
         ) : (
         <CardContent className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Select
               value={leadFilter}
               onValueChange={(v) => {
@@ -490,24 +506,6 @@ export function QuotesPage() {
                     Status: {STATUS_LABELS[s]}
                   </SelectItem>
                 ))}
-              </SelectContent>
-            </Select>
-            <Select
-              value={linkFilter}
-              onValueChange={(v) => {
-                if (!LINK_FILTER_VALUES.has(v)) return
-                setLinkFilter(v as TicketLinkFilter)
-              }}
-            >
-              <SelectTrigger className="w-full min-w-0" aria-label="Filtrar por vínculo de ticket">
-                <SelectValue placeholder="Ticket" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Ticket: todos</SelectItem>
-                <SelectItem value="none">Sem ticket</SelectItem>
-                <SelectItem value="linked">Com ticket (novo)</SelectItem>
-                <SelectItem value="approved">Ticket: aprovados</SelectItem>
-                <SelectItem value="rejected">Ticket: rejeitados</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -698,6 +696,48 @@ export function QuotesPage() {
         </div>
       )}
 
+      {!listQuery.isPending && !listQuery.isError && (
+        <nav aria-label="Vínculo com ticket" className="overflow-x-auto">
+          <div role="tablist" className="flex w-max min-w-full gap-1 lg:w-auto lg:flex-wrap">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={linkFilter === 'all'}
+              className={cn(
+                'inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                linkFilter === 'all'
+                  ? 'border-foreground text-foreground'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+              onClick={() => setLinkFilter('all')}
+            >
+              Todos
+              <span className="text-xs tabular-nums">{ticketSource.length}</span>
+            </button>
+            {TICKET_BANDS.map((band) => (
+              <button
+                key={band.id}
+                type="button"
+                role="tab"
+                aria-selected={linkFilter === band.id}
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-2 border-b-2 px-3 py-2 text-sm font-medium',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                  linkFilter === band.id
+                    ? BAND_TAB_ACTIVE[band.id]
+                    : 'border-transparent text-muted-foreground hover:text-foreground',
+                )}
+                onClick={() => setLinkFilter(band.id)}
+              >
+                {band.title}
+                <span className="text-xs tabular-nums">{bandGroups[band.id].length}</span>
+              </button>
+            ))}
+          </div>
+        </nav>
+      )}
+
       {!listQuery.isPending && !listQuery.isError && visibleQuotes.length === 0 && (
         <EmptyState
           icon={FileText}
@@ -705,25 +745,31 @@ export function QuotesPage() {
           description={
             statusFilter !== 'all'
               ? `Nenhum orçamento com status ${STATUS_LABELS[statusFilter]}. Status do orçamento é independente do ticket TiFlux.`
-              : linkFilter === 'approved'
-                ? 'Nenhum orçamento com ticket aprovado.'
-                : linkFilter === 'rejected'
-                  ? 'Nenhum orçamento com ticket rejeitado.'
-                  : linkFilter === 'linked'
-                    ? 'Nenhum orçamento com ticket novo.'
-                    : linkFilter === 'none'
-                      ? 'Nenhum orçamento sem ticket.'
-                      : leadFilter !== 'all'
-                        ? `Nenhum lead ${TEMP_LABELS[leadFilter]} aberto.`
-                        : 'Busque o cliente no TiFlux para criar um rascunho.'
+              : (TICKET_BANDS.find((band) => band.id === linkFilter)?.empty ??
+                (leadFilter !== 'all'
+                  ? `Nenhum lead ${TEMP_LABELS[leadFilter]} aberto.`
+                  : 'Busque o cliente no TiFlux para criar um rascunho.'))
           }
           action={{ label: 'Novo rascunho', onClick: () => setShowCreate(true) }}
         />
       )}
 
       {!listQuery.isPending && visibleQuotes.length > 0 && (
-        <ul className="space-y-3">
-          {visibleQuotes.map((quote) => (
+        <div className="space-y-6">
+          {visibleBands.map((band) => {
+            const quotes = bandGroups[band.id]
+            return (
+              <section key={band.id} aria-labelledby={`ticket-band-${band.id}`} className="space-y-3">
+                <h2 id={`ticket-band-${band.id}`} className="flex items-center gap-2 text-sm font-medium">
+                  <span className={cn('h-2 w-2 rounded-full', BAND_DOT[band.id])} aria-hidden />
+                  {band.title}
+                  <span className="text-xs tabular-nums text-muted-foreground">{quotes.length}</span>
+                </h2>
+                {quotes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">{band.empty}</p>
+                ) : (
+                  <ul className="space-y-3">
+                    {quotes.map((quote) => (
             <li key={quote.id} className="min-w-0">
                   <Card
                 className={cn(
@@ -748,6 +794,17 @@ export function QuotesPage() {
                           ? 'Sem cliente'
                           : formatCnpj(quote.cnpj)}
                       </span>
+                      {hasLinkedTicket(quote) ? (
+                        <Badge variant={ticketLinkVariant(quote.ticket_link_status)}>
+                          {`#${quote.tiflux_ticket_number} · ${
+                            quote.ticket_link_status
+                              ? TICKET_LINK_LABELS[quote.ticket_link_status]
+                              : 'Ticket'
+                          }`}
+                        </Badge>
+                      ) : (
+                        <Badge variant="warning">Sem ticket</Badge>
+                      )}
                       <Badge variant={statusVariant(quote.status)}>
                         {STATUS_LABELS[quote.status]}
                       </Badge>
@@ -825,14 +882,10 @@ export function QuotesPage() {
                           e.stopPropagation()
                           setTicketDialogQuote(quote)
                         }}
-                        aria-label={`Ticket ${quote.tiflux_ticket_number}`}
+                        aria-label={`Abrir ticket ${quote.tiflux_ticket_number}`}
                       >
-                        <span className="font-mono">#{quote.tiflux_ticket_number}</span>
-                        <Badge variant={ticketLinkVariant(quote.ticket_link_status)}>
-                          {quote.ticket_link_status
-                            ? TICKET_LINK_LABELS[quote.ticket_link_status]
-                            : 'Ticket'}
-                        </Badge>
+                        <Link2 className="h-4 w-4" />
+                        Abrir ticket
                       </Button>
                     ) : (
                       <Button
@@ -846,7 +899,7 @@ export function QuotesPage() {
                         aria-label={`Associar ticket ao orçamento ${quote.id}`}
                       >
                         <Link2 className="h-4 w-4" />
-                        Associar a um Ticket
+                        Associar ticket
                       </Button>
                     )}
                     {quote.status === 'draft' && (
@@ -871,8 +924,13 @@ export function QuotesPage() {
                 </CardContent>
               </Card>
             </li>
-          ))}
-        </ul>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )
+          })}
+        </div>
       )}
 
       <Dialog open={moduleLibraryOpen} onOpenChange={setModuleLibraryOpen}>
