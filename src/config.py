@@ -73,6 +73,8 @@ class Settings(BaseSettings):
     tiflux_desk_comercial_id: int = 36089
     # 0 = n8n resolve o usuário TiFlux pelo nome "André" (não inventar id)
     tiflux_quote_sent_responsible_id: int = 0
+    # 1 = GET local dos tickets 9001-9004 (destaque sem retorno). Default off.
+    quote_followup_mock: bool = False
     # Emitente do PDF de orçamento (SPEC_PDF_ORCAMENTO) — TiFlux client AVS + fallbacks
     tiflux_issuer_client_id: int = 37443
     quote_issuer_name: str = "AVS TECNOLOGIA"

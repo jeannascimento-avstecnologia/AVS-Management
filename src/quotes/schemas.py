@@ -819,6 +819,8 @@ class QuoteRead(BaseModel):
     submitted_at: str | None
     sent_at: str | None
     approved_at: str | None
+    followup_stale: bool = False
+    followup_idle_days: int | None = None
     items: list[QuoteItemRead] = Field(default_factory=list)
 
     @field_validator("internal_notes")

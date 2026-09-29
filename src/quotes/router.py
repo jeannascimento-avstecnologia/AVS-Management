@@ -78,6 +78,8 @@ from src.quotes.ticket_link import (
     pick_default_catalog_item_id,
     pick_default_priority_id,
     unwrap_ticket_payload,
+    extract_ticket_activity_at,
+    ticket_activity_fingerprint,
 )
 from src.quotes.pdf_filename import PdfDownloadName, quote_pdf_download_name_from_quote
 from src.quotes.sent_tiflux import apply_quote_sent_to_tiflux, simulate_quote_sent_tiflux
@@ -769,6 +771,8 @@ def build_quotes_router() -> APIRouter:
                         "link_status": preview.suggested_link_status,
                         "catalog": preview.catalog,
                         "snapshot": preview,
+                        "activity_at": extract_ticket_activity_at(ticket),
+                        "fingerprint": ticket_activity_fingerprint(ticket),
                     }
                 )
 
@@ -1426,6 +1430,13 @@ def build_quotes_router() -> APIRouter:
                 sent_body,
                 settings,
                 client=TifluxClient(settings),
+            )
+        if str(quote.tiflux_ticket_number or "").strip() and quote.sent_at:
+            raw_fp = tiflux.get("activity_fingerprint")
+            quote = svc.record_sent_activity(
+                quote.id,
+                activity_at=quote.sent_at,
+                fingerprint=None if raw_fp is None else str(raw_fp),
             )
 
         log_action(

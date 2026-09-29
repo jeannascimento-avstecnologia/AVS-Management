@@ -18,6 +18,7 @@ from src.quotes.sent_message import (
     STATUS_TARGET,
     message_text_for,
 )
+from src.quotes.ticket_link import fingerprint_after_sent, ticket_activity_fingerprint
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +99,16 @@ def simulate_quote_sent_tiflux(
         result["errors"].append(warning)
     else:
         result["attachment_ok"] = True
+    responsible_id = settings.tiflux_quote_sent_responsible_id
+    synthetic: dict[str, Any] = {
+        "stage": {"name": STAGE_TARGET},
+        "status": {"name": STATUS_TARGET},
+    }
+    if quote.ticket_link_catalog:
+        synthetic["services_catalog"] = {"item_name": quote.ticket_link_catalog}
+    if responsible_id > 0:
+        synthetic["responsible_id"] = responsible_id
+    result["activity_fingerprint"] = ticket_activity_fingerprint(synthetic)
     _mark_followers(result, sent)
     return result
 
@@ -157,6 +168,16 @@ async def apply_quote_sent_to_tiflux(
         responsible_id=responsible_id,
         result=result,
     )
+    if result["stage_ok"]:
+        result["activity_fingerprint"] = fingerprint_after_sent(
+            ticket,
+            stage_name=STAGE_TARGET,
+            status_name=STATUS_TARGET,
+            status_id=status_id,
+            responsible_id=responsible_id,
+        )
+    else:
+        result["activity_fingerprint"] = ticket_activity_fingerprint(ticket)
     await _post_answer(client, quote, sent, number, settings, result)
     _mark_followers(result, sent)
     return result

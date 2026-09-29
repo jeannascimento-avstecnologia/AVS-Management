@@ -8,11 +8,14 @@ Contrato oficial (OpenAPI v2):
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Literal
 
 TicketLinkStatus = Literal["novo", "aprovado", "rejeitado"]
 APPROVED_CATALOG_LABEL = "3 - Aprovado"
 TICKET_LINK_STATUSES: frozenset[str] = frozenset({"novo", "aprovado", "rejeitado"})
+FOLLOWUP_STALE_DAYS = 5
+_ACTIVITY_TS_KEYS = ("updated_at", "last_update", "created_at")
 
 
 def extract_ticket_closed(ticket: dict[str, Any]) -> bool:
@@ -234,3 +237,160 @@ def build_create_ticket_payload(
         if name:
             payload["requestor_name"] = name
     return payload
+
+
+def _parse_utc(value: object) -> datetime | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _iso_utc(value: datetime) -> str:
+    return value.astimezone(timezone.utc).replace(microsecond=0).isoformat()
+
+
+def _nested_id(value: object) -> str:
+    if not isinstance(value, dict):
+        return ""
+    raw = value.get("id")
+    if raw is None:
+        return ""
+    text = str(raw).strip()
+    if text in {"", "0"}:
+        return ""
+    return text
+
+
+def _nested_name(value: object) -> str:
+    if isinstance(value, dict):
+        raw = value.get("name") or value.get("stage_name") or value.get("item_name")
+        return str(raw).strip() if raw is not None else ""
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def extract_ticket_activity_at(ticket: dict[str, Any]) -> str | None:
+    """Primeiro timestamp preenchido: updated_at, last_update, created_at."""
+    for key in _ACTIVITY_TS_KEYS:
+        parsed = _parse_utc(ticket.get(key))
+        if parsed is not None:
+            return _iso_utc(parsed)
+    return None
+
+
+def extract_ticket_responsible_token(ticket: dict[str, Any]) -> str:
+    for key in ("responsible_id", "user_id"):
+        raw = ticket.get(key)
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if text and text not in {"0", "None"}:
+            return text
+    for key in ("responsible", "responsible_user", "user", "attendant"):
+        token = _nested_id(ticket.get(key))
+        if token:
+            return token
+        name = _nested_name(ticket.get(key))
+        if name:
+            return name.casefold()
+    return ""
+
+
+def extract_ticket_stage_token(ticket: dict[str, Any]) -> str:
+    stage = ticket.get("stage")
+    name = _nested_name(stage) or str(ticket.get("stage_name") or "").strip()
+    if name:
+        return name.casefold()
+    return _nested_id(stage)
+
+
+def ticket_activity_fingerprint(ticket: dict[str, Any]) -> str:
+    """Catálogo, responsável, estágio e status. Separador não aparece nos valores."""
+    catalog = (extract_ticket_catalog(ticket) or "").casefold()
+    responsible = extract_ticket_responsible_token(ticket)
+    stage = extract_ticket_stage_token(ticket)
+    status = (extract_ticket_status_name(ticket) or "").casefold()
+    return "\x1f".join((catalog, responsible, stage, status))
+
+
+def fingerprint_after_sent(
+    ticket: dict[str, Any],
+    *,
+    stage_name: str,
+    status_name: str,
+    status_id: int | None,
+    responsible_id: int | None,
+) -> str:
+    """Fingerprint como o GET deve voltar depois do PUT de quote.sent."""
+    overlay = dict(ticket)
+    overlay["stage"] = {"name": stage_name}
+    overlay["stage_name"] = stage_name
+    status = ticket.get("status")
+    status_obj = dict(status) if isinstance(status, dict) else {}
+    status_obj["name"] = status_name
+    if status_id is not None:
+        status_obj["id"] = status_id
+    overlay["status"] = status_obj
+    if responsible_id is not None:
+        overlay["responsible_id"] = responsible_id
+        overlay["responsible"] = {"id": responsible_id}
+    return ticket_activity_fingerprint(overlay)
+
+
+def resolve_ticket_activity_at(
+    *,
+    stored_at: str | None,
+    stored_fingerprint: str | None,
+    payload_at: str | None,
+    payload_fingerprint: str,
+    now: str,
+) -> str:
+    """Envio abre o relógio. Movimentação (fingerprint) atualiza para agora."""
+    stored = _parse_utc(stored_at)
+    payload = _parse_utc(payload_at)
+    now_dt = _parse_utc(now) or datetime.now(timezone.utc)
+    fingerprint_changed = bool(stored_fingerprint) and stored_fingerprint != payload_fingerprint
+    if stored is None and not stored_fingerprint:
+        chosen = payload or now_dt
+    elif fingerprint_changed:
+        chosen = now_dt
+    elif payload is not None and (stored is None or payload > stored):
+        chosen = payload
+    else:
+        chosen = stored or now_dt
+    return _iso_utc(chosen)
+
+
+def followup_state(
+    *,
+    status: str,
+    ticket_link_status: str | None,
+    ticket_number: str | None,
+    sent_at: str | None,
+    activity_at: str | None,
+    now: datetime,
+) -> tuple[bool, int | None]:
+    number = (ticket_number or "").strip()
+    if status != "sent" or ticket_link_status != "novo" or not number:
+        return False, None
+    anchor = _parse_utc(activity_at) or _parse_utc(sent_at)
+    if anchor is None:
+        return False, None
+    current = now if now.tzinfo is not None else now.replace(tzinfo=timezone.utc)
+    seconds = (current.astimezone(timezone.utc) - anchor).total_seconds()
+    if seconds < 0:
+        seconds = 0
+    days = int(seconds // 86400)
+    return days >= FOLLOWUP_STALE_DAYS, days

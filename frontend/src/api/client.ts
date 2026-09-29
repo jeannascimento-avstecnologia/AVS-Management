@@ -164,6 +164,8 @@ export type QuoteRead = {
   submitted_at: string | null
   sent_at: string | null
   approved_at: string | null
+  followup_stale?: boolean
+  followup_idle_days?: number | null
   items: QuoteItemRead[]
 }
 

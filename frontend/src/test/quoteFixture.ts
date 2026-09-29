@@ -47,6 +47,8 @@ export function makeQuote(partial: Partial<QuoteRead> & Pick<QuoteRead, 'id'>): 
     submitted_at: null,
     sent_at: null,
     approved_at: null,
+    followup_stale: false,
+    followup_idle_days: null,
     items: [
       {
         id: 1,

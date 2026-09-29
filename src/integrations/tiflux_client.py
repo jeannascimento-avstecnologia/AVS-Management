@@ -698,6 +698,12 @@ class TifluxClient:
         number = str(ticket_number).strip()
         if not number.isdigit():
             raise TifluxApiError("Número de ticket inválido.", 422)
+        if self._settings.quote_followup_mock:
+            from src.quotes.followup_mock import mock_followup_ticket
+
+            mocked = mock_followup_ticket(number)
+            if mocked is not None:
+                return mocked
 
         async def _fetch(client: httpx.AsyncClient) -> dict | None:
             response = await self._get_with_retry(

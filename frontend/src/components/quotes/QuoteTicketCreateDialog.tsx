@@ -68,7 +68,12 @@ function TicketFieldSearch({
   useEffect(() => {
     if (!open) return
     const onDoc = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false)
+      const inside = Boolean(rootRef.current?.contains(event.target as Node))
+      const target = event.target
+      // #region agent log
+      fetch('http://127.0.0.1:7709/ingest/8e2a2ec4-5a6f-4b1c-b806-bc9880616c28',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1278e0'},body:JSON.stringify({sessionId:'1278e0',runId:'pre-fix',hypothesisId:'E',location:'QuoteTicketCreateDialog.tsx:onDoc',message:'list outside-mousedown',data:{fieldId:id,inside,detail:event.detail,tag:target instanceof Element?target.tagName:null,role:target instanceof Element?target.getAttribute('role'):null},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+      if (!inside) setOpen(false)
     }
     const onKey = (event: KeyboardEvent) => {
       if (event.key === 'Escape') setOpen(false)
@@ -82,6 +87,9 @@ function TicketFieldSearch({
   }, [open])
 
   const pick = (next: string) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7709/ingest/8e2a2ec4-5a6f-4b1c-b806-bc9880616c28',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1278e0'},body:JSON.stringify({sessionId:'1278e0',runId:'pre-fix',hypothesisId:'A',location:'QuoteTicketCreateDialog.tsx:pick',message:'list item picked',data:{fieldId:id,listOpen:open},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     onChange(next)
     setQuery('')
     setOpen(false)
@@ -139,8 +147,23 @@ function TicketFieldSearch({
                       ? 'bg-aurora-accent-muted text-aurora-fg'
                       : 'text-aurora-fg hover:bg-aurora-accent-muted/50',
                   )}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => pick(item.id)}
+                  onMouseDown={(event) => {
+                    event.preventDefault()
+                    // #region agent log
+                    fetch('http://127.0.0.1:7709/ingest/8e2a2ec4-5a6f-4b1c-b806-bc9880616c28',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1278e0'},body:JSON.stringify({sessionId:'1278e0',runId:'pre-fix',hypothesisId:'A',location:'QuoteTicketCreateDialog.tsx:option-mousedown',message:'option pointer down',data:{fieldId:id,type:event.type,detail:event.detail},timestamp:Date.now()})}).catch(()=>{});
+                    // #endregion
+                  }}
+                  onClick={(event) => {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7709/ingest/8e2a2ec4-5a6f-4b1c-b806-bc9880616c28',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1278e0'},body:JSON.stringify({sessionId:'1278e0',runId:'pre-fix',hypothesisId:'A',location:'QuoteTicketCreateDialog.tsx:option-click',message:'option click',data:{fieldId:id,detail:event.detail},timestamp:Date.now()})}).catch(()=>{});
+                    // #endregion
+                    pick(item.id)
+                  }}
+                  onDoubleClick={(event) => {
+                    // #region agent log
+                    fetch('http://127.0.0.1:7709/ingest/8e2a2ec4-5a6f-4b1c-b806-bc9880616c28',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1278e0'},body:JSON.stringify({sessionId:'1278e0',runId:'pre-fix',hypothesisId:'E',location:'QuoteTicketCreateDialog.tsx:option-dblclick',message:'option double click reached button',data:{fieldId:id,detail:event.detail},timestamp:Date.now()})}).catch(()=>{});
+                    // #endregion
+                  }}
                 >
                   {item.label}
                 </button>
@@ -186,6 +209,16 @@ function QuoteTicketCreateDialogBody({ quote, open, onOpenChange }: Props) {
     enabled: open && quote != null && quote.tiflux_client_id != null,
   })
   const defaults = defaultsQuery.data
+
+  useEffect(() => {
+    const onErr = (event: ErrorEvent) => {
+      // #region agent log
+      fetch('http://127.0.0.1:7709/ingest/8e2a2ec4-5a6f-4b1c-b806-bc9880616c28',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1278e0'},body:JSON.stringify({sessionId:'1278e0',runId:'pre-fix',hypothesisId:'E',location:'QuoteTicketCreateDialog.tsx:window-error',message:'window error while ticket dialog mounted',data:{message:event.message,lineno:event.lineno},timestamp:Date.now()})}).catch(()=>{});
+      // #endregion
+    }
+    window.addEventListener('error', onErr)
+    return () => window.removeEventListener('error', onErr)
+  }, [])
 
   useEffect(() => {
     if (!defaults) return
@@ -241,8 +274,31 @@ function QuoteTicketCreateDialogBody({ quote, open, onOpenChange }: Props) {
   const missingClient = quote != null && quote.tiflux_client_id == null
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex w-[calc(100vw-2rem)] min-w-0 max-w-2xl flex-col gap-4 overflow-visible overflow-y-visible p-6">
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7709/ingest/8e2a2ec4-5a6f-4b1c-b806-bc9880616c28',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1278e0'},body:JSON.stringify({sessionId:'1278e0',runId:'pre-fix',hypothesisId:'C',location:'QuoteTicketCreateDialog.tsx:onOpenChange',message:'dialog open change',data:{next},timestamp:Date.now()})}).catch(()=>{});
+        // #endregion
+        onOpenChange(next)
+      }}
+    >
+      <DialogContent
+        className="flex w-[calc(100vw-2rem)] min-w-0 max-w-2xl flex-col gap-4 overflow-visible overflow-y-visible p-6"
+        onPointerDownOutside={(event) => {
+          const original = event.detail.originalEvent
+          const target = original.target
+          // #region agent log
+          fetch('http://127.0.0.1:7709/ingest/8e2a2ec4-5a6f-4b1c-b806-bc9880616c28',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1278e0'},body:JSON.stringify({sessionId:'1278e0',runId:'pre-fix',hypothesisId:'B',location:'QuoteTicketCreateDialog.tsx:onPointerDownOutside',message:'radix outside pointer',data:{type:original.type,detail:'detail'in original?Number((original as UIEvent).detail):null,tag:target instanceof Element?target.tagName:null,className:target instanceof Element?String(target.className).slice(0,80):null},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+        }}
+        onFocusOutside={(event) => {
+          const original = event.detail.originalEvent
+          // #region agent log
+          fetch('http://127.0.0.1:7709/ingest/8e2a2ec4-5a6f-4b1c-b806-bc9880616c28',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1278e0'},body:JSON.stringify({sessionId:'1278e0',runId:'pre-fix',hypothesisId:'B',location:'QuoteTicketCreateDialog.tsx:onFocusOutside',message:'radix outside focus',data:{type:original.type},timestamp:Date.now()})}).catch(()=>{});
+          // #endregion
+        }}
+      >
         <DialogHeader className="shrink-0 pr-6">
           <DialogTitle>Criar ticket</DialogTitle>
           <DialogDescription>

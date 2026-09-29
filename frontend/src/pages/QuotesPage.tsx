@@ -50,6 +50,7 @@ import {
   TICKET_LINK_LABELS,
   ticketLinkVariant,
   ticketRefreshSignature,
+  followupStaleLabel,
   type TicketBandId,
   type TicketLinkFilter,
 } from '@/lib/quoteTicketLink'
@@ -215,6 +216,16 @@ export function QuotesPage() {
   const visibleBands = linkFilter === 'all' ? TICKET_BANDS : TICKET_BANDS.filter((band) => band.id === linkFilter)
 
   const refreshedSignatures = useRef<Set<string>>(new Set())
+  const [followupRefreshTick, setFollowupRefreshTick] = useState(0)
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return
+      refreshedSignatures.current.clear()
+      setFollowupRefreshTick((n) => n + 1)
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
   useEffect(() => {
     const pool = [
       ...(listQuery.data?.quotes ?? []),
@@ -249,7 +260,7 @@ export function QuotesPage() {
         }
         toast.error(err instanceof Error ? err.message : 'Falha ao verificar tickets TiFlux')
       })
-  }, [listQuery.data, pipelineQuery.data, queryClient])
+  }, [listQuery.data, pipelineQuery.data, queryClient, followupRefreshTick])
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -775,6 +786,7 @@ export function QuotesPage() {
                 className={cn(
                   'aurora-motion min-w-0 cursor-pointer overflow-hidden',
                   'hover:border-aurora-green/50 hover:shadow-md',
+                  quote.followup_stale && 'border-aurora-warning',
                 )}
                 role="link"
                 tabIndex={0}
@@ -808,6 +820,9 @@ export function QuotesPage() {
                       <Badge variant={statusVariant(quote.status)}>
                         {STATUS_LABELS[quote.status]}
                       </Badge>
+                      {followupStaleLabel(quote) ? (
+                        <Badge variant="warning">{followupStaleLabel(quote)}</Badge>
+                      ) : null}
                       {quote.lead_temperature ? (
                         <Badge variant="outline">{TEMP_LABELS[quote.lead_temperature]}</Badge>
                       ) : null}

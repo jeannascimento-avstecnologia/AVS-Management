@@ -39,7 +39,11 @@ from src.quotes.schemas import (
     validate_modules_and_items,
     is_template_placeholder_cnpj,
 )
-from src.quotes.ticket_link import TICKET_LINK_STATUSES
+from src.quotes.ticket_link import (
+    TICKET_LINK_STATUSES,
+    followup_state,
+    resolve_ticket_activity_at,
+)
 
 _UUID_PDF_RE = re.compile(
     r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.pdf$",
@@ -85,6 +89,8 @@ _QUOTE_COLUMNS = (
     "ticket_link_catalog",
     "ticket_link_checked_at",
     "ticket_link_snapshot_json",
+    "ticket_activity_at",
+    "ticket_activity_fingerprint",
     "vhsys_os_id",
     "pdf_path",
     "created_by",
@@ -490,6 +496,15 @@ def _optional_ticket_link_status(row: sqlite3.Row) -> TicketLinkStatus | None:
 
 def _row_to_quote(row: sqlite3.Row, items: list[QuoteItemRead]) -> QuoteRead:
     modules = _parse_modules(row)
+    activity_at = _optional_notes_like(row, "ticket_activity_at")
+    stale, idle_days = followup_state(
+        status=str(row["status"]),
+        ticket_link_status=_optional_ticket_link_status(row),
+        ticket_number=None if row["tiflux_ticket_number"] is None else str(row["tiflux_ticket_number"]),
+        sent_at=None if row["sent_at"] is None else str(row["sent_at"]),
+        activity_at=activity_at,
+        now=datetime.now(timezone.utc),
+    )
     return QuoteRead(
         id=int(row["id"]),
         cnpj=str(row["cnpj"]),
@@ -551,6 +566,8 @@ def _row_to_quote(row: sqlite3.Row, items: list[QuoteItemRead]) -> QuoteRead:
         submitted_at=row["submitted_at"],
         sent_at=row["sent_at"],
         approved_at=row["approved_at"],
+        followup_stale=stale,
+        followup_idle_days=idle_days,
         items=items,
     )
 
@@ -888,6 +905,8 @@ class QuoteService:
                     ticket_link_catalog = ?,
                     ticket_link_checked_at = ?,
                     ticket_link_snapshot_json = ?,
+                    ticket_activity_at = NULL,
+                    ticket_activity_fingerprint = NULL,
                     updated_at = ?
                 WHERE id = ?
                 """,
@@ -919,6 +938,8 @@ class QuoteService:
                     ticket_link_catalog = NULL,
                     ticket_link_checked_at = NULL,
                     ticket_link_snapshot_json = NULL,
+                    ticket_activity_at = NULL,
+                    ticket_activity_fingerprint = NULL,
                     updated_at = ?
                 WHERE id = ?
                 """,
@@ -965,14 +986,31 @@ class QuoteService:
                 if str(row["ticket_link_status"] or "") != "novo":
                     continue
                 checked_at = str(item.get("checked_at") or now)
+                activity_sets = ""
+                activity_params: list[Any] = []
+                if "fingerprint" in item:
+                    payload_fp = item.get("fingerprint")
+                    fingerprint = "" if payload_fp is None else str(payload_fp)
+                    payload_at = item.get("activity_at")
+                    resolved_at = resolve_ticket_activity_at(
+                        stored_at=_optional_notes_like(row, "ticket_activity_at"),
+                        stored_fingerprint=_optional_notes_like(row, "ticket_activity_fingerprint"),
+                        payload_at=None if payload_at is None else str(payload_at),
+                        payload_fingerprint=fingerprint,
+                        now=checked_at,
+                    )
+                    activity_sets = """,
+                        ticket_activity_at = ?,
+                        ticket_activity_fingerprint = ?"""
+                    activity_params = [resolved_at, fingerprint]
                 conn.execute(
-                    """
+                    f"""
                     UPDATE quotes
                     SET ticket_link_status = ?,
                         ticket_link_catalog = ?,
                         ticket_link_checked_at = ?,
                         ticket_link_snapshot_json = ?,
-                        updated_at = ?
+                        updated_at = ?{activity_sets}
                     WHERE id = ?
                       AND ticket_link_status = 'novo'
                     """,
@@ -982,6 +1020,7 @@ class QuoteService:
                         checked_at,
                         _dump_ticket_snapshot(item.get("snapshot")),
                         checked_at,
+                        *activity_params,
                         quote_id,
                     ),
                 )
@@ -1240,6 +1279,31 @@ class QuoteService:
                 WHERE id = ?
                 """,
                 (now, now, quote_id),
+            )
+            updated = _get_quote_row(conn, quote_id)
+            assert updated is not None
+            return _row_to_quote(updated, _fetch_items(conn, quote_id))
+
+    def record_sent_activity(
+        self,
+        quote_id: int,
+        *,
+        activity_at: str,
+        fingerprint: str | None,
+    ) -> QuoteRead:
+        """Baseline do relógio no mark-sent. Não mexe em quotes.updated_at."""
+        with self._db.connect() as conn:
+            row = _get_quote_row(conn, quote_id)
+            if row is None:
+                raise QuoteNotFoundError(f"Orçamento {quote_id} não encontrado.")
+            conn.execute(
+                """
+                UPDATE quotes
+                SET ticket_activity_at = ?,
+                    ticket_activity_fingerprint = ?
+                WHERE id = ?
+                """,
+                (activity_at, fingerprint, quote_id),
             )
             updated = _get_quote_row(conn, quote_id)
             assert updated is not None

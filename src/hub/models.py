@@ -110,6 +110,8 @@ class HubDatabase:
             ("ticket_link_checked_at", "TEXT"),
             ("ticket_link_catalog", "TEXT"),
             ("ticket_link_snapshot_json", "TEXT"),
+            ("ticket_activity_at", "TEXT"),
+            ("ticket_activity_fingerprint", "TEXT"),
         )
         for name, col_type in additions:
             if name not in existing:

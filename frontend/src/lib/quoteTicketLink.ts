@@ -84,3 +84,9 @@ export function ticketRefreshSignature(quote: QuoteRead): string | null {
   if (quote.ticket_link_status !== 'novo' || !quote.tiflux_ticket_number) return null
   return `${quote.id}:${quote.tiflux_ticket_number}`
 }
+
+export function followupStaleLabel(quote: Pick<QuoteRead, 'followup_stale' | 'followup_idle_days'>): string | null {
+  if (!quote.followup_stale) return null
+  const days = quote.followup_idle_days ?? 5
+  return `Sem retorno há ${days} dias`
+}

@@ -5,6 +5,7 @@ import {
   sortQuotesByTicketLink,
   ticketLinkRank,
   ticketRefreshSignature,
+  followupStaleLabel,
 } from '@/lib/quoteTicketLink'
 import { makeQuote } from '@/test/quoteFixture'
 
@@ -59,6 +60,15 @@ describe('quoteTicketLink', () => {
       ticketRefreshSignature(
         makeQuote({ id: 3, ticket_link_status: 'aprovado', tiflux_ticket_number: '88' }),
       ),
+    ).toBeNull()
+  })
+
+  it('labels only stale follow-up', () => {
+    expect(
+      followupStaleLabel(makeQuote({ id: 1, followup_stale: true, followup_idle_days: 8 })),
+    ).toBe('Sem retorno há 8 dias')
+    expect(
+      followupStaleLabel(makeQuote({ id: 2, followup_stale: false, followup_idle_days: 2 })),
     ).toBeNull()
   })
 })

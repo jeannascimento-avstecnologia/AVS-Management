@@ -54,6 +54,8 @@ CREATE TABLE quotes (
     ticket_link_checked_at  TEXT,
     ticket_link_catalog     TEXT,
     ticket_link_snapshot_json TEXT,
+    ticket_activity_at      TEXT,   -- última movimentação TiFlux considerada
+    ticket_activity_fingerprint TEXT, -- catálogo|responsável|estágio|status
     vhsys_os_id             TEXT,
     pdf_path                TEXT,   -- UUID filename; fora web root
     active_quote_version_id INTEGER NULL,

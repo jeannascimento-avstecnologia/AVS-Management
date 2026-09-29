@@ -156,4 +156,23 @@ describe('QuotesPage ticket link', () => {
     await waitFor(() => expect(mocks.listQuotes).toHaveBeenCalled())
     expect(mocks.refreshTicketLinks).not.toHaveBeenCalled()
   })
+
+  it('shows the stale badge on a sent quote', async () => {
+    mocks.listQuotes.mockResolvedValue({
+      quotes: [
+        makeQuote({
+          id: 21,
+          status: 'sent',
+          sent_at: '2026-09-01T12:00:00+00:00',
+          tiflux_ticket_number: '9001',
+          ticket_link_status: 'novo',
+          followup_stale: true,
+          followup_idle_days: 8,
+        }),
+      ],
+    })
+    mocks.refreshTicketLinks.mockResolvedValue({ updated: [], failures: [] })
+    renderPage()
+    expect(await screen.findByText('Sem retorno há 8 dias')).toBeInTheDocument()
+  })
 })
